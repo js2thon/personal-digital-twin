@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# 环境与密钥（绝不提交）
+.env
+.env.local
+.env.*
+!.env.example
+
+# 构建产物与依赖
+dist/
+node_modules/
+
+# 运行时产物 / 日志 / 数据库
+.runtime/
+pgdata/
+data/
+logs/
+*.log
+*.out
+*.sqlite3
+*.sqlite
+*.db
+
+# WorkBuddy / agent 本地工具目录（含本机绝对路径，绝不提交）
+.multica/
+
+# ===== 公开仓库脱敏：真实业务数据与由其生成的产物，一律不入库 =====
+# _q*.json 是从真实 HR 数据导出的建模请求（含 27 名真实员工、工号、部门）
+_q*.json
+.kgprobe.out
+# 实例化报告由真实数据生成（含 27 名真实员工与部门名）
+web/ontology-design/instantiation-report.html
+# 映射建议样例来自真实上传（含源文件名、upload_id、真实公司名）
+docs/samples/employee-attributes.json
+
+# 评估基准集：golden_v1.json 含实库主体名与 fact id（运行时数据，不入仓）
+# 仓库内保留结构一致的 golden_v1.example.json；真实集由 backend/scripts/build_golden.py 生成
+backend/app/modules/evaluation/golden_v1.json

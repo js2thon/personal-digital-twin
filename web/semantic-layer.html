@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>本体语义层工作台 · Schema / 约束 / 推理 / CQ / 决策 Trace</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--border:#e3e6ec;--text:#1c2330;--muted:#6b7482;
+--accent:#185fa5;--ok:#0f6e56;--warn:#ba7517;--bad:#a32d2d;--info:#e6f1fb;
+--purple:#6b4ea8;--radius:10px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+header{background:var(--card);border-bottom:1px solid var(--border);padding:14px 24px;
+display:flex;flex-wrap:wrap;gap:12px;align-items:center;position:sticky;top:0;z-index:5}
+header h1{font-size:17px;font-weight:600;margin:0;flex:1}
+header .sub{font-size:12px;color:var(--muted);font-weight:400;margin-left:10px}
+a.back{color:var(--accent);text-decoration:none;font-size:13px}
+.wrap{max-width:1440px;margin:0 auto;padding:20px 24px 60px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:13px 15px}
+.kpi .n{font-size:23px;font-weight:600;line-height:1.2}.kpi .l{font-size:12px;color:var(--muted)}
+.kpi.ok .n{color:var(--ok)}.kpi.bad .n{color:var(--bad)}.kpi.warn .n{color:var(--warn)}
+section{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+padding:16px 18px;margin-bottom:16px}
+section h2{font-size:15px;font-weight:600;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+section h2 small{font-weight:400;color:var(--muted);font-size:12px}
+.hint{font-size:12px;color:var(--muted);margin:0 0 12px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center}
+button{font:inherit;padding:6px 13px;border:1px solid var(--border);background:var(--card);
+border-radius:8px;cursor:pointer;color:var(--text)}button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.on{background:var(--info);border-color:var(--accent);color:var(--accent);font-weight:600}
+input[type=text],select{font:inherit;padding:6px 9px;border:1px solid var(--border);
+border-radius:8px;background:var(--card);color:var(--text)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+th{color:var(--muted);font-weight:500;white-space:nowrap}
+tr:hover td{background:#fafbfd}
+.tag{display:inline-block;padding:1px 7px;border:1px solid var(--border);border-radius:999px;
+font-size:11px;white-space:nowrap}
+.tag.ok{color:var(--ok);border-color:#9fe1cb;background:#f0faf6}
+.tag.bad{color:var(--bad);border-color:#f7c1c1;background:#fdf3f3}
+.tag.warn{color:var(--warn);border-color:#fac775;background:#fdf8ee}
+.tag.info{color:var(--accent);border-color:#b9d8f2;background:#eef6fc}
+.tag.mute{color:var(--muted)}
+.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11.5px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:980px){.two{grid-template-columns:1fr}}
+.tree{font-size:13px;line-height:1.9}
+.tree .node{padding-left:14px;border-left:1px dashed var(--border);margin-left:6px}
+.tree .root{color:var(--accent);font-weight:600}
+.chip{display:inline-block;margin:2px 4px 2px 0;padding:1px 8px;border:1px solid var(--border);
+border-radius:6px;font-size:11.5px;background:#fafbfd}
+.chip.sym{color:var(--purple);border-color:#d6c8ee}.chip.trans{color:var(--warn);border-color:#f0d9a8}
+.chip.inv{color:var(--ok);border-color:#b6e3d2}
+#graph{width:100%;height:400px;border:1px solid var(--border);border-radius:8px;background:
+radial-gradient(circle at 50% 50%,#fbfcfe,#f2f5f9)}
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-2px}
+.empty{color:var(--muted);font-size:13px;padding:16px;text-align:center}
+pre{background:#f6f8fb;border:1px solid var(--border);border-radius:8px;padding:10px;
+font-size:11.5px;overflow:auto;max-height:260px;margin:0}
+.pill{font-size:11px;padding:1px 7px;border-radius:999px;background:#eef2f7;color:var(--muted)}
+.ok-txt{color:var(--ok)}.bad-txt{color:var(--bad)}.mute-txt{color:var(--muted)}
+.foot{font-size:12px;color:var(--muted);text-align:center;margin-top:24px}
+.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+/* three.js 3D 知识图谱视图（与 2D SVG 可切换，同源真实数据） */
+.graph-switch{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.graph-switch button{border:0;border-radius:0;padding:6px 12px}
+.graph-switch button+button{border-left:1px solid var(--border)}
+.graph-switch button.on{background:var(--accent);color:#fff}
+#g3dCanvas{width:100%;height:460px;display:block;border:1px solid var(--border);border-radius:8px;
+background:radial-gradient(circle at 50% 45%,#fdfefe,#eaf0f7 70%,#dde7f2)}
+#g3dHud{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.7;
+font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+#g3dDetail{white-space:pre-wrap;background:#f6f8fb;border:1px solid var(--border);border-radius:8px;
+padding:9px 11px;font-size:11.5px;min-height:56px;max-height:150px;overflow:auto;margin-top:8px}
+#g3dNote{font-size:11.5px;color:var(--muted);margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>本体语义层工作台 <span class="sub">Schema-as-Code · 写入约束 · 轻量推理 · CQ 工程化 · 版本冻结 · 可评估</span></h1>
+  <a class="back" href="/console/index.html">← 返回主控制台</a>
+  <button onclick="boot(true)">刷新全部</button>
+</header>
+<div class="wrap">
+
+  <div class="grid" id="kpis">
+    <div class="kpi"><div class="n" id="kStore">—</div><div class="l">权威存储 / 健康</div></div>
+    <div class="kpi"><div class="n" id="kVer">—</div><div class="l">ontology_version（published）</div></div>
+    <div class="kpi"><div class="n" id="kTypes">—</div><div class="l">实体 / 关系类型</div></div>
+    <div class="kpi"><div class="n" id="kRules">—</div><div class="l">业务规则 / 特性关系</div></div>
+    <div class="kpi"><div class="n" id="kViol">—</div><div class="l">类型违规边</div></div>
+    <div class="kpi"><div class="n" id="kStable">—</div><div class="l">CQ 回归稳定率</div></div>
+  </div>
+
+  <!-- 1. Schema 定义与治理 -->
+  <section>
+    <h2>① Schema 定义与治理 <small>Schema-as-Code · 继承 · 特性 · 版本对比</small></h2>
+    <p class="hint">数据来自 <span class="mono">GET /ontology/semantic/schema</span> 与
+      <span class="mono">/inheritance</span>。继承链与关系特性来自 Registry 派生的增强层，非编造。</p>
+    <div class="two">
+      <div>
+        <div class="bar">
+          <select id="typeSel" onchange="showTypeSchema()"></select>
+          <button onclick="showDefJson()">查看定义层 JSON Schema</button>
+        </div>
+        <div class="tree" id="schemaTree"><div class="empty">加载中…</div></div>
+      </div>
+      <div>
+        <div class="bar"><span class="pill">版本快照</span><span class="pill" id="schemaVerTag">—</span></div>
+        <div id="verList"></div>
+        <div style="margin-top:10px"><div class="pill">选中类型的实例属性约束（JSON Schema）</div>
+          <pre id="typeSchema">—</pre></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. 图谱约束可视化 -->
+  <section>
+    <h2>② 图谱约束可视化 <small>节点按 EntityType 着色 · 违规边红色 · 只看违规/只看某版本</small></h2>
+    <p class="hint">数据来自 <span class="mono">/instances</span> <span class="mono">/relations</span>
+      <span class="mono">/violations</span>。违规边是服务端写入侧约束的真实判定结果，不是前端猜测。</p>
+    <div class="bar">
+      <div class="graph-switch">
+        <button id="btn2d" class="on" onclick="setGraphView('2d')">2D 图谱</button>
+        <button id="btn3d" onclick="setGraphView('3d')">3D 图谱 · three.js</button>
+      </div>
+      <button id="fAll" class="on" onclick="setGraphFilter('all')">全部</button>
+      <button id="fViol" onclick="setGraphFilter('violation')">只看违规</button>
+      <button id="fDerived" onclick="setGraphFilter('derived')">只看推理衍生</button>
+      <select id="verFilter" onchange="onGraphVersionChange()"><option value="">全部版本</option></select>
+      <span class="pill" id="graphCount">—</span>
+    </div>
+    <div id="graph2dWrap">
+      <svg id="graph" viewBox="0 0 1000 400" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+    <div id="graph3dWrap" hidden>
+      <canvas id="g3dCanvas"></canvas>
+      <div id="g3dHud">切换后加载 three.js 与真实数据…</div>
+      <pre id="g3dDetail">点击节点后在此显示真实实例 / 类型详情</pre>
+      <div id="g3dNote">3D 视图与 2D 同源：类型层来自 /schema + /inheritance，实例与关系边来自 /instances + /relations + /violations；星尘为装饰粒子。</div>
+    </div>
+    <div class="legend">
+      <span><i style="background:#185fa5"></i>Person 系</span>
+      <span><i style="background:#0f6e56"></i>OrganizationUnit 系</span>
+      <span><i style="background:#ba7517"></i>Project</span>
+      <span><i style="background:#6b4ea8"></i>其他类型</span>
+      <span><i style="background:#a32d2d"></i>违规边（红）</span>
+      <span><i style="background:#9aa5b5"></i>推理衍生（虚线）</span>
+      <span><i style="background:#8ea8c8"></i>星尘（3D 装饰粒子，非业务数据）</span>
+    </div>
+  </section>
+
+  <!-- 3. CQ 工程化 -->
+  <section>
+    <h2>③ CQ 工程化 <small>execute 幂等 · 服务端上下文 · 执行历史 · 回归集</small></h2>
+    <p class="hint">execute 强制服务端注入 tenant / identity / space / ontology_version / policy，
+      请求体伪造字段会被剥离并在结果中如实披露；相同 idempotency_key 返回同一 run。</p>
+    <div class="two">
+      <div>
+        <div class="bar">
+          <input type="text" id="cqId" value="CQ-001" style="width:110px" placeholder="CQ code">
+          <select id="querySel">
+            <option value="schema_snapshot">schema_snapshot</option>
+            <option value="type_hierarchy">type_hierarchy</option>
+            <option value="instances_by_type">instances_by_type</option>
+            <option value="relations_by_type">relations_by_type</option>
+            <option value="reasoning_expand">reasoning_expand</option>
+            <option value="constraint_check">constraint_check</option>
+            <option value="overview">overview</option>
+          </select>
+          <input type="text" id="idemKey" placeholder="幂等键（留空自动生成）" style="width:180px">
+          <button class="primary" onclick="runCQ()">执行</button>
+        </div>
+        <div class="bar"><span class="pill">越权自证</span>
+          <label style="font-size:12px"><input type="checkbox" id="spoofChk"> 注入伪造 tenant_id/actor/role</label></div>
+        <pre id="cqResult">点「执行」查看结果（含 server_context / applied_rules / 幂等标记）</pre>
+      </div>
+      <div>
+        <div class="bar"><span class="pill">回归集</span>
+          <button onclick="runRegression()">跑核心回归集</button>
+          <button onclick="loadRuns()">刷新历史</button></div>
+        <div id="regressionBox" class="hint">加载中…</div>
+        <table><thead><tr><th>run_id</th><th>CQ</th><th>state</th><th>版本绑定</th></tr></thead>
+          <tbody id="runsBody"><tr><td colspan="4" class="empty">加载中…</td></tr></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. 决策 Trace / 版本冻结 -->
+  <section>
+    <h2>④ 版本冻结与决策 Trace <small>任务可还原到具体 ontology_version · 应用了哪些规则/CQ</small></h2>
+    <div class="two">
+      <div>
+        <div class="bar">
+          <input type="text" id="taskId" placeholder="task_id（如 task-demo-1）" style="width:190px">
+          <button onclick="freeze()">冻结快照</button>
+          <button onclick="loadSnapshots()">刷新</button></div>
+        <table><thead><tr><th>task_id</th><th>ontology_version</th><th>冻结时间</th></tr></thead>
+          <tbody id="snapBody"><tr><td colspan="3" class="empty">加载中…</td></tr></tbody></table>
+      </div>
+      <div>
+        <div class="bar"><input type="text" id="traceRun" placeholder="run_id" style="width:230px">
+          <button onclick="loadTrace()">查看决策 Trace</button></div>
+        <pre id="traceBox">展示 Applied Rules / CQ 结果 / 衍生候选（候选不改写权威 Fact）</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. 实例详情 / 对齐 / 指标 -->
+  <section>
+    <h2>⑤ 实例↔Fact 对齐与可评估 <small>属性约束 · 关联 Fact · 一致性 · 指标照实披露</small></h2>
+    <div class="two">
+      <div>
+        <div class="bar"><select id="instSel" onchange="loadAlignment()" style="width:260px"></select></div>
+        <pre id="alignBox">选择实例查看属性约束、关联 Fact、有效时间与一致性冲突</pre>
+      </div>
+      <div>
+        <div class="bar"><button onclick="loadMetrics()">刷新指标</button>
+          <span class="pill">无数据源显示「无」，不填 0</span></div>
+        <pre id="metricsBox">加载中…</pre>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">本体语义层工作台 · 全部数据来自真实后端 API · 全新增量不改动既有控制台</div>
+</div>
+
+<script>
+const API = "/api/v1/ontology/semantic";
+let SCHEMA = {}, INHERIT = {}, INSTANCES = [], RELATIONS = [], VIOLATIONS = [], G_FILTER = "all", G_VIEW = "2d", S3D = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+async function api(path, opt) {
+  const r = await fetch(API + path, opt);
+  let d; try { d = await r.json(); } catch (e) { d = {detail: r.statusText}; }
+  if (!r.ok) throw new Error(d.detail || ("HTTP " + r.status));
+  return d;
+}
+function post(path, body) {
+  return api(path, {method:"POST", headers:{"Content-Type":"application/json"},
+                    body: JSON.stringify(body || {})});
+}
+function showErr(box, e) { $(box).textContent = "请求失败：" + (e.message || e); }
+
+async function boot(force) {
+  if (force) { $("cqResult").textContent = "—"; }
+  try {
+    const h = await api("/health");
+    $("kStore").textContent = h.db_ok ? "PG ✓" : "PG ✗";
+    $("kStore").parentNode.className = "kpi " + (h.db_ok ? "ok" : "bad");
+    $("kVer").textContent = h.ontology_version || "—";
+    $("kRules").textContent = "—";
+  } catch (e) { $("kStore").textContent = "离线"; showErr("cqResult", e); return; }
+  await loadSchema();
+  await Promise.all([loadGraphData(), loadRegression(), loadRuns(),
+                     loadSnapshots(), loadInstances(), loadMetrics()]);
+}
+
+async function loadSchema() {
+  try {
+    const s = await api("/schema"); SCHEMA = s;
+    $("kTypes").textContent = (s.entity_types || []).length + " / " + (s.relation_types || []).length;
+    const chars = s.characteristics || {};
+    $("kRules").textContent = s.business_rules + " / " + Object.keys(chars).length;
+    $("schemaVerTag").textContent = s.schema_version + " → " + s.ontology_version;
+    // 版本快照列表
+    $("verList").innerHTML = (s.versions || []).length
+      ? (s.versions || []).map(v => `<div class="chip">${esc(v.schema_version)} ·
+          <span class="mono">${esc(v.ontology_version)}</span> · ${esc(v.status)}</div>`).join("")
+      : `<div class="empty">无版本快照</div>`;
+    // 类型下拉
+    const types = s.entity_types || [];
+    $("typeSel").innerHTML = types.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
+    // 版本过滤下拉
+    $("verFilter").innerHTML = `<option value="">全部版本</option>` +
+      (s.versions || []).map(v => `<option value="${esc(v.ontology_version)}">${esc(v.ontology_version)}</option>`).join("");
+    // 继承树
+    try { INHERIT = (await api("/inheritance")).inheritance || {}; } catch (e) { INHERIT = {}; }
+    const roots = types.filter(t => {
+      const a = (INHERIT[t] || {}).ancestors || [t]; return a.length === 1;
+    });
+    let html = `<div class="root">本体类型树（继承）</div>`;
+    const kids = {};
+    types.forEach(t => { const a = (INHERIT[t]||{}).ancestors||[t];
+      if (a.length > 1) { const p = a[1]; (kids[p] = kids[p] || []).push(t); } });
+    const render = (t, depth) => {
+      let s = `<div class="node">▸ <b>${esc(t)}</b>`;
+      const ch = Object.keys(chars).filter(c => {
+        const rel = (SCHEMA.relation_types || []); return rel.includes(c);
+      });
+      s += `</div>`;
+      (kids[t] || []).forEach(k => { s += `<div class="node" style="margin-left:${depth*14}px">└ ${esc(k)}</div>`; });
+      return s;
+    };
+    roots.forEach(t => { html += render(t, 1); });
+    const inherited = (s.inheritance || []);
+    if (inherited.length) {
+      html += `<div style="margin-top:8px" class="pill">继承定义（子类→父类）</div>`;
+      inherited.forEach(i => Object.entries(i).forEach(([k,v]) =>
+        html += `<div class="chip">${esc(k)} → ${esc(v)}</div>`));
+    }
+    html += `<div style="margin-top:8px" class="pill">关系语义特性</div>`;
+    Object.entries(chars).forEach(([k,v]) => {
+      const tags = [];
+      if (v.symmetric) tags.push(`<span class="chip sym">对称</span>`);
+      if (v.transitive) tags.push(`<span class="chip trans">传递 · ≤${esc(v.max_transitive_depth||3)}跳</span>`);
+      if (v.inverse_of) tags.push(`<span class="chip inv">互逆 → ${esc(v.inverse_of)}</span>`);
+      html += `<div style="margin:3px 0"><span class="mono">${esc(k)}</span> ${tags.join("")}</div>`;
+    });
+    $("schemaTree").innerHTML = html;
+    showTypeSchema();
+  } catch (e) { $("schemaTree").innerHTML = `<div class="empty">Schema 加载失败：${esc(e.message)}</div>`; }
+}
+
+async function showTypeSchema() {
+  const t = $("typeSel").value; if (!t) return;
+  try { const js = await api("/schema/instance/" + encodeURIComponent(t));
+    $("typeSchema").textContent = JSON.stringify(js, null, 2);
+  } catch (e) { $("typeSchema").textContent = "加载失败：" + e.message; }
+}
+async function showDefJson() {
+  try { const d = await api("/schema/json-schema");
+    $("typeSchema").textContent = JSON.stringify(d.json_schema, null, 2);
+  } catch (e) { showErr("typeSchema", e); }
+}
+
+async function loadGraphData() {
+  try {
+    const [i, r, v] = await Promise.all([
+      api("/instances"), api("/relations"), api("/violations")]);
+    INSTANCES = i.items || []; RELATIONS = r.items || []; VIOLATIONS = v.violations || [];
+    $("kViol").textContent = v.violation_count;
+    $("kViol").parentNode.className = "kpi " + (v.violation_count ? "bad" : "ok");
+    drawGraph();
+    if (G_VIEW === "3d" && S3D && S3D.ready()) {
+      try { await S3D.refresh({filter: G_FILTER, version: $("verFilter").value}); }
+      catch (e) { g3dError(e); }
+    }
+  } catch (e) { $("graphCount").textContent = "加载失败"; }
+}
+
+function setGraphFilter(f) {
+  G_FILTER = f;
+  ["fAll","fViol","fDerived"].forEach(id => $(id).classList.remove("on"));
+  ({all:"fAll", violation:"fViol", derived:"fDerived"}[f]) &&
+    $(({all:"fAll", violation:"fViol", derived:"fDerived"}[f])).classList.add("on");
+  drawGraph();
+  if (G_VIEW === "3d" && S3D && S3D.ready()) {
+    try { S3D.setFilter(f); } catch (e) { g3dError(e); }
+  }
+}
+
+/* ---- three.js 3D 知识图谱：动态 import 本地离线 vendor，失败保留 2D ---- */
+function g3dError(e) {
+  $("g3dHud").textContent = "3D 不可用：" + (e && e.message ? e.message : e) + "（2D 视图仍可用）";
+  $("g3dDetail").textContent = "回落提示：请确认 /console/vendor/three.module.min.js 存在，且浏览器已启用 WebGL。";
+}
+async function setGraphView(v) {
+  G_VIEW = v;
+  $("graph2dWrap").hidden = (v !== "2d");
+  $("graph3dWrap").hidden = (v !== "3d");
+  $("btn2d").classList.toggle("on", v === "2d");
+  $("btn3d").classList.toggle("on", v === "3d");
+  if (v !== "3d") return;
+  $("g3dHud").textContent = "正在加载 three.js 与真实数据…";
+  try {
+    if (!S3D) S3D = await import("./semantic-3d.js");
+    if (!S3D.ready()) {
+      await S3D.mount({canvas: $("g3dCanvas"), hud: $("g3dHud"),
+                       detail: $("g3dDetail"), api: API});
+    }
+    const rep = await S3D.refresh({filter: G_FILTER, version: $("verFilter").value});
+    $("g3dNote").textContent = `3D 视图真实计数：类型层 ${SCHEMA.entity_types ? SCHEMA.entity_types.length : 0} 个 · 实例 ${rep.insts} 个 · 关系边 ${rep.edges} 条 · 违规红边 ${rep.violations} 条。星尘为装饰粒子，非业务数据。`;
+  } catch (e) { g3dError(e); }
+}
+async function onGraphVersionChange() {
+  setGraphFilter(G_FILTER);
+  if (G_VIEW === "3d" && S3D && S3D.ready()) {
+    try { S3D.setVersion($("verFilter").value); } catch (e) { g3dError(e); }
+  }
+}
+
+function typeColor(t) {
+  if (/Person|Employee|Manager/.test(t)) return "#185fa5";
+  if (/Organization|Department|Team/.test(t)) return "#0f6e56";
+  if (/Project/.test(t)) return "#ba7517";
+  return "#6b4ea8";
+}
+function drawGraph() {
+  const svg = $("graph");
+  const ver = $("verFilter").value;
+  const violIds = new Set(VIOLATIONS.map(v => v.id));
+  const insts = INSTANCES.filter(i => !ver || i.ontology_version === ver);
+  let edges = RELATIONS.filter(r => !ver || r.ontology_version === ver);
+  if (G_FILTER === "violation") edges = edges.filter(r => violIds.has(r.id));
+  if (G_FILTER === "derived") edges = edges.filter(r => r.derived);
+  $("graphCount").textContent = `${insts.length} 节点 / ${edges.length} 边 / ${VIOLATIONS.length} 违规`;
+  if (!insts.length) {
+    svg.innerHTML = `<text x="500" y="200" text-anchor="middle" fill="#6b7482" font-size="14">暂无实例（写入实例后在此显示图谱）</text>`;
+    return;
+  }
+  // 环形布局，稳定可复现
+  const cx = 500, cy = 200, R = Math.min(150, 340 / Math.max(1, insts.length) + 120);
+  const pos = {};
+  insts.forEach((n, k) => {
+    const a = 2 * Math.PI * k / insts.length - Math.PI / 2;
+    pos[n.id] = {x: cx + R * Math.cos(a), y: cy + R * Math.sin(a)};
+  });
+  let s = `<defs><marker id="arw" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L7,3 z" fill="#9aa5b5"/></marker>
+    <marker id="arwR" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L7,3 z" fill="#a32d2d"/></marker></defs>`;
+  edges.forEach(e => {
+    const a = pos[e.source_id], b = pos[e.target_id];
+    if (!a || !b) return;
+    const bad = violIds.has(e.id);
+    const col = bad ? "#a32d2d" : (e.derived ? "#9aa5b5" : "#5b7fa6");
+    const dash = e.derived ? 'stroke-dasharray="5,4"' : "";
+    const w = bad ? 2.5 : 1.3;
+    const mk = bad ? "arwR" : "arw";
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    s += `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}"
+      stroke="${col}" stroke-width="${w}" ${dash} marker-end="url(#${mk})" opacity="0.8"/>`;
+    s += `<text x="${mx.toFixed(1)}" y="${(my-4).toFixed(1)}" text-anchor="middle" font-size="9"
+      fill="${bad ? '#a32d2d' : '#8590a0'}">${esc(e.relation_type)}${bad ? ' ⚠' : ''}</text>`;
+  });
+  insts.forEach(n => {
+    const p = pos[n.id], c = typeColor(n.type_name || "");
+    s += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="13" fill="${c}" opacity="0.9"
+      stroke="#fff" stroke-width="2"/>`;
+    s += `<text x="${p.x.toFixed(1)}" y="${(p.y+34).toFixed(1)}" text-anchor="middle" font-size="10"
+      fill="#1c2330">${esc(n.canonical_name || n.type_name)}</text>`;
+    s += `<text x="${p.x.toFixed(1)}" y="${(p.y+46).toFixed(1)}" text-anchor="middle" font-size="8.5"
+      fill="#8590a0">${esc(n.type_name)}</text>`;
+  });
+  svg.innerHTML = s;
+}
+
+async function runCQ() {
+  const cq = $("cqId").value.trim() || "CQ-001";
+  const q = $("querySel").value;
+  const body = {parameters: {query: q}, idempotency_key: $("idemKey").value.trim()};
+  if (q === "type_hierarchy" || q === "instances_by_type") body.parameters.parameters = {type: "Person"};
+  if (q === "constraint_check") body.parameters.parameters = {kind: "instance",
+    target: {type_name: "Employee", properties: {employee_no: "E10001"}}};
+  if ($("spoofChk").checked) Object.assign(body,
+    {tenant_id: "EVIL_TENANT", actor: "hacker", role: "admin", ontology_version: "v9.9.9"});
+  $("cqResult").textContent = "执行中…";
+  try {
+    const d = await post("/cq/" + encodeURIComponent(cq) + "/execute", body);
+    const ctx = d.server_context || {};
+    $("cqResult").textContent = JSON.stringify({
+      run_id: d.run_id, state: d.state, query: d.query,
+      idempotency_key: d.idempotency_key, idempotent_replay: d.idempotent_replay,
+      ontology_version: d.ontology_version, version_bound: d.version_bound,
+      server_context_tenant: ctx.tenant_id, server_context_actor: ctx.actor,
+      stripped_body_keys: d.stripped_body_keys, body_trusted: d.body_trusted,
+      applied_rules: (d.applied_rules||[]).map(a=>a.code),
+      derived_candidates: d.derived_candidates,
+      fingerprint: d.fingerprint, answer: d.answer,
+    }, null, 2);
+    $("traceRun").value = d.run_id;
+    loadRuns();
+  } catch (e) { showErr("cqResult", e); }
+}
+
+async function loadRegression() {
+  try {
+    const s = await api("/regression/sets");
+    const core = (s.items || []).find(x => x.set_id === "core-semantic-v1");
+    $("regressionBox").innerHTML = `核心回归集：<span class="mono">core-semantic-v1</span> ·
+      ${core ? core.case_count : "—"} 个用例 <span class="tag info">确定性执行</span>
+      <div class="hint" style="margin:6px 0 0">连续执行两次指纹一致即 stable=true（可重复执行，结果稳定）</div>`;
+  } catch (e) { $("regressionBox").textContent = e.message; }
+}
+async function runRegression() {
+  $("regressionBox").textContent = "执行中…";
+  try {
+    await post("/regression/sets/core-semantic-v1/run", {});
+    const d = await post("/regression/sets/core-semantic-v1/run", {});
+    $("regressionBox").innerHTML = `本次指纹 <span class="mono">${esc(d.result_fingerprint)}</span><br>
+      上次指纹 <span class="mono">${esc(d.previous_fingerprint)}</span><br>
+      用例数 ${d.case_count} · 结果 <span class="tag ${d.stable?'ok':'warn'}">${d.stable?'稳定 stable=true':'基线建立/变化'}</span>
+      · <span class="mono">${esc(d.ontology_version)}</span>`;
+    loadMetrics();
+  } catch (e) { $("regressionBox").textContent = e.message; }
+}
+
+async function loadRuns() {
+  try {
+    const d = await api("/cq/runs");
+    const rows = (d.items || []).slice(0, 12);
+    $("runsBody").innerHTML = rows.length ? rows.map(r => `<tr>
+      <td class="mono">${esc(r.run_id)}</td><td>${esc(r.cq_id)}</td>
+      <td><span class="tag ${r.state==='answered'?'ok':'mute'}">${esc(r.state)}</span></td>
+      <td>${r.version_bound ? '<span class="tag ok">已冻结</span>' : '<span class="pill">当前版本</span>'}</td>
+    </tr>`).join("") : `<tr><td colspan="4" class="empty">无执行历史</td></tr>`;
+  } catch (e) { $("runsBody").innerHTML = `<tr><td colspan="4" class="empty">${esc(e.message)}</td></tr>`; }
+}
+
+async function freeze() {
+  const tid = $("taskId").value.trim();
+  if (!tid) { $("snapBody").innerHTML = `<tr><td colspan="3" class="empty">请输入 task_id</td></tr>`; return; }
+  try { await post("/snapshots/freeze", {task_id: tid}); loadSnapshots(); }
+  catch (e) { $("snapBody").innerHTML = `<tr><td colspan="3" class="empty">${esc(e.message)}</td></tr>`; }
+}
+async function loadSnapshots() {
+  try {
+    const d = await api("/snapshots");
+    const rows = (d.items || []).slice(0, 12);
+    $("snapBody").innerHTML = rows.length ? rows.map(r => `<tr>
+      <td class="mono">${esc(r.task_id)}</td><td><span class="tag info">${esc(r.ontology_version)}</span></td>
+      <td class="mono">${esc(r.frozen_at)}</td></tr>`).join("")
+      : `<tr><td colspan="3" class="empty">无冻结快照</td></tr>`;
+  } catch (e) { $("snapBody").innerHTML = `<tr><td colspan="3" class="empty">${esc(e.message)}</td></tr>`; }
+}
+async function loadTrace() {
+  const rid = $("traceRun").value.trim();
+  if (!rid) { $("traceBox").textContent = "请输入 run_id"; return; }
+  try { const d = await api("/decision-trace/" + encodeURIComponent(rid));
+    $("traceBox").textContent = JSON.stringify({
+      run_id: d.run_id, cq_id: d.cq_id, ontology_version: d.ontology_version,
+      applied_rules: d.applied_rules, cq_results: d.cq_results,
+      derived_candidates: d.derived_candidates,
+    }, null, 2);
+  } catch (e) { showErr("traceBox", e); }
+}
+
+async function loadInstances() {
+  try {
+    const d = await api("/instances");
+    const rows = d.items || [];
+    $("instSel").innerHTML = rows.length
+      ? rows.map(r => `<option value="${esc(r.id)}">${esc(r.canonical_name||r.type_name)} · ${esc(r.type_name)}</option>`).join("")
+      : `<option value="">无实例</option>`;
+    if (rows.length) loadAlignment();
+    else $("alignBox").textContent = "暂无实例";
+  } catch (e) { $("instSel").innerHTML = `<option value="">加载失败</option>`; }
+}
+async function loadAlignment() {
+  const iid = $("instSel").value; if (!iid) return;
+  try { const d = await api("/alignment/" + encodeURIComponent(iid));
+    $("alignBox").textContent = JSON.stringify({
+      instance: d.instance, forward_facts: d.forward.resolved_count,
+      declared_fact_ids: d.forward.declared_fact_ids,
+      reverse_matched: d.reverse.matched_count,
+      consistent: d.consistency.consistent, conflicts: d.consistency.conflicts,
+    }, null, 2);
+  } catch (e) { showErr("alignBox", e); }
+}
+async function loadMetrics() {
+  try { const d = await api("/metrics");
+    const st = d.cq_regression_stability || {};
+    $("kStable").textContent = (st.stable_rate == null) ? "无数据" : (st.stable_rate * 100).toFixed(0) + "%";
+    $("metricsBox").textContent = JSON.stringify(d, null, 2);
+  } catch (e) { showErr("metricsBox", e); }
+}
+
+boot(false).then(() => {
+  /* 支持 ?view=3d 直达 3D 图谱（便于分享与自动化验收；默认仍是 2D，不改变既有行为） */
+  const v = new URLSearchParams(location.search).get("view");
+  if (v === "3d") setGraphView("3d");
+});
+</script>
+</body>
+</html>

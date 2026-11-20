@@ -1,0 +1,1299 @@
+个人知识数字分身工程实施蓝图 V1.0
+
+根据你确认的三个边界，我建议将项目正式定义为：
+
+Personal Digital Twin Platform：基于多源个人知识、个人本体和认知模型，具备知识问答、个人风格回复和工作流决策能力的私有化数字分身平台。
+
+这次不再停留在技术架构讨论，而是以能够交给开发团队实施为目标，明确：
+
+* 系统边界和模块职责。
+* 技术组件及部署方式。
+* 数据库模型和核心 DDL。
+* 知识蒸馏流水线和状态机。
+* 个人本体自动构建流程。
+* 认知模型和长期记忆机制。
+* LangGraph 工作流设计。
+* API 契约。
+* 安全、权限和人工审批机制。
+* 开发迭代、验收标准。
+
+一、工程实施的总体原则
+
+先确定五项架构决策，避免开发过程中反复推翻。
+
+决策项	最终方案
+数据接入	多渠道 Connector 插件化
+部署模式	完全私有化，数据和推理均在自有环境
+后端架构	Python 模块化单体
+知识主存储	PostgreSQL + pgvector
+RAG 基础设施	RAGFlow 1.0
+Agent 编排	LangGraph
+本体定义	LinkML + Pydantic
+知识图谱	第一版 PostgreSQL 关系模型，预留 Neo4j
+异步处理	Celery + Redis
+原始文件	MinIO
+决策权限	建议 → 人工确认 → 分级授权自动执行
+
+这里特别明确一个工程原则：
+
+个人知识只允许有一个权威事实源。
+
+PostgreSQL 是个人知识、认知、规则和决策记录的权威存储；RAGFlow、向量索引和未来的 Neo4j 都是派生服务。避免多个系统各自维护事实，造成数据不一致。
+
+二、系统总体工程架构
+
+我建议采用五个业务子系统、一个基础设施层。
+
+Personal Digital Twin
+
+01 · 多源数据接入与知识蒸馏
+
+Connector / Parser / RAGFlow / Extractor / Deduplication
+
+AI 对话、邮件、微信导出、文档、笔记、网页、会议记录
+
+02 · 个人知识与本体中心
+
+Knowledge Service / Claim / Evidence / Ontology
+
+事实、实体、关系、事件、来源、时间和版本
+
+03 · 个人认知与记忆中心
+
+Memory Service / Cognitive Profile / Feedback
+
+偏好、观点、经验、决策模式、沟通风格
+
+04 · 数字分身智能引擎
+
+Twin API / LangGraph / RAG Retrieval / Decision Engine
+
+问答、回复、分析、决策建议
+
+05 · 工作流与治理中心
+
+Workflow / Policy / Approval / Audit
+
+人工确认、授权执行、业务系统连接、安全审计
+
+基础设施层
+
+PostgreSQLpgvectorMinIORedisRAGFlowvLLMLangfuse
+
+2.1 系统运行边界
+
+建议将部署分成三个安全域：
+
+安全域	包含组件	网络策略
+数据域	PostgreSQL、MinIO、Redis	不对外暴露
+AI 域	RAGFlow、vLLM、Embedding	仅内部访问
+应用域	FastAPI、Worker、前端、LangGraph	经认证网关访问
+
+外部数据源接入采用主动同步或文件导入。私有化部署不代表所有来源都可以在不授权的情况下直接抓取，微信、邮件等渠道必须根据实际开放接口和导出权限接入。
+
+三、工程模块划分
+
+建议采用 Monorepo + 模块化单体，不要在 MVP 阶段拆成十几个微服务。
+
+3.1 模块清单
+
+模块	核心职责	优先级
+ingestion	多渠道数据接入	P0
+source_manager	来源管理、同步和去重	P0
+document_parser	文档解析和切片	P0
+distillation	LLM 知识蒸馏	P0
+knowledge	事实、证据和实体管理	P0
+ontology	本体定义和版本管理	P0
+memory	长期记忆	P0
+cognition	个人认知模型	P0
+retrieval	混合检索	P0
+twin	数字分身统一入口	P0
+decision	决策引擎	P1
+workflow	工作流连接	P1
+policy	权限和执行策略	P0
+feedback	反馈学习	P1
+evaluation	知识与决策评估	P0
+audit	全链路审计	P0
+
+P0 表示首个可用版本必须具备，P1 表示在基础问答和知识模型稳定后完成，但决策相关的权限控制和审计仍然必须从第一版就存在。
+
+3.2 各模块依赖关系
+
+flowchart TD
+    A[Connector] --> B[Ingestion]
+    B --> C[Raw Storage]
+    B --> D[Parser]
+    D --> E[Distillation]
+    E --> F[Claim and Evidence]
+    F --> G[Knowledge Service]
+    G --> H[Ontology Service]
+    G --> I[Memory Service]
+    H --> J[Cognitive Service]
+    I --> J
+    J --> K[Twin Orchestrator]
+    G --> K
+    K --> L[Knowledge QA]
+    K --> M[Communication]
+    K --> N[Decision Graph]
+    N --> O[Policy Engine]
+    O --> P[Human Approval]
+    P --> Q[Workflow Adapter]
+
+注意：图中 Cognitive Service 读取经过治理的知识和记忆，不意味着每次事实入库都要自动修改个人认知。
+
+四、数据库设计：核心 DDL
+
+这部分建议作为开发团队的第一份数据库实施任务。
+
+数据库采用 PostgreSQL，第一版使用一个数据库、多个 Schema，按业务领域隔离。
+
+建议 Schema：
+
+personal_twin
+├── source       # 数据来源
+├── ingest       # 数据接入任务
+├── knowledge    # Claim、Evidence、Fact
+├── ontology     # 本体、实体、关系
+├── memory       # 长期记忆
+├── cognition    # 个人认知模型
+├── decision     # 决策记录
+├── workflow     # 工作流与审批
+└── audit        # 审计
+
+4.1 数据库核心关系
+
+核心关系：
+
+source
+  └── source_document
+         └── evidence_span
+                └── claim_evidence
+                       └── claim
+                              ├── fact
+                              ├── entity
+                              ├── relation
+                              └── memory_item
+cognitive_profile
+  └── cognitive_profile_version
+decision_record
+  ├── decision_evidence
+  ├── approval_task
+  └── execution_audit
+
+4.2 核心 DDL
+
+以下是首期核心表的建议实现。实际项目还应补充索引、触发器、租户策略和迁移脚本。
+
+A. 数据来源和原始文档
+
+CREATE SCHEMA IF NOT EXISTS source;
+CREATE TABLE source.data_sources (
+    id UUID PRIMARY KEY,
+    source_type VARCHAR(50) NOT NULL,
+    source_name VARCHAR(200) NOT NULL,
+    connector_config JSONB DEFAULT '{}',
+    sync_cursor JSONB DEFAULT '{}',
+    enabled BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE source.documents (
+    id UUID PRIMARY KEY,
+    source_id UUID REFERENCES source.data_sources(id),
+    external_id VARCHAR(500),
+    content_hash VARCHAR(128) NOT NULL,
+    object_uri TEXT,
+    mime_type VARCHAR(100),
+    title TEXT,
+    metadata JSONB DEFAULT '{}',
+    document_status VARCHAR(30) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(source_id, external_id)
+);
+
+这里 connector_config 只保存非敏感配置，密码和 API Token 应放入加密密钥管理系统。
+
+B. 证据和知识主张
+
+CREATE SCHEMA IF NOT EXISTS knowledge;
+CREATE TABLE knowledge.evidence_spans (
+    id UUID PRIMARY KEY,
+    document_id UUID NOT NULL
+      REFERENCES source.documents(id),
+    content TEXT NOT NULL,
+    locator JSONB DEFAULT '{}',
+    evidence_type VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE knowledge.claims (
+    id UUID PRIMARY KEY,
+    claim_type VARCHAR(50) NOT NULL,
+    subject JSONB NOT NULL,
+    predicate VARCHAR(200),
+    object_value JSONB,
+    confidence NUMERIC(5,4),
+    status VARCHAR(30) NOT NULL DEFAULT 'candidate',
+    valid_from TIMESTAMPTZ,
+    valid_to TIMESTAMPTZ,
+    extraction_version VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE knowledge.claim_evidence (
+    claim_id UUID REFERENCES knowledge.claims(id),
+    evidence_id UUID REFERENCES knowledge.evidence_spans(id),
+    support_type VARCHAR(30) NOT NULL,
+    PRIMARY KEY(claim_id, evidence_id)
+);
+CREATE TABLE knowledge.facts (
+    id UUID PRIMARY KEY,
+    claim_id UUID REFERENCES knowledge.claims(id),
+    subject_id UUID,
+    predicate VARCHAR(200) NOT NULL,
+    object_value JSONB NOT NULL,
+    valid_from TIMESTAMPTZ,
+    valid_to TIMESTAMPTZ,
+    recorded_at TIMESTAMPTZ DEFAULT NOW(),
+    status VARCHAR(30) NOT NULL,
+    version INTEGER DEFAULT 1
+);
+
+这里我建议采用一个关键设计：
+
+Claim 是模型提取的候选主张，Fact 是经过规则校验或人工确认后发布的知识。
+
+不要把所有 Claim 自动转为 Fact。
+
+C. 本体和实体关系
+
+CREATE SCHEMA IF NOT EXISTS ontology;
+CREATE TABLE ontology.ontology_versions (
+    id UUID PRIMARY KEY,
+    version VARCHAR(50) NOT NULL UNIQUE,
+    schema_uri TEXT,
+    schema_content JSONB NOT NULL,
+    status VARCHAR(30),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE ontology.entities (
+    id UUID PRIMARY KEY,
+    entity_type VARCHAR(100) NOT NULL,
+    canonical_name TEXT NOT NULL,
+    aliases JSONB DEFAULT '[]',
+    properties JSONB DEFAULT '{}',
+    ontology_version_id UUID
+      REFERENCES ontology.ontology_versions(id),
+    status VARCHAR(30) DEFAULT 'active',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE ontology.relations (
+    id UUID PRIMARY KEY,
+    source_entity_id UUID REFERENCES ontology.entities(id),
+    relation_type VARCHAR(100) NOT NULL,
+    target_entity_id UUID REFERENCES ontology.entities(id),
+    properties JSONB DEFAULT '{}',
+    evidence_claim_id UUID
+      REFERENCES knowledge.claims(id),
+    valid_from TIMESTAMPTZ,
+    valid_to TIMESTAMPTZ,
+    status VARCHAR(30) DEFAULT 'candidate'
+);
+
+实体合并不要直接删除原实体，应采用 Alias、Merge Event 和重定向关系，保证历史证据可追溯。
+
+D. 个人记忆和认知模型
+
+CREATE SCHEMA IF NOT EXISTS memory;
+CREATE SCHEMA IF NOT EXISTS cognition;
+CREATE TABLE memory.memory_items (
+    id UUID PRIMARY KEY,
+    memory_type VARCHAR(50) NOT NULL,
+    content JSONB NOT NULL,
+    confidence NUMERIC(5,4),
+    source_claim_ids UUID[] DEFAULT '{}',
+    valid_from TIMESTAMPTZ,
+    valid_to TIMESTAMPTZ,
+    status VARCHAR(30) DEFAULT 'candidate',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE cognition.profile_versions (
+    id UUID PRIMARY KEY,
+    version INTEGER NOT NULL,
+    profile JSONB NOT NULL,
+    evidence_refs JSONB DEFAULT '[]',
+    review_status VARCHAR(30) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(version)
+);
+
+认知模型采用版本快照，而不是直接覆盖一条 JSON。
+
+每次更新都生成新版本，可以回滚、比较和审查。
+
+E. 决策与人工审批
+
+CREATE SCHEMA IF NOT EXISTS decision;
+CREATE SCHEMA IF NOT EXISTS workflow;
+CREATE TABLE decision.decision_records (
+    id UUID PRIMARY KEY,
+    task_type VARCHAR(100) NOT NULL,
+    input_context JSONB NOT NULL,
+    recommendation VARCHAR(100),
+    reasoning JSONB,
+    evidence_refs JSONB,
+    risk_level VARCHAR(30),
+    confidence NUMERIC(5,4),
+    policy_result VARCHAR(30),
+    status VARCHAR(30) NOT NULL,
+    profile_version INTEGER,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE workflow.approval_tasks (
+    id UUID PRIMARY KEY,
+    decision_id UUID REFERENCES decision.decision_records(id),
+    approver_id VARCHAR(200),
+    approval_status VARCHAR(30) NOT NULL,
+    approval_comment TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    approved_at TIMESTAMPTZ
+);
+
+实际还需要 decision_evidence、execution_audits、outbox_events 等表。
+
+另外，source_claim_ids 和 evidence_refs 可以先用于 MVP，但生产版建议使用关联表，而不是长期依赖 UUID 数组，以便进行外键约束和引用完整性检查。
+
+4.3 向量存储设计
+
+第一版直接在 PostgreSQL 中启用 pgvector：
+
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE TABLE knowledge.semantic_chunks (
+    id UUID PRIMARY KEY,
+    document_id UUID,
+    content TEXT NOT NULL,
+    embedding VECTOR(1024),
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+1024 只是一个示例，必须根据最终选定的 Embedding 模型确定维度。
+
+需要建立 HNSW 或 IVFFlat 索引，并按数据量、过滤条件和召回效果选择。
+
+五、知识蒸馏：完整任务状态机
+
+这一部分是整个系统最重要的工程流程之一。
+
+我建议把知识蒸馏实现为可恢复、可重试、可追踪的异步任务。
+
+5.1 状态设计
+
+PENDING
+   ↓
+INGESTING
+   ↓
+PARSING
+   ↓
+CHUNKING
+   ↓
+EXTRACTING
+   ↓
+VALIDATING
+   ↓
+ENTITY_RESOLUTION
+   ↓
+KNOWLEDGE_REVIEW
+   ↓
+PUBLISHING
+   ↓
+COMPLETED
+
+异常分支：
+
+任意处理状态
+   ├── RETRY_WAIT
+   ├── FAILED
+   ├── CANCELLED
+   └── NEEDS_REVIEW
+
+建议状态含义：
+
+状态	含义
+PENDING	等待处理
+INGESTING	数据接入
+PARSING	文档解析
+CHUNKING	内容切片
+EXTRACTING	知识抽取
+VALIDATING	Schema 和证据校验
+ENTITY_RESOLUTION	实体消歧
+NEEDS_REVIEW	需要人工审核
+PUBLISHING	发布知识
+COMPLETED	完成
+RETRY_WAIT	等待重试
+FAILED	失败
+
+5.2 任务执行设计
+
+每个阶段都应该具有：
+
+* 输入数据 ID。
+* 输出数据 ID。
+* 模型版本。
+* Prompt 版本。
+* 处理时间。
+* 错误信息。
+* 重试次数。
+
+建议再建立 pipeline_runs 和 pipeline_steps 两张表。
+
+不要把完整蒸馏流程放在一个长时间运行的 HTTP 请求里。
+
+建议采用：
+
+FastAPI
+   ↓
+PostgreSQL 创建任务
+   ↓
+Outbox Event
+   ↓
+Celery Worker
+   ↓
+RAGFlow / LLM / Knowledge Service
+   ↓
+更新任务状态
+
+对于 RAGFlow 任务，Worker 应通过独立 Adapter 调用其 API，并轮询或订阅任务状态，不能直接操作 RAGFlow 内部数据库。
+
+5.3 蒸馏任务的幂等性
+
+建议每个阶段建立：
+
+idempotency_key =
+hash(
+  source_document_id +
+  content_hash +
+  pipeline_version +
+  model_version +
+  prompt_version
+)
+
+同一个输入和版本不应该重复生成相同的知识记录。
+
+当 Prompt 或 Schema 升级时，可以重新蒸馏，不必覆盖旧版本。
+
+六、个人本体自动构建实施细节
+
+我建议第一版不要直接设计一个庞大的个人本体。
+
+先采用一个稳定的基础本体，再允许扩展。
+
+6.1 首版本体结构
+
+建议分成六个领域。
+
+领域	核心实体
+Identity	Person、Organization、Role
+Knowledge	Knowledge、Skill、Domain、Concept
+Experience	Experience、Project、Event、Achievement
+Cognition	Belief、Preference、Value、Principle
+Decision	Decision、Option、Criterion、Rule
+Relationship	Person、Relationship、Communication
+
+第一版建议约 15～25 个实体类型，关系类型随业务逐渐扩展。
+
+不要让每次新知识都产生新实体类型。
+
+6.2 本体自动扩展机制
+
+新 Claim
+   ↓
+现有本体匹配
+   ├── 能匹配 → 映射现有实体
+   │
+   └── 无法匹配
+          ↓
+       新类型候选
+          ↓
+       LLM 提出扩展
+          ↓
+       Schema Validation
+          ↓
+       与已有类型冲突检查
+          ↓
+       人工审核
+          ↓
+       新版本本体发布
+
+本体发布后，要保留旧版本。
+
+新版本必须经过兼容性检查，尤其是字段删除、类型变更和关系语义变化。
+
+6.3 个人知识图谱生成
+
+MVP 阶段采用 PostgreSQL 实现实体和关系存储，提供统一的 Graph Query Service。
+
+当出现以下需求时，再迁移到 Neo4j：
+
+* 需要多跳关系推理。
+* 关系路径查询明显增多。
+* 需要复杂图算法。
+* 个人知识规模达到 PostgreSQL 关系查询不经济的程度。
+
+迁移时只需要重建图投影，不应改变权威知识模型。
+
+七、个人认知模型实施设计
+
+这是区别于普通 RAG 的核心模块。
+
+我建议认知模型不是一份简单的 JSON 画像，而是由多个可独立更新的 Profile 组成。
+
+7.1 Profile 划分
+
+Cognitive Profile
+│
+├── Knowledge Profile
+│   ├── 专业领域
+│   ├── 知识水平
+│   └── 技术栈
+│
+├── Preference Profile
+│   ├── 技术偏好
+│   ├── 工作偏好
+│   └── 风险偏好
+│
+├── Belief Profile
+│   ├── 观点
+│   ├── 判断原则
+│   └── 价值取向
+│
+├── Decision Profile
+│   ├── 决策标准
+│   ├── 权衡方式
+│   └── 历史决策模式
+│
+└── Communication Profile
+    ├── 语言风格
+    ├── 表达习惯
+    └── 沟通偏好
+
+7.2 认知更新机制
+
+建议采用候选、证据支持、人工确认、已废弃的生命周期。
+
+例如：
+
+历史行为
+   ↓
+偏好候选
+   ↓
+收集独立证据
+   ↓
+场景一致性检查
+   ↓
+与已有偏好比较
+   ↓
+用户确认
+   ↓
+发布新 Profile Version
+
+需要注意，同一份材料的重复转发不能被当成多条独立证据。
+
+同时，偏好应当有适用上下文，例如：
+
+{
+  "preference": "private_deployment",
+  "scope": "enterprise_personal_data",
+  "status": "confirmed",
+  "evidence_count": 4,
+  "effective_from": "2026-01-01"
+}
+
+这表示在特定场景下的偏好，而不是对所有场景的绝对要求。
+
+7.3 反馈学习
+
+数字分身每次给出回复或决策后，都提供三类反馈：
+
+* 事实不正确。
+* 认知不符合本人。
+* 判断或建议不符合本人。
+
+反馈应当进入不同的处理队列。
+
+例如，事实错误进入知识修正；认知错误进入 Profile Review；决策错误进入 Decision Evaluation。
+
+不要简单通过在线强化学习直接修改模型参数。MVP 阶段以可审计的数据更新为主。
+
+八、数字分身 Agent 的具体实现
+
+建议将 Agent 设计为一个统一入口，内部采用任务路由，不采用多个独立 Agent 各自维护记忆的方式。
+
+8.1 Twin Orchestrator
+
+核心职责：
+
+* 识别用户意图。
+* 选择对应任务处理链。
+* 加载个人知识和认知上下文。
+* 调用检索服务。
+* 组织模型推理。
+* 检查输出结构。
+* 执行权限检查。
+* 保存会话和结果。
+
+任务路由：
+
+用户请求	任务处理链
+你之前研究过什么？	Knowledge QA
+帮我回复这封邮件	Communication
+你认为这个项目应该批准吗？	Decision
+帮我制定项目实施计划	Planning
+这个方案是否符合我的偏好？	Cognitive Reasoning
+
+8.2 LangGraph 工作流设计
+
+A. 个人知识问答
+
+flowchart TD
+    A[用户问题] --> B[意图识别]
+    B --> C[查询改写]
+    C --> D[并行知识检索]
+    D --> E[证据融合]
+    E --> F[证据充分性检查]
+    F -->|不足| G[补充检索]
+    G --> E
+    F -->|充分| H[LLM生成回答]
+    H --> I[引用验证]
+    I --> J[返回回答]
+
+其中 D 节点同时调用：
+
+* RAGFlow 文档检索。
+* PostgreSQL 结构化事实检索。
+* PostgreSQL pgvector 语义检索。
+* 个人记忆检索。
+
+不要每次问答都检索全部知识源。应该根据问题意图选择相关检索器。
+
+B. 个人风格回复
+
+flowchart TD
+    A[输入邮件或消息] --> B[识别对方意图]
+    B --> C[提取回复目标]
+    C --> D[检索相关个人知识]
+    D --> E[加载沟通认知模型]
+    E --> F[加载历史类似回复]
+    F --> G[生成回复草稿]
+    G --> H[事实和承诺检查]
+    H --> I[输出草稿]
+    I --> J[人工编辑和确认]
+
+这里有一项必须实现的规则：
+
+数字分身不能自动创造个人没有表达过的承诺、立场、报价、时间节点和授权。
+
+例如，对方问能不能提前两周交付，而历史资料没有支持，数字分身应生成询问或待确认草稿，而不是擅自代表本人承诺。
+
+C. 工作流决策
+
+这是重点。
+
+flowchart TD
+    A[接收业务请求] --> B[解析业务上下文]
+    B --> C[检索个人知识和历史决策]
+    C --> D[检索个人认知模型]
+    D --> E[证据充分性判断]
+    E -->|不足| F[要求补充材料]
+    E -->|充分| G[LLM决策分析]
+    G --> H[确定性规则检查]
+    H --> I[风险与权限评估]
+    I --> J{是否允许自动执行}
+    J -->|否| K[生成人工审批任务]
+    J -->|是| L[等待授权策略确认]
+    K --> M[人工确认]
+    L --> N[执行前最终校验]
+    M --> N
+    N --> O[调用业务系统]
+    O --> P[执行结果验证]
+    P --> Q[保存决策和审计]
+
+注意：在第一版中，是否允许自动执行 应当固定为否，或者只允许经过专门配置的无风险测试动作。后续才逐步开启受限自动执行。
+
+8.3 LangGraph State 设计
+
+建议统一状态对象：
+
+from typing import TypedDict, Any
+class TwinState(TypedDict, total=False):
+    request_id: str
+    user_id: str
+    task_type: str
+    input_message: str
+    business_context: dict
+    retrieved_documents: list[dict]
+    retrieved_facts: list[dict]
+    retrieved_memories: list[dict]
+    cognitive_profile: dict
+    evidence_sufficiency: str
+    reasoning_result: dict
+    policy_result: dict
+    recommendation: dict
+    approval_required: bool
+    execution_authorized: bool
+    final_response: dict
+
+LangGraph 的持久化 Checkpointer 应当使用独立配置的 PostgreSQL 存储，并与业务知识表隔离。
+
+人工审批通过 LangGraph interrupt / resume 机制实现，不能依靠前端保持一个长期 HTTP 请求等待人工点击。LangGraph 人工介入与中断机制文档⁠￼。
+
+8.4 决策引擎的权限控制
+
+我建议采用四级权限模型：
+
+级别	能力	MVP 权限
+D0	分析信息	允许
+D1	生成决策建议	允许
+D2	提交人工审批	允许
+D3	自动执行	禁止，后续逐项开放
+
+以后开放 D3 时，不是简单地把 Agent 的权限改为全部开放，而是对具体动作授权。
+
+例如：
+
+{
+  "action": "create_project_task",
+  "enabled": true,
+  "scope": "approved_project",
+  "max_amount": null,
+  "requires_confirmation": false,
+  "expires_at": "2027-01-01T00:00:00Z"
+}
+
+真正的执行前还要重新验证授权是否有效、业务对象是否变化、操作是否重复。
+
+九、API 接口设计
+
+建议采用 REST API + SSE。
+
+API 前缀：
+
+/api/v1
+
+9.1 数据接入 API
+
+方法	路径	用途
+POST	/sources	创建数据源
+GET	/sources	数据源列表
+POST	/sources/{id}/sync	启动同步
+POST	/documents/upload	上传文件
+GET	/documents/{id}	查看文档
+POST	/documents/{id}/reprocess	重新处理
+
+9.2 知识管理 API
+
+方法	路径	用途
+GET	/knowledge/claims	查询候选知识
+GET	/knowledge/facts	查询已确认事实
+POST	/knowledge/claims/{id}/approve	审核主张
+POST	/knowledge/claims/{id}/reject	拒绝主张
+GET	/knowledge/evidence/{id}	查看证据
+GET	/ontology/schema	获取本体
+POST	/ontology/proposals	提交本体扩展建议
+POST	/ontology/publish	发布本体版本
+
+9.3 个人认知 API
+
+方法	路径	用途
+GET	/cognition/profile	获取当前认知模型
+GET	/cognition/versions	查询历史版本
+GET	/cognition/proposals	查询认知候选
+POST	/cognition/proposals/{id}/approve	确认认知
+POST	/cognition/feedback	提交认知反馈
+
+9.4 数字分身 API
+
+方法	路径	用途
+POST	/twin/chat	个人知识问答
+POST	/twin/reply	生成个人风格回复
+POST	/twin/decision	发起决策分析
+GET	/twin/tasks/{id}	查询任务
+GET	/twin/tasks/{id}/stream	SSE 获取执行进度
+POST	/twin/feedback	提交结果反馈
+
+9.5 工作流 API
+
+方法	路径	用途
+POST	/workflow/decisions	创建审批任务
+GET	/workflow/approvals	查询待审批任务
+POST	/workflow/approvals/{id}/approve	人工批准
+POST	/workflow/approvals/{id}/reject	人工拒绝
+POST	/workflow/actions/{id}/execute	执行已授权动作
+GET	/workflow/actions/{id}	查询执行结果
+
+9.6 关键 API 请求示例
+
+个人知识问答：
+
+POST /api/v1/twin/chat
+{
+  "session_id": "session_001",
+  "message": "我之前为什么倾向于私有化部署？",
+  "retrieval_scope": [
+    "facts",
+    "memories",
+    "documents"
+  ]
+}
+
+决策请求：
+
+POST /api/v1/twin/decision
+{
+  "task_type": "project_approval",
+  "business_context": {
+    "project_id": "project_001",
+    "budget": 1000000,
+    "expected_duration": 90
+  },
+  "decision_mode": "human_confirm",
+  "evidence_required": true
+}
+
+决策返回：
+
+{
+  "decision_id": "dec_001",
+  "recommendation": "approve",
+  "evidence_sufficiency": "sufficient",
+  "confidence": 0.88,
+  "risk_level": "medium",
+  "requires_human_approval": true,
+  "execution_authorized": false,
+  "evidence": [
+    {
+      "source_id": "doc_001",
+      "quote": "历史项目的预算和收益情况"
+    }
+  ]
+}
+
+以上均为接口契约示例，不是已运行的服务响应。实际开发时要为所有接口补充 OpenAPI Schema、错误码、鉴权要求、幂等键和分页规范。
+
+十、私有化部署方案
+
+这里需要特别处理一个问题：RAGFlow 1.0 已经进行了较大的架构调整，不能直接沿用旧版部署文件。
+
+官方 1.0.0 使用 Go 重写，消息队列迁移至 NATS，缓存和 Checkpoint 使用 Kvrocks；从 v0.27.2 升级存在自动数据迁移，且官方提醒迁移不可逆。GitHub +1
+
+因此建议：
+
+* 全新部署使用官方 v1.0.0 固定版本。
+* 不使用 nightly 作为生产环境。
+* 不修改 RAGFlow 内部数据库。
+* 不将自建 Redis 当作 RAGFlow 的内部消息队列。
+* RAGFlow 升级前完整备份和验证恢复。
+* 自建业务服务独立管理 Redis、PostgreSQL 和任务队列。
+
+10.1 推荐部署清单
+
+服务	容器	用途
+twin-api	自建	API 服务
+twin-worker	自建	异步知识处理
+twin-web	自建	Web 前端
+postgres	PostgreSQL	业务数据库
+redis	Redis	自建任务队列
+minio	MinIO	原始数据
+ragflow	官方镜像	RAG 引擎
+vllm	自建镜像	本地模型推理
+langfuse	官方部署	模型观测
+
+RAGFlow 自身需要的依赖服务由其官方部署方案管理，不要与我们自己的业务依赖混为一谈。
+
+10.2 建议部署拓扑
+
+私有网络 / 内部 Docker Network
+
+应用节点
+
+FastAPI
+
+Next.js
+
+Celery Worker
+
+LangGraph
+
+AI 节点
+
+RAGFlow 1.0
+
+vLLM
+
+数据节点
+
+PostgreSQL
+
+MinIO
+
+Redis
+
+Backup
+
+10.3 模型部署建议
+
+建议部署三类模型服务：
+
+模型类型	推荐方向	作用
+通用推理模型	Qwen / DeepSeek 系列	复杂推理、决策
+Embedding	BGE-M3	语义向量
+Reranker	BGE Reranker	检索重排序
+
+模型选型不要只看排行榜。
+
+要使用自己的中文数据测试：
+
+* 个人事实抽取。
+* 中文多轮对话理解。
+* 观点与偏好识别。
+* 复杂文档结构解析。
+* 结构化 JSON 输出。
+* 多步骤决策推理。
+
+尤其要关注 Embedding 和 Reranker 的实际检索效果，不能因为大模型生成能力强，就认为知识检索也一定准确。
+
+10.4 完全私有化的验证标准
+
+必须做到：
+
+* 模型推理请求不发送到云端。
+* 个人原始知识不上传到第三方。
+* Embedding 和 Reranker 在本地运行。
+* 日志不记录敏感原文或密钥。
+* 外部数据源同步通过受控出口。
+* 容器镜像和模型权重可提前下载并校验。
+* 离线运行时仍可完成核心问答和决策。
+* 备份和恢复过程不依赖云端服务。
+
+还要特别注意：私有化部署并不自动等于安全。模型文件、容器镜像、Python 依赖包和 Connector 都需要供应链安全检查。
+
+十一、安全、权限和审计设计
+
+因为数字分身最终会代表个人参与工作流，所以安全设计必须从第一版开始。
+
+我建议把权限拆成三个独立维度。
+
+11.1 数据访问权限
+
+数据类型	默认访问范围
+个人私人对话	仅个人数字分身
+工作邮件	仅授权的工作任务
+项目资料	按项目权限
+个人认知模型	仅个人数字分身内部使用
+决策记录	个人及授权审计人员
+对外回复	只允许使用经过授权的信息
+
+尤其需要建立数据使用范围标签：
+
+{
+  "privacy_level": "private",
+  "allowed_purposes": [
+    "personal_qa",
+    "personal_reasoning"
+  ],
+  "external_sharing": false
+}
+
+检索时就要执行权限过滤，不能等生成回答之后才做脱敏。
+
+11.2 Agent 工具权限
+
+Agent 的工具调用必须采用白名单机制。
+
+例如：
+
+工具	初始权限
+查询个人知识	允许
+查询历史项目	允许
+生成邮件草稿	允许
+发送邮件	禁止
+创建审批意见	仅生成草稿
+提交审批	需要人工确认
+修改业务数据	禁止自动执行
+
+这里建议把 MCP 当作工具接入协议，而不是权限控制系统。
+
+所有工具调用仍需经过自建 Policy Service。
+
+11.3 审计机制
+
+每次数字分身决策都要能够回答：
+
+* 当时输入了什么？
+* 使用了哪些个人知识？
+* 检索了哪些证据？
+* 使用了哪个认知模型版本？
+* 使用了哪个模型和 Prompt？
+* 最终给出了什么建议？
+* 哪个人进行了确认？
+* 是否执行？
+* 执行结果是什么？
+
+建议每次决策保存一个不可变的决策快照。
+
+审计日志需要防篡改、限制读取，并对敏感字段进行脱敏。对于真正的高敏感场景，可以将每日审计摘要写入独立的只追加存储。
+
+十二、开发实施计划与任务拆解
+
+我建议按照 10 周规划首个 MVP，而不是直接启动大规模并行开发。
+
+10 周开发路线图
+
+* 第 1～2 周：工程基础
+    * Monorepo 初始化
+    * Docker Compose 环境
+    * PostgreSQL、MinIO、Redis
+    * RAGFlow 1.0 部署
+    * vLLM 模型接入
+    * 数据源管理和文件上传
+    交付：可运行的私有化底座
+* 第 3～4 周：知识蒸馏
+    * Connector 框架
+    * AI 对话、文档、邮件接入
+    * 文档解析和切片
+    * Claim / Evidence 抽取
+    * 实体消歧
+    * 知识审核和发布
+    交付：个人知识蒸馏流水线
+* 第 5～6 周：本体与认知
+    * LinkML Schema
+    * 自动本体映射
+    * 个人知识图谱
+    * 个人长期记忆
+    * 认知模型抽取
+    * Profile 版本管理
+    交付：个人知识和认知模型
+* 第 7～8 周：数字分身
+    * LangGraph Orchestrator
+    * 多路知识检索
+    * 个人知识问答
+    * 个人风格回复
+    * 证据和引用验证
+    * 用户反馈机制
+    交付：可用的个人数字分身
+* 第 9～10 周：决策和业务集成
+    * Decision Engine
+    * Policy Engine
+    * 审批流程
+    * 业务系统 Adapter
+    * 决策记录与审计
+    * 完整评估测试
+    交付：可参与工作流的数字分身
+
+这是一个建议排期，不是对开发工时的保证。特别是微信、邮件和第三方系统接入，取决于实际接口和数据导出条件。
+
+12.1 建议的开发人员配置
+
+如果采用一个小型研发团队：
+
+角色	人数	主要职责
+AI / Agent 工程师	1	RAGFlow、LangGraph、模型
+后端工程师	1	FastAPI、数据库、知识服务
+数据 / 知识工程师	1	本体、蒸馏、数据质量
+前端工程师	1	管理工作台、问答、审核
+产品 / 测试	0.5～1	场景设计、测试和验收
+
+如果是单人开发，建议先完成数据接入、知识蒸馏、个人知识问答，再增加本体和决策模块。不要同时推进全部模块。
+
+12.2 每个迭代的验收标准
+
+阶段	必须通过的验收
+数据接入	重复同步不产生重复知识
+知识蒸馏	每条已发布知识可追溯证据
+本体构建	实体消歧、类型映射和冲突处理正常
+认知模型	每个稳定偏好有证据和适用范围
+问答	事实回答有来源，证据不足时能拒答
+个人回复	不擅自增加承诺或个人立场
+决策	能识别缺失证据和规则冲突
+工作流	未授权动作无法执行
+安全	通过越权、重复执行、敏感信息泄露测试
+
+十三、MVP 的测试数据和评估体系
+
+我建议第一阶段就建立一份个人知识基准数据集。
+
+不要等系统开发完才做评估。
+
+建议准备：
+
+数据集	建议规模	用途
+个人历史对话	500～1000 条	观点和经验抽取
+文档	100～300 份	文档解析和知识抽取
+邮件 / 会议记录	100～300 条	事件和关系抽取
+个人知识问答	100～200 题	QA 评估
+个人偏好判断	50～100 题	认知模型评估
+历史决策案例	30～50 个	决策模拟评估
+
+以上是测试集建设目标，不代表必须准备这么多数据才能启动开发。
+
+评估指标：
+
+指标	首期建议目标
+知识证据可追溯率	100%
+关键事实抽取准确率	≥95%
+实体消歧准确率	≥95%
+个人问答有依据比例	≥95%
+个人回复事实错误率	≤2%
+高风险越权执行	0
+未经确认自动执行	0
+
+对于个人决策一致率，我不建议直接设定一个未经验证的统一目标。先建立历史决策基准，再按审批、项目管理、技术选型等不同场景分别评估。
+
+此外，测试集要区分训练、调试和最终验收数据，避免用同一批案例反复优化 Prompt 后再用它们证明效果。
+
+十四、首版产品界面设计
+
+建议前端只建设六个核心工作区，避免把后台管理系统做得过于复杂。
+
+Personal Twin Console
+
+MVP UI
+
+我的数字分身
+
+基于个人知识和认知模型的智能助手
+
+你可以问我：
+
+* 我过去做过哪些项目？
+* 我对这个方案怎么看？
+* 帮我回复这封邮件
+* 帮我判断这个审批是否合理
+    输入问题或工作任务……
+
+知识中心
+
+来源、文档、事实、证据
+
+本体中心
+
+实体、关系、版本
+
+认知中心
+
+偏好、观点、决策模式
+
+决策中心
+
+决策、待审批、执行记录
+
+蒸馏任务中心
+
+待审核知识
+
+12
+
+本体扩展建议
+
+3
+
+待确认认知
+
+5
+
+待审批决策
+
+2
+
+示意界面，数字仅为布局演示。
+
+这六个工作区能够覆盖首期最重要的用户操作：
+
+* 查看知识从哪里来。
+* 查看模型认为你具有什么认知。
+* 审核自动蒸馏结果。
+* 与数字分身交流。
+* 审批数字分身的决策建议。
+* 查看历史执行记录。
+
+十五、最终工程决策：哪些现在做，哪些以后做
+
+为了防止项目不断扩张，我建议冻结第一版技术范围。
+
+技术或能力	MVP	后续
+RAGFlow 1.0		持续升级
+FastAPI		—
+LangGraph		—
+PostgreSQL + pgvector		—
+MinIO		—
+Celery + Redis		—
+LinkML		—
+Neo4j	暂缓	复杂图查询
+Qdrant	暂缓	独立向量服务
+Temporal	暂缓	复杂长流程
+OPA	暂缓	复杂授权策略
+模型微调	暂缓	有高质量样本后评估
+自动决策执行	禁止	分场景授权
+
+RAGFlow 官方文档中，Dataset Chat 适合知识问答，Agent Workflow 适合条件分支、工具调用和多步骤处理。我们的方案选择 LangGraph 作为数字分身整体任务编排器，RAGFlow 提供知识处理和检索能力，这样可以避免两个 Agent 系统争夺业务流程控制权。RAGFlow +1
+
+我对这个项目还有一个重要建议
+
+不要把 MVP 的最终验收定义成：
+
+系统能够导入个人资料，并且可以聊天。
+
+应该定义成下面这个完整业务闭环：
+
+MVP 最终验收场景
+
+场景：让数字分身模拟本人参与一次项目审批
+
+* 从历史对话、邮件、文档中提取个人知识。
+* 识别本人过去的项目经历、技术偏好和决策原则。
+* 自动构建对应的个人本体和认知模型。
+* 接收一个新的项目审批请求。
+* 检索个人知识和类似历史决策。
+* 根据个人认知与业务规则给出审批建议。
+* 展示判断依据、证据、风险和不确定性。
+* 由本人确认、修改或否决建议。
+* 记录真实决策与模型建议之间的差异。
+* 将反馈用于下一轮个人认知模型优化。
+
+这才是一个真正可验收的个人数字分身 MVP
+
+如果这个闭环能稳定运行，就证明整个系统已经不只是个人知识库，而是初步具备了个人知识理解、个人认知模拟和工作流决策能力。
+
+十六、接下来建议进入实际开发
+
+我建议按照以下顺序启动：
+
+* 先完成 Sprint 1： 项目脚手架、Docker Compose、PostgreSQL、MinIO、RAGFlow 1.0、vLLM。
+* 再完成 Sprint 2： Claim / Evidence 数据模型、知识蒸馏和个人本体。
+* 随后完成 Sprint 3： 个人认知、问答和个人风格回复。
+* 最后完成 Sprint 4： Decision Agent、人工审批和工作流集成。
+
+我特别建议先不要开发自动执行能力。先让数字分身在历史决策案例上进行影子测试：它给出建议，但不影响真实业务；等一致性、证据质量和安全指标达标，再逐个开放执行动作。
+
+有三份工程文档应该优先固化：
+
+* Architecture Decision Records：技术架构决策和组件边界。
+* Knowledge & Ontology Specification：知识模型、本体和蒸馏规范。
+* Decision & Authorization Specification：决策协议、人工审批和自动执行授权规范。
+
+这三份文档比先写大量代码更重要，它们能避免后续不同开发模块出现数据模型和业务逻辑冲突。
+
+官方技术参考：
+
+* RAGFlow 1.0.0 Release⁠￼
+* RAGFlow 1.0 文档⁠￼
+* LangGraph⁠￼
+* LinkML⁠￼
+* pgvector⁠￼
+
+如果进入实际实施，我建议每周做一次工程进度和架构风险复核，检查知识质量、模块完成度和决策安全性。
+
+🛠️
+
+每周复核数字分身 MVP 进度
+
+轻点设置
+
+下一步最合理的开发起点：Sprint 1——生成完整可运行的 Monorepo 工程骨架、Docker Compose 部署配置、环境变量模板和数据库初始化脚本。

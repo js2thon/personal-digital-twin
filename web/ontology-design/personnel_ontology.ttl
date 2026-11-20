@@ -1,0 +1,230 @@
+@prefix : <http://example.org/hr/personnel#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+#################################################################
+# Ontology Metadata
+#################################################################
+<http://example.org/hr/personnel>
+    a owl:Ontology ;
+    dc:title "人员基本信息本体"@zh ;
+    dc:title "Personnel Basic Information Ontology"@en ;
+    dc:description "基于人员基本信息字段定义构建的组织人事领域本体，支持多级部门层级、员工信息、直线主管与部门负责人关系建模。"@zh ;
+    dc:description "Ontology for organizational personnel information based on the given field schema, supporting multi-level department hierarchy, employee data, line managers and department heads."@en ;
+    owl:versionInfo "1.0.0" ;
+    dc:source "人员基本信息.json" .
+
+#################################################################
+# Classes
+#################################################################
+
+### 核心类
+:Employee a owl:Class ;
+    rdfs:label "员工"@zh , "Employee"@en ;
+    rdfs:comment "组织中的人员/员工实体"@zh .
+
+:Department a owl:Class ;
+    rdfs:label "部门"@zh , "Department"@en ;
+    rdfs:comment "组织中的部门实体，支持多级层级结构"@zh .
+
+:OrganizationalUnit a owl:Class ;
+    rdfs:label "组织单元"@zh , "Organizational Unit"@en ;
+    rdfs:comment "部门的抽象父类"@zh ;
+    owl:equivalentClass :Department .
+
+### 部门层级辅助类（可选，用于明确层级语义）
+:DepartmentLevel1 a owl:Class ;
+    rdfs:subClassOf :Department ;
+    rdfs:label "一级部门"@zh , "Level-1 Department"@en .
+
+:DepartmentLevel2 a owl:Class ;
+    rdfs:subClassOf :Department ;
+    rdfs:label "二级部门"@zh , "Level-2 Department"@en .
+
+:DepartmentLevel3 a owl:Class ;
+    rdfs:subClassOf :Department ;
+    rdfs:label "三级部门"@zh , "Level-3 Department"@en .
+
+:DepartmentLevel4 a owl:Class ;
+    rdfs:subClassOf :Department ;
+    rdfs:label "四级部门"@zh , "Level-4 Department"@en .
+
+:DepartmentLevel5 a owl:Class ;
+    rdfs:subClassOf :Department ;
+    rdfs:label "五级部门"@zh , "Level-5 Department"@en .
+
+:DepartmentLevel6 a owl:Class ;
+    rdfs:subClassOf :Department ;
+    rdfs:label "六级部门"@zh , "Level-6 Department"@en .
+
+:DepartmentLevel7 a owl:Class ;
+    rdfs:subClassOf :Department ;
+    rdfs:label "七级部门"@zh , "Level-7 Department"@en .
+
+#################################################################
+# Object Properties
+#################################################################
+
+### 组织关系
+:belongsToDepartment a owl:ObjectProperty ;
+    rdfs:domain :Employee ;
+    rdfs:range :Department ;
+    rdfs:label "所属部门"@zh , "belongs to department"@en ;
+    rdfs:comment "员工所属的直接部门（对应字段 dept_cn_name）"@zh .
+
+:hasParentDepartment a owl:ObjectProperty , owl:TransitiveProperty ;
+    rdfs:domain :Department ;
+    rdfs:range :Department ;
+    rdfs:label "上级部门"@zh , "has parent department"@en ;
+    rdfs:comment "部门之间的层级包含关系，支持多级部门树"@zh .
+
+:hasDepartmentManager a owl:ObjectProperty ;
+    rdfs:domain :Department ;
+    rdfs:range :Employee ;
+    rdfs:label "部门负责人"@zh , "has department manager"@en ;
+    rdfs:comment "部门的负责人（对应字段 dept_manager_name）"@zh .
+
+:hasLineManager a owl:ObjectProperty , owl:IrreflexiveProperty ;
+    rdfs:domain :Employee ;
+    rdfs:range :Employee ;
+    rdfs:label "直线主管"@zh , "has line manager"@en ;
+    rdfs:comment "员工的直线上级主管（对应字段 line_rep_name）。irreflexive：自己不是自己的主管——HR 导出常把链条顶端的 reports_to 填成本人，这类自环不得落图"@zh .
+
+:manages a owl:ObjectProperty ;
+    owl:inverseOf :hasLineManager ;
+    rdfs:label "管理"@zh , "manages"@en .
+
+:isManagerOfDepartment a owl:ObjectProperty ;
+    owl:inverseOf :hasDepartmentManager ;
+    rdfs:label "负责部门"@zh , "is manager of department"@en .
+
+#################################################################
+# Data Properties
+#################################################################
+
+### 员工基础属性
+:employeeId a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain :Employee ;
+    rdfs:range xsd:string ;
+    rdfs:label "员工ID"@zh , "Employee ID"@en ;
+    rdfs:comment "员工唯一标识（对应字段 emplid）"@zh .
+
+:employeeName a owl:DatatypeProperty ;
+    rdfs:domain :Employee ;
+    rdfs:range xsd:string ;
+    rdfs:label "员工姓名"@zh , "Employee Name"@en ;
+    rdfs:comment "员工姓名（对应字段 emp_name）"@zh .
+
+:hrStatus a owl:DatatypeProperty ;
+    rdfs:domain :Employee ;
+    rdfs:range xsd:string ;
+    rdfs:label "在职状态"@zh , "HR Status"@en ;
+    rdfs:comment "员工在职状态（对应字段 hr_status，如 A=在职、I=离职等）"@zh .
+
+### 部门名称属性（扁平字段映射，便于直接从源数据导入）
+:departmentName a owl:DatatypeProperty ;
+    rdfs:domain :Department ;
+    rdfs:range xsd:string ;
+    rdfs:label "部门名称"@zh , "Department Name"@en ;
+    rdfs:comment "部门中文名称（对应字段 dept_cn_name）"@zh .
+
+:deptCnNameLv1 a owl:DatatypeProperty ;
+    rdfs:domain :Employee ;
+    rdfs:range xsd:string ;
+    rdfs:label "一级部门名称"@zh , "Level-1 Department Name"@en ;
+    rdfs:comment "员工所属一级部门名称（对应字段 dept_cn_name_lv1）"@zh .
+
+:deptCnNameLv2 a owl:DatatypeProperty ;
+    rdfs:domain :Employee ;
+    rdfs:range xsd:string ;
+    rdfs:label "二级部门名称"@zh , "Level-2 Department Name"@en ;
+    rdfs:comment "员工所属二级部门名称（对应字段 dept_cn_name_lv2）"@zh .
+
+:deptCnNameLv3 a owl:DatatypeProperty ;
+    rdfs:domain :Employee ;
+    rdfs:range xsd:string ;
+    rdfs:label "三级部门名称"@zh , "Level-3 Department Name"@en ;
+    rdfs:comment "员工所属三级部门名称（对应字段 dept_cn_name_lv3）"@zh .
+
+:deptCnNameLv4 a owl:DatatypeProperty ;
+    rdfs:domain :Employee ;
+    rdfs:range xsd:string ;
+    rdfs:label "四级部门名称"@zh , "Level-4 Department Name"@en ;
+    rdfs:comment "员工所属四级部门名称（对应字段 dept_cn_name_lv4）"@zh .
+
+:deptCnNameLv5 a owl:DatatypeProperty ;
+    rdfs:domain :Employee ;
+    rdfs:range xsd:string ;
+    rdfs:label "五级部门名称"@zh , "Level-5 Department Name"@en ;
+    rdfs:comment "员工所属五级部门名称（对应字段 dept_cn_name_lv5）"@zh .
+
+:deptCnNameLv6 a owl:DatatypeProperty ;
+    rdfs:domain :Employee ;
+    rdfs:range xsd:string ;
+    rdfs:label "六级部门名称"@zh , "Level-6 Department Name"@en ;
+    rdfs:comment "员工所属六级部门名称（对应字段 dept_cn_name_lv6）"@zh .
+
+:deptCnNameLv7 a owl:DatatypeProperty ;
+    rdfs:domain :Employee ;
+    rdfs:range xsd:string ;
+    rdfs:label "七级部门名称"@zh , "Level-7 Department Name"@en ;
+    rdfs:comment "员工所属七级部门名称（对应字段 dept_cn_name_lv7）"@zh .
+
+### 负责人姓名（字符串形式，便于直接映射源数据）
+:departmentManagerName a owl:DatatypeProperty ;
+    rdfs:domain :Department ;
+    rdfs:range xsd:string ;
+    rdfs:label "部门负责人姓名"@zh , "Department Manager Name"@en ;
+    rdfs:comment "部门负责人姓名字符串（对应字段 dept_manager_name）"@zh .
+
+:lineManagerName a owl:DatatypeProperty ;
+    rdfs:domain :Employee ;
+    rdfs:range xsd:string ;
+    rdfs:label "直线主管姓名"@zh , "Line Manager Name"@en ;
+    rdfs:comment "直线主管姓名字符串（对应字段 line_rep_name）"@zh .
+
+#################################################################
+# Individuals / Example (可选示例)
+#################################################################
+
+# 示例员工与部门（注释掉，实际使用时可根据数据实例化）
+# :emp_001 a :Employee ;
+#     :employeeId "E001" ;
+#     :employeeName "张三" ;
+#     :hrStatus "A" ;
+#     :deptCnNameLv1 "集团总部" ;
+#     :deptCnNameLv2 "技术中心" ;
+#     :deptCnNameLv3 "研发部" ;
+#     :lineManagerName "李四" .
+#
+# :dept_tech a :Department ;
+#     :departmentName "技术中心" ;
+#     :departmentManagerName "王五" .
+
+#################################################################
+# Annotation / Mapping Notes
+#################################################################
+
+:fieldMapping a owl:AnnotationProperty ;
+    rdfs:label "字段映射说明"@zh .
+
+:Employee rdfs:comment """
+字段映射关系（源JSON → 本体）：
+- emplid            → :employeeId
+- emp_name          → :employeeName
+- hr_status         → :hrStatus
+- dept_cn_name      → :belongsToDepartment / :departmentName
+- dept_cn_name_lv1  → :deptCnNameLv1
+- dept_cn_name_lv2  → :deptCnNameLv2
+- dept_cn_name_lv3  → :deptCnNameLv3
+- dept_cn_name_lv4  → :deptCnNameLv4
+- dept_cn_name_lv5  → :deptCnNameLv5
+- dept_cn_name_lv6  → :deptCnNameLv6
+- dept_cn_name_lv7  → :deptCnNameLv7
+- dept_manager_name → :hasDepartmentManager / :departmentManagerName
+- line_rep_name     → :hasLineManager / :lineManagerName
+"""@zh .

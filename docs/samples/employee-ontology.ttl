@@ -1,0 +1,207 @@
+@prefix emp:  <http://example.org/ontology/employee#> .
+@prefix :     <http://example.org/ontology/employee#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+
+# ============================================================
+# Ontology header
+# ============================================================
+<http://example.org/ontology/employee> a owl:Ontology ;
+    rdfs:label "员工基本信息本体"@zh , "Employee Basic Information Ontology"@en ;
+    rdfs:comment "用于描述员工基本信息的OWL本体，包含人员、部门、职位等核心概念及其属性关系。"@zh ,
+                 "An OWL ontology for modeling basic employee information including person, department, position and related properties."@en ;
+    owl:versionInfo "1.0" .
+
+# ============================================================
+# Classes
+# ============================================================
+emp:Employee a owl:Class ;
+    rdfs:label "员工"@zh , "Employee"@en ;
+    rdfs:comment "公司或组织中的正式或非正式员工。"@zh ;
+    rdfs:subClassOf foaf:Person .
+
+emp:Department a owl:Class ;
+    rdfs:label "部门"@zh , "Department"@en ;
+    rdfs:comment "组织中的职能部门或业务单元。"@zh .
+
+emp:Position a owl:Class ;
+    rdfs:label "职位"@zh , "Position"@en ;
+    rdfs:comment "员工所担任的岗位或职务。"@zh .
+
+emp:Company a owl:Class ;
+    rdfs:label "公司"@zh , "Company"@en ;
+    rdfs:comment "雇佣员工的组织或企业实体。"@zh .
+
+emp:Gender a owl:Class ;
+    rdfs:label "性别"@zh , "Gender"@en ;
+    owl:oneOf ( emp:Male emp:Female emp:Other ) .
+
+emp:EmploymentStatus a owl:Class ;
+    rdfs:label "雇佣状态"@zh , "Employment Status"@en ;
+    owl:oneOf ( emp:Active emp:Resigned emp:OnLeave emp:Retired ) .
+
+# ============================================================
+# Individuals (closed vocabularies)
+# ============================================================
+emp:Male  a owl:NamedIndividual , emp:Gender ; rdfs:label "男"@zh , "Male"@en .
+emp:Female a owl:NamedIndividual , emp:Gender ; rdfs:label "女"@zh , "Female"@en .
+emp:Other a owl:NamedIndividual , emp:Gender ; rdfs:label "其他"@zh , "Other"@en .
+
+emp:Active   a owl:NamedIndividual , emp:EmploymentStatus ; rdfs:label "在职"@zh , "Active"@en .
+emp:Resigned a owl:NamedIndividual , emp:EmploymentStatus ; rdfs:label "离职"@zh , "Resigned"@en .
+emp:OnLeave  a owl:NamedIndividual , emp:EmploymentStatus ; rdfs:label "休假"@zh , "On Leave"@en .
+emp:Retired  a owl:NamedIndividual , emp:EmploymentStatus ; rdfs:label "退休"@zh , "Retired"@en .
+
+# ============================================================
+# Object properties
+# ============================================================
+emp:belongsToDepartment a owl:ObjectProperty ;
+    rdfs:label "所属部门"@zh , "belongs to department"@en ;
+    rdfs:domain emp:Employee ; rdfs:range emp:Department ;
+    rdfs:comment "员工所属的部门。"@zh .
+
+emp:holdsPosition a owl:ObjectProperty ;
+    rdfs:label "担任职位"@zh , "holds position"@en ;
+    rdfs:domain emp:Employee ; rdfs:range emp:Position ;
+    rdfs:comment "员工当前担任的职位。"@zh .
+
+emp:employedBy a owl:ObjectProperty ;
+    rdfs:label "受雇于"@zh , "employed by"@en ;
+    rdfs:domain emp:Employee ; rdfs:range emp:Company ;
+    rdfs:comment "员工所属的公司。"@zh .
+
+emp:reportsTo a owl:ObjectProperty ;
+    rdfs:label "汇报给"@zh , "reports to"@en ;
+    rdfs:domain emp:Employee ; rdfs:range emp:Employee ;
+    rdfs:comment "员工的直接上级。"@zh .
+
+emp:hasGender a owl:ObjectProperty ;
+    rdfs:label "性别"@zh , "has gender"@en ;
+    rdfs:domain emp:Employee ; rdfs:range emp:Gender .
+
+emp:hasEmploymentStatus a owl:ObjectProperty ;
+    rdfs:label "雇佣状态"@zh , "has employment status"@en ;
+    rdfs:domain emp:Employee ; rdfs:range emp:EmploymentStatus .
+
+emp:parentDepartment a owl:ObjectProperty ;
+    rdfs:label "上级部门"@zh , "parent department"@en ;
+    rdfs:domain emp:Department ; rdfs:range emp:Department ;
+    rdfs:comment "部门的上级组织单元。"@zh .
+
+# ============================================================
+# Datatype properties
+# ============================================================
+emp:employeeID a owl:DatatypeProperty ;
+    rdfs:label "工号"@zh , "Employee ID"@en ;
+    rdfs:domain emp:Employee ; rdfs:range xsd:string ;
+    rdfs:comment "员工唯一工号。"@zh .
+
+emp:fullName a owl:DatatypeProperty ;
+    rdfs:label "姓名"@zh , "Full Name"@en ;
+    rdfs:domain emp:Employee ; rdfs:range xsd:string .
+
+emp:idNumber a owl:DatatypeProperty ;
+    rdfs:label "身份证号"@zh , "ID Number"@en ;
+    rdfs:domain emp:Employee ; rdfs:range xsd:string ;
+    rdfs:comment "身份证号码（敏感信息，实际使用时需注意隐私保护）。"@zh .
+
+emp:birthDate a owl:DatatypeProperty ;
+    rdfs:label "出生日期"@zh , "Birth Date"@en ;
+    rdfs:domain emp:Employee ; rdfs:range xsd:date .
+
+emp:hireDate a owl:DatatypeProperty ;
+    rdfs:label "入职日期"@zh , "Hire Date"@en ;
+    rdfs:domain emp:Employee ; rdfs:range xsd:date .
+
+emp:resignationDate a owl:DatatypeProperty ;
+    rdfs:label "离职日期"@zh , "Resignation Date"@en ;
+    rdfs:domain emp:Employee ; rdfs:range xsd:date .
+
+emp:email a owl:DatatypeProperty ;
+    rdfs:label "电子邮箱"@zh , "Email"@en ;
+    rdfs:domain emp:Employee ; rdfs:range xsd:string .
+
+emp:phone a owl:DatatypeProperty ;
+    rdfs:label "手机号码"@zh , "Phone"@en ;
+    rdfs:domain emp:Employee ; rdfs:range xsd:string .
+
+emp:officePhone a owl:DatatypeProperty ;
+    rdfs:label "办公电话"@zh , "Office Phone"@en ;
+    rdfs:domain emp:Employee ; rdfs:range xsd:string .
+
+emp:address a owl:DatatypeProperty ;
+    rdfs:label "地址"@zh , "Address"@en ;
+    rdfs:domain emp:Employee ; rdfs:range xsd:string .
+
+emp:departmentName a owl:DatatypeProperty ;
+    rdfs:label "部门名称"@zh , "Department Name"@en ;
+    rdfs:domain emp:Department ; rdfs:range xsd:string .
+
+emp:departmentCode a owl:DatatypeProperty ;
+    rdfs:label "部门编码"@zh , "Department Code"@en ;
+    rdfs:domain emp:Department ; rdfs:range xsd:string .
+
+emp:positionName a owl:DatatypeProperty ;
+    rdfs:label "职位名称"@zh , "Position Name"@en ;
+    rdfs:domain emp:Position ; rdfs:range xsd:string .
+
+emp:positionLevel a owl:DatatypeProperty ;
+    rdfs:label "职级"@zh , "Position Level"@en ;
+    rdfs:domain emp:Position ; rdfs:range xsd:string ;
+    rdfs:comment "例如：初级、中级、高级、专家等。"@zh .
+
+emp:companyName a owl:DatatypeProperty ;
+    rdfs:label "公司名称"@zh , "Company Name"@en ;
+    rdfs:domain emp:Company ; rdfs:range xsd:string .
+
+# ============================================================
+# ABox — instances
+# ============================================================
+emp:emp001 a emp:Employee ;
+    emp:employeeID "E001" ;
+    emp:fullName "张三" ;
+    emp:hasGender emp:Male ;
+    emp:birthDate "1990-05-15"^^xsd:date ;
+    emp:hireDate "2018-07-01"^^xsd:date ;
+    emp:email "zhangsan@example.com" ;
+    emp:phone "13800138000" ;
+    emp:hasEmploymentStatus emp:Active ;
+    emp:belongsToDepartment emp:dept_tech ;
+    emp:holdsPosition emp:pos_senior_dev ;
+    emp:employedBy emp:comp_example .
+
+emp:emp002 a emp:Employee ;
+    emp:employeeID "E002" ;
+    emp:fullName "李四" ;
+    emp:hasGender emp:Female ;
+    emp:birthDate "1992-11-20"^^xsd:date ;
+    emp:hireDate "2020-03-15"^^xsd:date ;
+    emp:email "lisi@example.com" ;
+    emp:phone "13900139000" ;
+    emp:hasEmploymentStatus emp:Active ;
+    emp:belongsToDepartment emp:dept_hr ;
+    emp:holdsPosition emp:pos_hr_manager ;
+    emp:employedBy emp:comp_example ;
+    emp:reportsTo emp:emp001 .
+
+emp:dept_tech a emp:Department ;
+    emp:departmentName "技术部" ;
+    emp:departmentCode "TECH" .
+
+emp:dept_hr a emp:Department ;
+    emp:departmentName "人力资源部" ;
+    emp:departmentCode "HR" .
+
+emp:pos_senior_dev a emp:Position ;
+    emp:positionName "高级开发工程师" ;
+    emp:positionLevel "高级" .
+
+emp:pos_hr_manager a emp:Position ;
+    emp:positionName "人力资源经理" ;
+    emp:positionLevel "中级" .
+
+emp:comp_example a emp:Company ;
+    emp:companyName "示例科技有限公司" .

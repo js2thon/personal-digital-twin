@@ -1,0 +1,74 @@
+# ============================================================================
+# 可选的演示数据 —— 不属于原本体，仅用于让部分查询（聚合 / 空缺 / 成环 /
+# 部门树 / 重复工号）能显示非空结果。加载方式：
+#     python run.py --with-demo
+# 内容刻意包含 3 处"问题数据"，用来验证第 11~15 条一致性校验真的有效：
+#   1) 周七(emp005) 与 王五(emp003) 工号重复 E003   -> Q13 应能查出
+#   2) 周七 在市场部却汇报给技术部的张三            -> Q11 应能查出
+#   3) pos_data(数据分析师) 无人担任                -> Q16 应能查出
+# ============================================================================
+@prefix emp:  <http://example.org/ontology/employee#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# ---------- 新增部门（含上级部门，用于 Q19） ----------
+emp:dept_rd a emp:Department ;
+    emp:departmentName "研发中心" ;
+    emp:departmentCode "RD" .
+
+emp:dept_tech emp:parentDepartment emp:dept_rd .
+
+emp:dept_mkt a emp:Department ;
+    emp:departmentName "市场部" ;
+    emp:departmentCode "MKT" .
+
+# ---------- 新增职位（pos_data 无人担任） ----------
+emp:pos_dev a emp:Position ;
+    emp:positionName "中级开发工程师" ;
+    emp:positionLevel "中级" .
+
+emp:pos_mkt_mgr a emp:Position ;
+    emp:positionName "市场经理" ;
+    emp:positionLevel "中级" .
+
+emp:pos_data a emp:Position ;
+    emp:positionName "数据分析师" ;
+    emp:positionLevel "初级" .
+
+# ---------- 新增员工 ----------
+emp:emp003 a emp:Employee ;
+    emp:employeeID "E003" ;
+    emp:fullName "王五" ;
+    emp:hasGender emp:Male ;
+    emp:birthDate "1994-02-08"^^xsd:date ;
+    emp:hireDate "2021-09-01"^^xsd:date ;
+    emp:email "wangwu@example.com" ;
+    emp:hasEmploymentStatus emp:Active ;
+    emp:belongsToDepartment emp:dept_tech ;
+    emp:holdsPosition emp:pos_dev ;
+    emp:employedBy emp:comp_example ;
+    emp:reportsTo emp:emp001 .
+
+emp:emp004 a emp:Employee ;
+    emp:employeeID "E004" ;
+    emp:fullName "赵六" ;
+    emp:hasGender emp:Female ;
+    emp:birthDate "1997-12-30"^^xsd:date ;
+    emp:hireDate "2023-04-10"^^xsd:date ;
+    emp:hasEmploymentStatus emp:OnLeave ;
+    emp:belongsToDepartment emp:dept_tech ;
+    emp:holdsPosition emp:pos_senior_dev ;
+    emp:employedBy emp:comp_example ;
+    emp:reportsTo emp:emp003 .
+
+emp:emp005 a emp:Employee ;
+    emp:employeeID "E003" ;          # 故意与王五重复，供 Q13 检测
+    emp:fullName "周七" ;
+    emp:hasGender emp:Female ;
+    emp:birthDate "1988-06-18"^^xsd:date ;
+    emp:hireDate "2015-11-02"^^xsd:date ;
+    emp:resignationDate "2025-06-30"^^xsd:date ;
+    emp:hasEmploymentStatus emp:Resigned ;
+    emp:belongsToDepartment emp:dept_mkt ;   # 跨部门汇报，供 Q11 检测
+    emp:holdsPosition emp:pos_mkt_mgr ;
+    emp:employedBy emp:comp_example ;
+    emp:reportsTo emp:emp001 .
