@@ -35,6 +35,14 @@ def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
     contract = stage("map", lambda: mapper.build_contract(ts.source_id, draft, profiles))
     job["contract"] = contract
     issues = stage("validate", lambda: mapper.validate_contract(contract, draft["schema"], profiles))
+    from app.modules.ontology.semantic.schema_def import validate_business_model
+    business_issues = stage("business_model_validate",
+                            lambda: validate_business_model(draft["schema"]))
+    job["business_model_issues"] = business_issues
+    issues.extend({
+        "level": "error", "code": item["code"],
+        "table": item.get("ref"), "msg": item["message"],
+    } for item in business_issues)
     job["issues"] = issues
     if any(i["level"] == "error" for i in issues) or stop_after in ("map", "validate"):
         job["status"] = "needs_review" if issues else "validated"
