@@ -102,3 +102,4 @@ jobs:
           tests/test_ontology_dataset_preview.py
           tests/test_ontology_mapping_execution.py
           tests/test_database_connector.py
+          tests/test_automodel_discovery_boundary.py
