@@ -258,6 +258,22 @@ def preview_rows(rows: list[dict], mappings: list[dict],
                 "issues": [{"code": "empty_dataset", "message": "数据集没有数据行"}],
                 "execution": "not_executed", "preview": []}
 
+    # A missing source header must not silently become NULL, especially for optional
+    # ontology properties where instance validation may otherwise pass.
+    missing_columns = sorted({
+        str(mapping["source"])
+        for mapping in mappings
+        if any(mapping["source"] not in row for row in rows)
+    })
+    if missing_columns:
+        return {
+            "valid": False, "stage": "source_schema_validation",
+            "issues": [{"code": "missing_source_column",
+                        "message": f"源数据缺少映射字段：{column}", "source": column}
+                       for column in missing_columns],
+            "execution": "not_executed", "preview": [],
+        }
+
     preview, row_errors = [], []
     for row_no, row in enumerate(rows[:max(1, min(int(limit), 100))], start=1):
         grouped: dict[str, dict] = {}
@@ -273,6 +289,7 @@ def preview_rows(rows: list[dict], mappings: list[dict],
             lineage.setdefault(entity, {})[prop] = {
                 "source": source_name, "row": row_no,
                 "column": mapping["source"], "raw_value": raw,
+                "transformed_value": value,
             }
             if error:
                 conversion_errors.append({"property": prop, "message": error})
