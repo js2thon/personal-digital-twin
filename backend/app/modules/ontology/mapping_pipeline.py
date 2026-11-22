@@ -333,24 +333,33 @@ def read_tabular_file(file_name: str, content: bytes,
         except csv.Error:
             dialect = csv.excel
         reader = csv.DictReader(io.StringIO(decoded), dialect=dialect)
-        headers = [str(x or "").strip() for x in (reader.fieldnames or [])]
+        original_headers = list(reader.fieldnames or [])
+        headers = [str(x or "").strip() for x in original_headers]
         if not headers or any(not h for h in headers):
             raise ValueError("CSV 首行必须包含非空字段名")
-        rows = [{headers[i]: value for i, value in enumerate(row.values())
-                 if i < len(headers)} for row in reader]
+        if len(set(headers)) != len(headers):
+            raise ValueError("CSV 字段名重复，请先重命名重复列")
+        rows = [{headers[i]: row.get(original_headers[i]) for i in range(len(headers))}
+                for row in reader]
     elif suffix in {".xlsx", ".xlsm"}:
         try:
             from openpyxl import load_workbook
             workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         except Exception as exc:
             raise ValueError(f"Excel 文件解析失败：{exc}") from exc
-        sheet = workbook[sheet_name] if sheet_name and sheet_name in workbook.sheetnames else workbook.active
+        if sheet_name and sheet_name not in workbook.sheetnames:
+            workbook.close()
+            raise ValueError(f"工作表不存在：{sheet_name}")
+        sheet = workbook[sheet_name] if sheet_name else workbook.active
         iterator = sheet.iter_rows(values_only=True)
         header_row = next(iterator, None)
         headers = [str(x or "").strip() for x in (header_row or [])]
         if not headers or any(not h for h in headers):
             workbook.close()
             raise ValueError("Excel 首行必须包含非空字段名")
+        if len(set(headers)) != len(headers):
+            workbook.close()
+            raise ValueError("Excel 字段名重复，请先重命名重复列")
         rows = [{headers[i]: value for i, value in enumerate(values or ())
                  if i < len(headers)} for values in iterator]
         workbook.close()
