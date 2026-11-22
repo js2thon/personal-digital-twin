@@ -140,7 +140,7 @@ def inspect_database(*, profile_name: str, tenant_id: str,
         raise PermissionError("请求的 schema 不在白名单中")
     if requested:
         for table in requested:
-            if not any(t == table and (s is None or s == schema_name) for s, t in allowed_tables):
+            if not any(t == table and (s is None or schema_name is None or s == schema_name) for s, t in allowed_tables):
                 raise PermissionError(f"表不在白名单中：{table}")
 
     engine = _engine(url)
