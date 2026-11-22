@@ -30,7 +30,7 @@ All endpoints are under `/api/v1` and inherit the global identity/tenant middlew
 - `GET /ontology/metrics/catalog`
 - `POST /ontology/metrics/discover` body: `{ "spec": { ... } }`
 - `POST /ontology/metrics/validate` body: `{ "items": [ ... ] }`
-- `POST /ontology/metrics/preview` body: `{ "items": [ ... ], "data": { "entities": { ... } } }`
+- `POST /ontology/metrics/preview` body: `{ "items": [ ... ], "data": { "entities": { ... } } }`\n- `POST /ontology/metrics/preview-from-store` body: `{ "metric_ids": [ ... ], "limit": 5000 }` (reads tenant-scoped semantic instances)
 - `GET /ontology/metrics?metric_id=...`
 - `POST /ontology/metrics` body: `{ "definition": { ... }, "ontology_version": "..." }`
 - `POST /ontology/metrics/{metric_id}/approve`
