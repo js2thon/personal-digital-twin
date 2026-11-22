@@ -90,9 +90,76 @@ def _audit(job: dict, action: str, actor: str, **details) -> dict:
     return event
 
 
+def _rename_property_refs(schema: dict, old: str, new: str) -> None:
+    attrs = schema.setdefault("attributes", {})
+    if old in attrs:
+        attrs[new] = attrs.pop(old)
+    for obj in (schema.get("entity_types") or {}).values():
+        for item in obj.get("attributes") or []:
+            if item.get("name") == old:
+                item["name"] = new
+        if obj.get("title_property") == old:
+            obj["title_property"] = new
+        for rule in obj.get("identity_rules") or []:
+            rule["key_properties"] = [new if x == old else x for x in rule.get("key_properties", [])]
+        for binding in obj.get("backing_sources") or []:
+            binding["property_mappings"] = {
+                col: (new if prop == old else prop)
+                for col, prop in (binding.get("property_mappings") or {}).items()
+            }
+    interfaces = schema.get("interfaces") or {}
+    values = interfaces.values() if isinstance(interfaces, dict) else interfaces
+    for interface in values:
+        interface["properties"] = [new if x == old else x for x in interface.get("properties", [])]
+    for relation in (schema.get("relation_types") or {}).values():
+        for item in relation.get("properties") or []:
+            if item.get("name") == old:
+                item["name"] = new
+
+
+def _remove_property_refs(schema: dict, name: str) -> None:
+    schema.setdefault("attributes", {}).pop(name, None)
+    for obj in (schema.get("entity_types") or {}).values():
+        obj["attributes"] = [x for x in (obj.get("attributes") or []) if x.get("name") != name]
+        if obj.get("title_property") == name:
+            obj["title_property"] = ""
+        obj["identity_rules"] = [
+            {**rule, "key_properties": [x for x in rule.get("key_properties", []) if x != name]}
+            for rule in (obj.get("identity_rules") or [])
+        ]
+        obj["identity_rules"] = [x for x in obj["identity_rules"] if x["key_properties"]]
+        for binding in obj.get("backing_sources") or []:
+            binding["property_mappings"] = {
+                col: prop for col, prop in (binding.get("property_mappings") or {}).items()
+                if prop != name
+            }
+    interfaces = schema.get("interfaces") or {}
+    values = interfaces.values() if isinstance(interfaces, dict) else interfaces
+    for interface in values:
+        interface["properties"] = [x for x in interface.get("properties", []) if x != name]
+    for relation in (schema.get("relation_types") or {}).values():
+        relation["properties"] = [x for x in (relation.get("properties") or []) if x.get("name") != name]
+
+
+def _rename_object_refs(schema: dict, old: str, new: str) -> None:
+    for obj in (schema.get("entity_types") or {}).values():
+        if obj.get("parent") == old:
+            obj["parent"] = new
+    for relation in (schema.get("relation_types") or {}).values():
+        for key in ("source", "target"):
+            if relation.get(key) == old:
+                relation[key] = new
+        for key in ("source_types", "target_types"):
+            if key in relation:
+                relation[key] = [new if x == old else x for x in relation[key]]
+    for attr in (schema.get("attributes") or {}).values():
+        if attr.get("owner") == old:
+            attr["owner"] = new
+
+
 def apply_review(job: dict, decisions: list[dict], actor: str = "reviewer",
                  acknowledge_warnings: bool = False) -> dict:
-    """审核候选：accept/reject/rename/retarget；严格校验动作并记录不可丢失的变更审计。"""
+    """审核变更统一同步 Schema 引用；所有操作保留前后快照与审计。"""
     schema = job["draft"]["schema"]
     sections = {"class": "entity_types", "relation": "relation_types", "attribute": "attributes"}
     allowed = {"accept", "reject", "rename", "retarget"}
@@ -108,30 +175,35 @@ def apply_review(job: dict, decisions: list[dict], actor: str = "reviewer",
         before = copy.deepcopy(section[ref])
         if decision.get("label"):
             section[ref]["label"] = decision["label"]
+        ref_after = ref
         if action == "reject":
             section.pop(ref)
             if kind == "class":
                 job["draft"]["class_map"] = {t: c for t, c in job["draft"]["class_map"].items() if c != ref}
                 for key in [k for k, v in schema["relation_types"].items()
-                            if ref in (v.get("source"), v.get("target"))]:
+                            if ref in (v.get("source"), v.get("target"))
+                            or ref in (v.get("source_types") or []) or ref in (v.get("target_types") or [])]:
                     schema["relation_types"].pop(key)
                 for key in [k for k, v in schema["attributes"].items() if v.get("owner") == ref]:
-                    schema["attributes"].pop(key)
+                    _remove_property_refs(schema, key)
+                for obj in (schema.get("entity_types") or {}).values():
+                    if obj.get("parent") == ref:
+                        obj["parent"] = ""
+            elif kind == "attribute":
+                _remove_property_refs(schema, ref)
         elif action == "rename":
             new_name = decision.get("new_name")
             if not isinstance(new_name, str) or not new_name.strip() or new_name in section:
                 raise ValueError("rename 必须提供非空且未占用的 new_name")
             new_name = new_name.strip()
             section[new_name] = section.pop(ref)
+            ref_after = new_name
             if kind == "class":
                 job["draft"]["class_map"] = {t: (new_name if c == ref else c)
                                              for t, c in job["draft"]["class_map"].items()}
-                for relation in schema["relation_types"].values():
-                    relation["source"] = new_name if relation.get("source") == ref else relation.get("source")
-                    relation["target"] = new_name if relation.get("target") == ref else relation.get("target")
-                for attr in schema["attributes"].values():
-                    attr["owner"] = new_name if attr.get("owner") == ref else attr.get("owner")
-            ref_after = new_name
+                _rename_object_refs(schema, ref, new_name)
+            elif kind == "attribute":
+                _rename_property_refs(schema, ref, new_name)
         elif action == "retarget":
             if kind != "relation":
                 raise ValueError("retarget 当前仅支持关系类型")
@@ -140,7 +212,6 @@ def apply_review(job: dict, decisions: list[dict], actor: str = "reviewer",
             if new_source not in schema["entity_types"] or new_target not in schema["entity_types"]:
                 raise ValueError("关系 retarget 的 source/target 必须是已定义对象类型")
             section[ref]["source"], section[ref]["target"] = new_source, new_target
-        ref_after = decision.get("new_name") if action == "rename" else ref
         after = copy.deepcopy(section.get(ref_after)) if action != "reject" else None
         _audit(job, action, actor, target_type=kind, target_ref=ref,
                target_ref_after=ref_after, before=before, after=after,
@@ -161,6 +232,16 @@ def apply_review(job: dict, decisions: list[dict], actor: str = "reviewer",
     job["release_gate"] = release_gate.evaluate(job)
     return job
 
+
+def acknowledge_standards_warnings(job: dict, actor: str = "reviewer") -> dict:
+    """审核人确认当前规范报告中的警告；重建后必须重新确认。"""
+    warnings = [x for x in (job.get("standards_report") or {}).get("findings", [])
+                if x.get("severity") == "warning"]
+    job["standards_review_acknowledged"] = True
+    _audit(job, "acknowledge_standards_warnings", actor,
+           finding_codes=[x.get("code") for x in warnings])
+    job["release_gate"] = release_gate.evaluate(job)
+    return job
 
 def rebuild(job: dict, ts: TableSet) -> dict:
     """审核后重建契约、执行源字段验证、预览物化和指标生成。"""
