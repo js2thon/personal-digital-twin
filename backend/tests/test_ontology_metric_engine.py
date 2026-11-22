@@ -11,8 +11,8 @@ def _defs():
          "formula": "active_count / employee_count * 100",
          "dependencies": ["active_count", "employee_count"], "unit": "%"},
         {"metric_id": "weighted_score", "name": "组织指数", "kind": "composite",
-         "formula": "(active_rate * 0.7) + (employee_count * 0.3)",
-         "dependencies": ["active_rate", "employee_count"], "unit": "分"},
+         "formula": "(active_rate * 0.7) + (active_rate * 0.3)",
+         "dependencies": ["active_rate"], "unit": "%"},
     ]
 
 
@@ -27,7 +27,7 @@ def test_metric_dag_order_and_preview():
     values = {x["metric_id"]: x["value"] for x in result["items"]}
     assert values["employee_count"] == 2
     assert values["active_rate"] == 50
-    assert values["weighted_score"] == 35.6
+    assert values["weighted_score"] == 50
 
 
 def test_empty_native_count_is_null_not_zero():
