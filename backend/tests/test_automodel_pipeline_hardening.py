@@ -91,3 +91,21 @@ def test_release_gate_requires_explicit_acknowledgement_for_modeling_warnings():
     report = release_gate.evaluate(job)
     assert report["state"] == "READY"
     assert report["ready"]
+
+
+def test_partial_publish_retry_recovers_existing_version_without_republishing(monkeypatch):
+    from app.modules.ontology.automodel import publish
+
+    job = _valid_job()
+    job["status"] = "publish_partial_failure"
+    job["schema_version"] = "v2.0.1+hr.123456"
+    monkeypatch.setattr(release_gate, "assert_publishable", lambda *a, **k: {"ready": True})
+    monkeypatch.setattr(publish, "recover_partial_publish", lambda *a, **k: {
+        "published": True, "schema_version": "v2.0.1+hr.123456", "recovered": True,
+    })
+    monkeypatch.setattr(publish, "publish_schema",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not republish")))
+    result = pipeline.approve_and_publish(job, "owner", tenant="tenant-a")
+    assert result["recovered"] is True
+    assert job["status"] == "published"
+    assert job["publish_steps"]["completed"] is True
