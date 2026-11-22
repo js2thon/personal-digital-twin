@@ -80,18 +80,20 @@ def materialize(ts: TableSet, contract: dict) -> dict:
                              "properties": {k: v for k, v in props.items() if v is not None}})
             known.add(ext)
             ref = {"origin": "structured_mapping", "source": src, "table": m["table"],
-                   "contract_version": contract["contract_version"]}
+                   "contract_version": contract["contract_version"], "source_row_key": ext}
             for a, v in props.items():
                 if v is not None:
                     facts.append({"subject_external_id": ext, "predicate": a,
-                                  "object_value": {"value": v}, "trust_tier": 2, "source_ref": ref})
+                                  "object_value": {"value": v}, "trust_tier": 2,
+                                  "source_ref": {**ref, "column": m["attributes"][a]}})
             for r in m["relations"]:
                 v = _norm(row.get(r["column"]))
                 if v is None:
                     continue
                 facts.append({"subject_external_id": ext, "predicate": r["type"],
                               "object_value": {"external_id": render(r["target_id"], {"value": v})},
-                              "trust_tier": 2, "source_ref": ref})
+                              "trust_tier": 2,
+                              "source_ref": {**ref, "column": r["column"]}})
     for lk in contract.get("links", []):
         df = ts.tables[lk["table"]].df
         for row in df.to_dict(orient="records"):
@@ -103,7 +105,8 @@ def materialize(ts: TableSet, contract: dict) -> dict:
                           "object_value": {"external_id": f"{src}:{lk['target_table']}:{b}"},
                           "trust_tier": 2, "multi": True,
                           "source_ref": {"origin": "structured_mapping", "source": src,
-                                         "table": lk["table"]}})
+                                         "table": lk["table"], "column": lk["source_column"],
+                                         "target_column": lk["target_column"]}})
     # 悬空引用（目标不存在）单列，不静默丢
     dangling = [f for f in facts if "external_id" in f["object_value"]
                 and f["object_value"]["external_id"] not in known]
