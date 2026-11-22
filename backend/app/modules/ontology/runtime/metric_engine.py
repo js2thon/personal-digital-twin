@@ -106,6 +106,9 @@ def validate(definitions: list[dict]) -> dict:
         mid = _id(item.get("metric_id"))
         if not mid:
             issues.append({"code": "METRIC_ID_REQUIRED", "message": "指标 ID 不能为空"})
+        elif not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", str(item.get("metric_id") or "")):
+            issues.append({"code": "METRIC_ID_INVALID", "metric_id": mid,
+                           "message": "metric_id 必须是字母/下划线开头的 ASCII 标识符"})
         elif mid in by_id:
             issues.append({"code": "METRIC_ID_DUPLICATE", "metric_id": mid,
                            "message": "指标 ID 重复"})
