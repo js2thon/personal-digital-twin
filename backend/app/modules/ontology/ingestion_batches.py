@@ -161,3 +161,45 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
         "physical_deletes_performed": 0,
         "resume_strategy": "replay same immutable snapshot_id; completed batches are skipped",
     }
+
+
+def execute_approved_database_snapshot(*, tenant_id: str, mapping_set_id: str,
+                                       profile_name: str, schema_name: str | None,
+                                       table_name: str, primary_key: str,
+                                       snapshot_id: str, actor: str,
+                                       batch_size: int = 500,
+                                       reconcile_missing: bool = False) -> dict:
+    """Stream one allowlisted database table through an approved immutable mapping."""
+    from app.modules.ontology import database_connector
+
+    mapping_set = mapping_registry.get(mapping_set_id, tenant_id=tenant_id)
+    if not mapping_set or mapping_set.get("status") != "approved":
+        raise PermissionError("只有当前租户已审核的映射版本可以执行")
+    definition = mapping_set.get("definition") or {}
+    mappings = definition.get("mappings") or []
+    if not mappings:
+        raise ValueError("已审核映射版本没有字段映射")
+    source_columns = sorted({str(item.get("source") or "").strip()
+                             for item in mappings if item.get("source")})
+    if not source_columns:
+        raise ValueError("映射版本没有有效的源字段")
+    if primary_key not in source_columns:
+        source_columns.append(primary_key)
+    source_name = f"db:{profile_name}:{schema_name or 'default'}.{table_name}"
+    source_sha = _digest({
+        "profile": profile_name, "schema": schema_name, "table": table_name,
+        "primary_key": primary_key, "snapshot_id": snapshot_id,
+        "mapping_checksum": mapping_set.get("checksum"),
+    })
+    rows = database_connector.stream_table_rows(
+        profile_name=profile_name, tenant_id=tenant_id, schema_name=schema_name,
+        table_name=table_name, columns=source_columns, primary_key=primary_key,
+        batch_size=max(1, min(int(batch_size), MAX_EXECUTION_ROWS)),
+    )
+    return execute_approved_dataset_stream(
+        tenant_id=tenant_id, mapping_set_id=mapping_set_id, rows=rows,
+        source_name=source_name, snapshot_id=snapshot_id, actor=actor,
+        source_sha256=source_sha, sync_mode="upsert",
+        source_id_column=primary_key, batch_size=batch_size,
+        reconcile_missing=reconcile_missing,
+    )

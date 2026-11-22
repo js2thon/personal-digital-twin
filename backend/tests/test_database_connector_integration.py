@@ -76,6 +76,26 @@ def test_live_database_discovery_redaction_and_read_only(
     assert table["sample_rows"][0]["phone_number"] == "<redacted>"
     assert "phone_number" in table["redacted_columns"]
 
+    # The production keyset stream uses the same allowlist and defaults to
+    # blocking sensitive columns until the profile explicitly authorizes them.
+    with pytest.raises(PermissionError, match="敏感字段未获准"):
+        list(connector.stream_table_rows(
+            profile_name=profile_name, tenant_id="integration-tenant",
+            schema_name=None, table_name="ontology_connector_probe",
+            columns=["full_name", "phone_number"], primary_key="id", batch_size=1,
+        ))
+    profile = json.loads(os.getenv(connector._PROFILE_ENV))
+    profile[profile_name]["ingest_sensitive_columns"] = ["phone_number"]
+    monkeypatch.setenv(connector._PROFILE_ENV, json.dumps(profile))
+    streamed = list(connector.stream_table_rows(
+        profile_name=profile_name, tenant_id="integration-tenant",
+        schema_name=None, table_name="ontology_connector_probe",
+        columns=["full_name", "phone_number"], primary_key="id", batch_size=1,
+    ))
+    assert len(streamed) == 1
+    assert streamed[0]["full_name"] == "张三"
+    assert streamed[0]["phone_number"] == "13800138000"
+
     # Prove the connector's session policy is enforced by the actual database.
     read_engine = connector._engine(url)
     try:

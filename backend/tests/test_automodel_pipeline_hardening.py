@@ -28,16 +28,15 @@ def _valid_job():
 
 def test_in_memory_job_cache_is_tenant_scoped(monkeypatch):
     jobs._MEM.clear()
-    jobs._MEM_TENANTS.clear()
     monkeypatch.setattr(jobs, "ensure_schema", lambda: False)
-    job = {"id": "same-job", "source": "a", "status": "ready", "stages": {}}
-    jobs.save(job, tenant="tenant-a")
-    assert jobs.get("same-job", tenant="tenant-a") is job
-    assert jobs.get("same-job", tenant="tenant-b") is None
-    with pytest.raises(PermissionError, match="不属于当前租户"):
-        jobs.save({"id": "same-job", "source": "spoof", "status": "ready", "stages": {}}, tenant="tenant-b")
+    tenant_a = {"id": "same-job", "source": "a", "status": "ready", "stages": {}}
+    tenant_b = {"id": "same-job", "source": "b", "status": "ready", "stages": {}}
+    jobs.save(tenant_a, tenant="tenant-a")
+    jobs.save(tenant_b, tenant="tenant-b")
+    assert jobs.get("same-job", tenant="tenant-a") is tenant_a
+    assert jobs.get("same-job", tenant="tenant-b") is tenant_b
     assert [x["id"] for x in jobs.listing(tenant="tenant-a")] == ["same-job"]
-    assert jobs.listing(tenant="tenant-b") == []
+    assert [x["id"] for x in jobs.listing(tenant="tenant-b")] == ["same-job"]
 
 
 def test_release_gate_blocks_contract_review_and_data_integrity():

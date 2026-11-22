@@ -64,3 +64,30 @@ def test_semantic_schema_dict_shape_is_supported():
     schema = SD.to_schema_dict(SD.default_semantic_schema())
     report = suggest_mappings([{"name": "full_name"}], schema)
     assert report["mapping_count"] == 1
+
+
+
+def test_preview_rejects_missing_source_column_instead_of_silent_null():
+    from app.modules.ontology.mapping_pipeline import preview_rows
+
+    report = preview_rows(
+        [{"employee_no": "E001"}],
+        [{"source": "full_name", "entity_type": "Employee", "property": "full_name"}],
+        SCHEMA,
+    )
+    assert report["valid"] is False
+    assert report["stage"] == "source_schema_validation"
+    assert report["issues"][0]["code"] == "missing_source_column"
+    assert report["execution"] == "not_executed"
+
+
+def test_preview_lineage_keeps_raw_and_transformed_values():
+    from app.modules.ontology.mapping_pipeline import preview_rows
+
+    report = preview_rows(
+        [{"full_name": "  Zhang San  "}],
+        [{"source": "full_name", "entity_type": "Employee", "property": "full_name"}],
+        SCHEMA,
+    )
+    assert report["preview"][0]["lineage"]["full_name"]["raw_value"] == "  Zhang San  "
+    assert report["preview"][0]["lineage"]["full_name"]["transformed_value"] == "Zhang San"

@@ -247,3 +247,82 @@ def _safe_sample(value: Any) -> Any:
         return value.isoformat()
     text = str(value)
     return text[:500] + "…" if len(text) > 500 else text
+
+
+
+def stream_table_rows(*, profile_name: str, tenant_id: str, schema_name: str | None,
+                      table_name: str, columns: list[str], primary_key: str,
+                      batch_size: int = 500, after: Any = None):
+    """Yield allowlisted table rows using stable single-column PK keyset pagination.
+
+    This is a server-side read-only stream for approved mapping execution. It deliberately
+    rejects offset pagination and non-primary-key cursors to avoid unstable snapshots.
+    """
+    from collections.abc import Iterator
+
+    if not isinstance(table_name, str) or not table_name:
+        raise ConnectorConfigError("table_name 不能为空")
+    size = max(1, min(int(batch_size), 2000))
+    selected = list(dict.fromkeys([*columns, primary_key]))
+    if not selected or any(not isinstance(name, str) or not name for name in selected):
+        raise ConnectorConfigError("columns 必须是非空列名列表")
+    cfg, url = _profile(profile_name, tenant_id)
+    allowed_schemas = set(cfg.get("schemas") or [])
+    allowed_tables = _allowed_tables(cfg)
+    if not any(t == table_name and (s is None or s == schema_name) for s, t in allowed_tables):
+        raise PermissionError(f"表不在白名单中：{table_name}")
+    if schema_name and allowed_schemas and schema_name not in allowed_schemas:
+        raise PermissionError("请求的 schema 不在白名单中")
+
+    engine = _engine(url)
+    try:
+        connection = engine.connect()
+        if engine.dialect.name in {"postgresql", "mysql"}:
+            connection = connection.execution_options(isolation_level="REPEATABLE READ")
+        with connection as conn:
+            _enforce_read_only(conn, engine.dialect.name)
+            inspector = inspect(conn)
+            available = {col["name"] for col in inspector.get_columns(table_name, schema=schema_name)}
+            missing = sorted(set(selected) - available)
+            if missing:
+                raise LookupError("源表缺少映射列：" + ", ".join(missing))
+            # Discovery always redacts likely PII. Production ingestion is also deny-by-default:
+            # a profile must explicitly allow each sensitive column before it can be streamed.
+            configured_redactions = {str(x).casefold() for x in (cfg.get("redact_columns") or [])}
+            sensitive = {
+                name for name in selected
+                if _is_sensitive_column(name, configured_redactions)
+            }
+            allowed_sensitive = {str(x).casefold() for x in (cfg.get("ingest_sensitive_columns") or [])}
+            blocked_sensitive = sorted(sensitive - allowed_sensitive)
+            if blocked_sensitive:
+                raise PermissionError(
+                    "敏感字段未获准进入本体数据集，请在连接配置 ingest_sensitive_columns 中显式授权："
+                    + ", ".join(blocked_sensitive)
+                )
+            pk = inspector.get_pk_constraint(table_name, schema=schema_name) or {}
+            pk_columns = list(pk.get("constrained_columns") or [])
+            if pk_columns != [primary_key]:
+                raise ConnectorConfigError(
+                    "数据库流式同步要求指定唯一单列主键作为 keyset 游标；"
+                    "复合主键请先配置稳定的单列源记录 ID"
+                )
+            metadata = MetaData()
+            table = Table(table_name, metadata, schema=schema_name, autoload_with=conn)
+            selected_columns = [table.c[name] for name in selected]
+            cursor = after
+            while True:
+                stmt = select(*selected_columns)
+                if cursor is not None:
+                    stmt = stmt.where(table.c[primary_key] > cursor)
+                stmt = stmt.order_by(table.c[primary_key]).limit(size)
+                batch = [dict(row) for row in conn.execute(stmt).mappings().all()]
+                if not batch:
+                    break
+                for row in batch:
+                    yield row
+                cursor = batch[-1][primary_key]
+                if len(batch) < size:
+                    break
+    finally:
+        engine.dispose()

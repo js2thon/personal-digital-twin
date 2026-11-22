@@ -14,6 +14,80 @@ from app.modules.ontology import workbench as wb
 router = APIRouter()
 
 
+# ---------------------------------------------------------------- 数据源发现与已审核映射执行
+def _principal(request: Request) -> dict:
+    principal = getattr(getattr(request, "state", None), "principal", None)
+    return principal if isinstance(principal, dict) else {}
+
+
+def _tenant_actor(request: Request) -> tuple[str, str]:
+    principal = _principal(request)
+    return (str(principal.get("tenant_id") or "default"),
+            str(principal.get("user_id") or current_actor(request) or "anonymous"))
+
+
+class DatabaseInspectIn(BaseModel):
+    profile_name: str = Field(min_length=1, max_length=64)
+    schema_name: str | None = None
+    table_names: list[str] = Field(default_factory=list)
+    sample_rows: int = Field(default=5, ge=0, le=100)
+
+
+class DatabaseIngestIn(BaseModel):
+    profile_name: str = Field(min_length=1, max_length=64)
+    schema_name: str | None = None
+    table_name: str = Field(min_length=1, max_length=200)
+    primary_key: str = Field(min_length=1, max_length=200)
+    mapping_set_id: str = Field(min_length=1, max_length=64)
+    snapshot_id: str = Field(min_length=1, max_length=200)
+    batch_size: int = Field(default=500, ge=1, le=500)
+    reconcile_missing: bool = False
+
+
+@router.get("/ontology/data-sources/database/profiles")
+def database_profiles(request: Request):
+    from app.modules.ontology import database_connector
+    tenant, _ = _tenant_actor(request)
+    return {"items": database_connector.list_profiles(tenant_id=tenant)}
+
+
+@router.post("/ontology/data-sources/database/inspect")
+def database_inspect(payload: DatabaseInspectIn, request: Request):
+    from app.modules.ontology import database_connector
+    tenant, _ = _tenant_actor(request)
+    try:
+        return database_connector.inspect_database(
+            profile_name=payload.profile_name, tenant_id=tenant,
+            schema_name=payload.schema_name, table_names=payload.table_names,
+            sample_rows=payload.sample_rows)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from None
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@router.post("/ontology/data-sources/database/ingest")
+def database_ingest(payload: DatabaseIngestIn, request: Request):
+    from app.modules.ontology.ingestion_batches import execute_approved_database_snapshot
+    tenant, actor = _tenant_actor(request)
+    try:
+        return execute_approved_database_snapshot(
+            tenant_id=tenant, mapping_set_id=payload.mapping_set_id,
+            profile_name=payload.profile_name, schema_name=payload.schema_name,
+            table_name=payload.table_name, primary_key=payload.primary_key,
+            snapshot_id=payload.snapshot_id, actor=actor,
+            batch_size=payload.batch_size,
+            reconcile_missing=payload.reconcile_missing)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from None
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
 @router.get("/ontology/schema")
 def get_schema(version: str | None = None):
     if version:

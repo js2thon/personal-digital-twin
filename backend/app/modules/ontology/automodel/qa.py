@@ -337,8 +337,26 @@ def validate_plan(plan: dict, schema: dict, metric_set: dict) -> list[str]:
             errs.append("order 只能是 asc/desc")
     tf = plan.get("time_filter")
     if tf:
-        if tf.get("attr") not in schema["attributes"] or tf.get("op") not in (">=", "<", "between"):
+        attr = tf.get("attr") if isinstance(tf, dict) else None
+        op = tf.get("op") if isinstance(tf, dict) else None
+        value = tf.get("value") if isinstance(tf, dict) else None
+        spec = schema["attributes"].get(attr) if attr else None
+        if not spec or op not in (">=", "<", "between"):
             errs.append("时间过滤不合法")
+        elif spec.get("role") != "temporal" and str(spec.get("range") or "").lower() not in ("date", "datetime"):
+            errs.append(f"属性 {attr} 不是时间属性，不能用于时间过滤")
+        elif op == "between" and (
+            not isinstance(value, (list, tuple)) or len(value) != 2
+            or not all(isinstance(x, str) and x.strip() for x in value)
+        ):
+            errs.append("between 时间过滤必须提供两个非空日期字符串")
+        elif op in (">=", "<") and (not isinstance(value, str) or not value.strip()):
+            errs.append("时间过滤值必须是非空日期字符串")
+        elif op == "between" and isinstance(value, (list, tuple)) and len(value) == 2 and value[0] >= value[1]:
+            errs.append("between 时间范围的开始日期必须早于结束日期")
+        if spec and op in (">=", "<", "between") and plan.get("op") in ("list", "lookup"):
+            if spec.get("owner") != plan.get("cls"):
+                errs.append(f"时间属性 {attr} 不属于对象类型 {plan.get('cls')}")
     if op in ("list", "lookup") and plan.get("cls") not in schema["entity_types"]:
         errs.append(f"未登记的类：{plan.get('cls')}")
     if op == "lookup":
@@ -494,6 +512,62 @@ def chart_spec(plan: dict, res: dict, metric_set: dict) -> dict | None:
     return {"type": typ, "title": m["label"], "categories": res["index"], "data": res["values"]}
 
 
+def _source_evidence(contract: dict | None, schema: dict, plan: dict | None,
+                     result: dict | None) -> dict:
+    """Attach deterministic source mapping evidence; never imply discovery samples are production data."""
+    mappings = (contract or {}).get("mappings") or []
+    by_class = {m.get("class"): m for m in mappings if m.get("class")}
+    refs = []
+    classes = set()
+    if isinstance(plan, dict):
+        if plan.get("cls"):
+            classes.add(plan["cls"])
+        classes.update(x for x in (plan.get("classes") or []) if x)
+    if isinstance(result, dict):
+        result_class = result.get("class")
+        if result_class:
+            for class_id, meta in schema.get("entity_types", {}).items():
+                if result_class in (class_id, meta.get("label"), *(meta.get("aliases") or [])):
+                    classes.add(class_id)
+        for row in result.get("rows") or []:
+            if row.get("_id"):
+                refs.append({"instance_id": str(row["_id"])})
+        for row in result.get("entities") or []:
+            if row.get("id"):
+                refs.append({"instance_id": str(row["id"])})
+                if row.get("class"):
+                    classes.add(row["class"])
+        for row in result.get("items") or []:
+            for member in row.get("members") or []:
+                if isinstance(member, dict) and member.get("id"):
+                    refs.append({"instance_id": str(member["id"])})
+    source_map = []
+    for cls in sorted(classes):
+        mapping = by_class.get(cls)
+        if not mapping:
+            continue
+        source_map.append({
+            "entity_type": cls,
+            "source": (contract or {}).get("source"),
+            "table": mapping.get("table"),
+            "primary_key": mapping.get("primary_key") or [],
+            "property_columns": dict(mapping.get("attributes") or {}),
+            "relation_columns": [
+                {"relation": rel.get("type"), "column": rel.get("column"),
+                 "target_table": rel.get("target_table")}
+                for rel in mapping.get("relations") or []
+            ],
+        })
+    unique_refs = list({r["instance_id"]: r for r in refs}.values())[:50]
+    return {
+        "data_scope": "discovery_sample",
+        "scope_note": "当前 Automodel 问答基于本体建模阶段的 Discovery 样本，不代表源库全量统计。",
+        "source_mappings": source_map,
+        "matched_instances": unique_refs,
+        "traceability_level": "source_table_and_column",
+    }
+
+
 # ------------------------------------------------------------------ 主入口
 def ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
         llm=None, contract: dict | None = None) -> dict:
@@ -513,9 +587,11 @@ def ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
     g = gq.retrieve(question, schema, F, L, idx)
     if g:
         ans = gq.grounded_answer(question, {"本体结构": brief, "检索结果": g}, llm) if llm else None
+        evidence = {"ontology_result": g,
+                    "provenance": _source_evidence(contract, schema, {"op": g.get("op")}, g)}
         return {"ok": True, "engine": "ontology_graph" + ("+llm" if ans else ""), "plan": {"op": g["op"]},
                 "result": g, "answer": ans or gq.template_answer(g), "chart": gq.chart_of(g),
-                "evidence": g}
+                "evidence": evidence}
 
     # ② 指标计划
     out = _metric_ask(question, schema, metric_set, F, L, llm, contract)
@@ -526,7 +602,19 @@ def ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
             if ans:
                 out["template_answer"], out["answer"] = out["answer"], ans
                 out["engine"] += "+llm"
-        out["evidence"] = {"metric": out.get("metric"), "result": out["result"]}
+        out["evidence"] = {
+            "metric": out.get("metric"), "result": out["result"],
+            "provenance": _source_evidence(
+                contract, schema,
+                {**(out.get("plan") or {}), "classes": [
+                    x for x in (out.get("metric") or {}).get("classes", [])
+                    if x
+                ] + [x for x in (
+                    (out.get("metric") or {}).get("cls"),
+                    (out.get("metric") or {}).get("frame"),
+                ) if x]},
+                out.get("result")),
+        }
         return out
 
     # ③ 兜底：关键词检索相关实例，交给 LLM 依据作答
@@ -574,8 +662,22 @@ def _metric_ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
            "chart": chart_spec(plan, res, metric_set), "attempts": attempts}
     if plan["op"] == "metric":
         m = metric_set["metrics"][plan["metric"]]
+        source_classes = set()
+        for dep_id in [plan["metric"], *(m.get("deps") or [])]:
+            dep_metric = ms.get(dep_id) or {}
+            for cls in (dep_metric.get("cls"), dep_metric.get("frame")):
+                if cls:
+                    source_classes.add(cls)
+            try:
+                root_cls = mx._root(dep_metric, ms).get("cls")
+                if root_cls:
+                    source_classes.add(root_cls)
+            except (KeyError, TypeError, AttributeError):
+                pass
         out["metric"] = {"id": m["id"], "label": m["label"], "kind": m["kind"],
-                         "expr": m.get("expr"), "deps": m.get("deps")}
+                         "expr": m.get("expr"), "deps": m.get("deps"),
+                         "cls": m.get("cls"), "frame": m.get("frame"),
+                         "classes": sorted(source_classes)}
         if contract and not plan.get("filters"):
             try:
                 out["sql"] = mx.to_sql(plan["metric"], metric_set["metrics"], schema, contract, plan.get("dim"))
