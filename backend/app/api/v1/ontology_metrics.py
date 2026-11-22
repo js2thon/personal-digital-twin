@@ -58,6 +58,11 @@ class SaveIn(BaseModel):
     ontology_version: str | None = None
 
 
+class StorePreviewIn(BaseModel):
+    metric_ids: list[str] = Field(default_factory=list)
+    limit: int = Field(default=5000, ge=1, le=10000)
+
+
 @router.get("/ontology/metrics/catalog")
 def catalog(request: Request):
     from app.modules.ontology.runtime.metrics import METRIC_CATALOG
@@ -77,6 +82,93 @@ def validate(payload: DefinitionsIn, request: Request):
 @router.post("/ontology/metrics/preview")
 def preview(payload: PreviewIn, request: Request):
     return ME.preview(payload.items, payload.data)
+
+
+@router.post("/ontology/metrics/preview-from-store")
+def preview_from_store(payload: StorePreviewIn, request: Request):
+    """Execute published metrics against complete, permission-filtered semantic instances."""
+    ensure_schema()
+    tenant, _ = _tenant(request)
+    rows = db.fetch_all(
+        "SELECT DISTINCT ON (metric_id) metric_id, name, version, definition, checksum "
+        "FROM ontology.metric_definitions WHERE tenant_id=:t AND status='published' "
+        "ORDER BY metric_id, version DESC", {"t": tenant})
+    published = {}
+    for row in rows:
+        definition = row.get("definition")
+        if isinstance(definition, str):
+            definition = json.loads(definition)
+        if isinstance(definition, dict):
+            published[row["metric_id"]] = {
+                "definition": definition, "version": row["version"],
+                "checksum": row["checksum"], "name": row["name"],
+            }
+    if not published:
+        raise HTTPException(404, "当前租户没有已发布指标")
+
+    requested = list(dict.fromkeys(str(x).strip() for x in payload.metric_ids if str(x).strip()))
+    if requested:
+        missing = [mid for mid in requested if mid not in published]
+        if missing:
+            raise HTTPException(404, {"message": "指标不存在或尚未发布", "metric_ids": missing})
+        selected, pending = set(), list(requested)
+        while pending:
+            mid = pending.pop()
+            if mid in selected:
+                continue
+            selected.add(mid)
+            deps = published[mid]["definition"].get("dependencies") or []
+            for dep in deps:
+                if dep not in published:
+                    raise HTTPException(409, {
+                        "message": "已发布指标依赖缺失或未发布",
+                        "metric_id": mid, "dependency": dep})
+                pending.append(dep)
+        metric_ids = sorted(selected)
+    else:
+        metric_ids = sorted(published)
+    definitions = [published[mid]["definition"] for mid in metric_ids]
+    validation = ME.validate(definitions)
+    if not validation["valid"]:
+        raise HTTPException(409, {
+            "message": "已发布指标依赖图未通过运行时校验",
+            "validation": validation})
+
+    # Use the same tenant-scoped semantic store as the existing ingestion pipeline.
+    from app.modules.ontology.semantic import store as semantic_store
+    from app import policy as pol
+    total_row = db.fetch_one(
+        "SELECT count(*) AS n FROM ontology.entity_instances "
+        "WHERE tenant_id=:t AND status='active'", {"t": tenant})
+    total = int(total_row["n"]) if total_row else 0
+    if total > payload.limit:
+        return {
+            "ok": False, "complete": False, "execution_source": "ontology.entity_instances",
+            "records_available": total, "records_limit": payload.limit,
+            "items": [], "lineage": [],
+            "reason": "实例数量超过本次安全预览上限；为避免部分数据产生误导性指标，本次不计算。",
+        }
+    instances = semantic_store.list_instances(
+        tenant_id=tenant, where="status = 'active'", limit=payload.limit)
+    visible = pol.filter_rows(instances, _principal(request))
+    if len(visible) != total:
+        return {
+            "ok": False, "complete": False, "execution_source": "ontology.entity_instances",
+            "records_evaluated": len(visible), "items": [], "lineage": [],
+            "reason": "当前用户的数据权限只能访问部分实例；为避免不完整口径，本次不计算。",
+        }
+    data = ME.semantic_instances_to_data(visible)
+    result = ME.preview(definitions, data)
+    result.update({
+        "complete": True,
+        "execution_source": "ontology.entity_instances",
+        "records_evaluated": len(visible),
+        "metric_versions": {mid: published[mid]["version"] for mid in metric_ids},
+        "metric_checksums": {mid: published[mid]["checksum"] for mid in metric_ids},
+        "ontology_version": getattr(request.state, "semantic_context", None)
+            and getattr(request.state.semantic_context, "schema_version", None),
+    })
+    return result
 
 
 @router.get("/ontology/metrics")
