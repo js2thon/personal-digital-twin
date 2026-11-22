@@ -24,10 +24,14 @@ def evaluate(job: dict, *, require_cq: bool = False) -> dict[str, Any]:
         if attr.get("owner") not in types:
             add("INVALID_PROPERTY_OWNER", f"属性 {name} 的所属对象类型不存在")
 
-    errors = [x for x in (job.get("issues") or [])
-              if str(x.get("level", "")).lower() == "error"]
+    all_issues = list(job.get("issues") or [])
+    errors = [x for x in all_issues if str(x.get("level", "")).lower() == "error"]
+    warnings = [x for x in all_issues if str(x.get("level", "")).lower() == "warning"]
     if errors:
-        add("MAPPING_CONTRACT_ERRORS", "映射契约仍存在阻断错误", count=len(errors))
+        add("MAPPING_CONTRACT_ERRORS", "映射契约或本体校验仍存在阻断错误", count=len(errors))
+    if warnings and not job.get("standards_review_acknowledged"):
+        add("STANDARDS_REVIEW_PENDING", "存在尚未由审核人确认的规范警告", severity="error",
+            count=len(warnings))
     if not contract.get("mappings"):
         add("MAPPING_NOT_DEFINED", "尚未生成可执行映射契约")
     if not materialized or not materialized.get("data_scope"):
@@ -58,11 +62,26 @@ def evaluate(job: dict, *, require_cq: bool = False) -> dict[str, Any]:
         if accuracy is not None and float(accuracy) < 0.95:
             add("CQ_ACCURACY_LOW", "CQ 通过率低于 95%", count=1)
 
+    # 规范报告是门禁的权威输入；即使调用方漏写 job.issues，也不能绕过。
+    standards = job.get("standards_report") or {}
+    standards_findings = standards.get("findings") or []
+    standards_warnings = [x for x in standards_findings if x.get("severity") == "warning"]
+    standards_errors = [x for x in standards_findings if x.get("severity") == "error"]
+    if standards_errors and not errors:
+        add("MODELING_STANDARDS_ERRORS", "本体建模规范存在阻断错误", count=len(standards_errors))
+    if standards_warnings and not job.get("standards_review_acknowledged"):
+        if not any(x["code"] == "STANDARDS_REVIEW_PENDING" for x in findings):
+            add("STANDARDS_REVIEW_PENDING", "存在尚未由审核人确认的规范警告",
+                count=len(standards_warnings))
     blockers = [x for x in findings if x["severity"] == "error"]
+    warnings_out = [x for x in findings if x["severity"] != "error"]
+    state = "BLOCKED" if any(x["code"] in {"MAPPING_CONTRACT_ERRORS", "MODELING_STANDARDS_ERRORS"} for x in blockers) else (
+        "REVIEW_REQUIRED" if blockers else "READY")
     return {
         "ready": not blockers,
+        "state": state,
         "blockers": blockers,
-        "warnings": [x for x in findings if x["severity"] != "error"],
+        "warnings": warnings_out,
         "checks": {
             "ontology_schema": bool(types),
             "mapping_contract": bool(contract.get("mappings")) and not errors,

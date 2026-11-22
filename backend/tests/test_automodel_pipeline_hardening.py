@@ -75,3 +75,19 @@ def test_review_rejects_unknown_actions_and_records_audit():
     assert job["change_set"][-1]["actor"] == "reviewer-1"
     assert job["change_set"][-1]["target_ref"] == "name"
     assert job["change_set"][-1]["comment"] == "业务确认"
+
+
+def test_release_gate_requires_explicit_acknowledgement_for_modeling_warnings():
+    job = _valid_job()
+    job["standards_report"] = {
+        "status": "warning",
+        "findings": [{"code": "MISSING_DESCRIPTION", "severity": "warning"}],
+    }
+    report = release_gate.evaluate(job)
+    assert report["state"] == "REVIEW_REQUIRED"
+    assert not report["ready"]
+    assert "STANDARDS_REVIEW_PENDING" in {x["code"] for x in report["blockers"]}
+    job["standards_review_acknowledged"] = True
+    report = release_gate.evaluate(job)
+    assert report["state"] == "READY"
+    assert report["ready"]

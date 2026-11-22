@@ -110,6 +110,9 @@ def _summary(job: dict) -> dict:
             "review": d.get("review"), "issues": job.get("issues"),
             "materialized": (job.get("materialized") or {}).get("stats"),
             "metrics": (job.get("metrics") or {}).get("stats"),
+            "business_object_discovery": job.get("business_object_discovery"),
+            "standards_report": job.get("standards_report"),
+            "release_gate": job.get("release_gate"),
             "schema_version": job.get("schema_version")}
 
 
@@ -232,6 +235,7 @@ def get_job(job_id: str, request: Request, full: bool = False):
 
 class ReviewIn(BaseModel):
     decisions: list[dict] = Field(default_factory=list)
+    acknowledge_warnings: bool = False
 
 
 @router.post("/automodel/jobs/{job_id}/review")
@@ -242,12 +246,14 @@ def review(job_id: str, payload: ReviewIn, request: Request):
         raise HTTPException(409, "已发布的任务不能再审核，请新建任务")
     for d in payload.decisions:
         if d.get("kind") not in ("class", "relation", "attribute") or \
-                d.get("action") not in ("accept", "reject", "rename"):
+                d.get("action") not in ("accept", "reject", "rename", "merge"):
             raise HTTPException(400, f"非法审核决策：{d}")
         if d.get("new_name") and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", d["new_name"]):
             raise HTTPException(400, f"new_name 非法：{d['new_name']}")
-    pipeline.apply_review(job, payload.decisions)
+    pipeline.apply_review(job, payload.decisions, actor=actor)
     pipeline.rebuild(job, _source(job_id))
+    if payload.acknowledge_warnings:
+        pipeline.acknowledge_standards_warnings(job, actor)
     with _LOCK:
         _FRAMES.pop(job_id, None)
     jobs.save(job, tenant, actor)
@@ -1046,12 +1052,22 @@ def pipeline_view(job_id: str, request: Request):
         node("source", "数据源", "done", f"{len(P)} 张表 · {job.get('source')}", "src"),
         node("profile", "数据画像", "done" if "profile" in st else "todo",
              f"{sum(len(p.get('columns') or {}) for p in P.values())} 列", "src"),
+        node("business_object_discovery", "业务对象发现",
+             "done" if "business_object_discovery" in st else "todo",
+             f"候选 {((job.get('business_object_discovery') or {}).get('candidate_count', 0))} · 归并建议 {((job.get('business_object_discovery') or {}).get('merge_candidate_count', 0))}",
+             "model"),
         node("draft", "本体草案", "done" if "draft" in st else "todo",
              f"类 {len(d.get('schema', {}).get('entity_types', {}))} · 关系 {len(d.get('schema', {}).get('relation_types', {}))} · 属性 {len(d.get('schema', {}).get('attributes', {}))}", "model"),
         node("review", "人工审核", "warn" if d.get("review") else "done", f"待审核 {len(d.get('review') or [])}", "model"),
         node("map", "映射契约", "done" if job.get("contract") else "todo", f"{len((job.get('contract') or {}).get('mappings') or [])} 个映射", "map"),
         node("validate", "契约校验", "error" if errs else ("done" if job.get("issues") is not None else "todo"),
              f"错误 {len(errs)} · 提示 {len(job.get('issues') or []) - len(errs)}", "map"),
+        node("modeling_standards", "建模规范检查",
+             "error" if (job.get("standards_report") or {}).get("status") == "fail" else
+             ("warn" if any(x.get("severity") == "warning" for x in (job.get("standards_report") or {}).get("findings", []))
+              and not job.get("standards_review_acknowledged") else
+              ("done" if "modeling_standards" in st else "todo")),
+             f"问题 {((job.get('standards_report') or {}).get('summary') or {}).get('total', 0)}", "model"),
         node("materialize", "物化", "done" if mat else "todo", f"实体 {mat.get('entities', '—')} · 事实 {mat.get('facts', '—')}", "inst"),
         node("metrics", "指标生成", "done" if job.get("metrics") else "todo",
              " · ".join(f"{k} {v}" for k, v in ((job.get("metrics") or {}).get("stats") or {}).items()), "metrics"),

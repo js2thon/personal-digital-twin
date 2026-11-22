@@ -419,3 +419,4 @@ class TestViolationsAPI:
         d = client.get("/api/v1/ontology/semantic/violations").json()
         assert d["constraint_mode"] == "application_enforced"
         assert "checked" in d and "violations" in d and "violation_count" in d
+
