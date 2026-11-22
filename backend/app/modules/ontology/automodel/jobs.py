@@ -1,7 +1,7 @@
 """建模任务持久化：ontology.automodel_jobs（断点续跑、审核、发布留痕）。
 
 每个阶段的产物落 JSONB；DataFrame 不入库（只存画像与契约），重跑物化时按 source 重新读取。
-无 DB（单测/离线）时退回进程内字典，接口一致。
+无 DB（单测/离线）时退回进程内字典，接口一致。内存缓存与持久化查询均按 tenant 隔离。
 """
 from __future__ import annotations
 
@@ -9,7 +9,9 @@ import json
 import threading
 import time
 
-_MEM: dict[str, dict] = {}
+# Cache keys must include tenant: job IDs are globally unique in normal operation,
+# but authorization must never depend on UUID collision resistance.
+_MEM: dict[tuple[str, str], dict] = {}
 _LOCK = threading.Lock()
 _ensured = False
 
@@ -32,7 +34,7 @@ DDL = [
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
     "CREATE INDEX IF NOT EXISTS idx_automodel_jobs_tenant ON ontology.automodel_jobs (tenant_id, created_at DESC)",
-    # PgWriter 按 external_id 幂等 upsert 依赖此索引
+    # 保留历史索引；正式写入已由受控 mapping_execution 负责。
     "CREATE INDEX IF NOT EXISTS idx_entities_external_ids ON ontology.entities "
     "USING gin ((properties->'external_ids'))",
 ]
@@ -76,11 +78,18 @@ def _slim(job: dict) -> dict:
 def save(job: dict, tenant: str = "default", actor: str = "owner",
          source_ref: dict | None = None) -> dict:
     job["updated_at"] = time.time()
-    with _LOCK:
-        _MEM[job["id"]] = job
+    cache_key = (str(tenant), str(job["id"]))
     if not ensure_schema():
+        with _LOCK:
+            _MEM[cache_key] = job
         return job
     db = _db()
+    # A primary-key collision must not let another tenant's job enter this
+    # process cache even though the guarded upsert below would be a no-op.
+    existing = db.fetch_one(
+        "SELECT tenant_id FROM ontology.automodel_jobs WHERE id=:i", {"i": job["id"]})
+    if existing and str(existing["tenant_id"]) != str(tenant):
+        raise PermissionError("Automodel job belongs to another tenant")
     stage = next(reversed(job.get("stages") or {"created": 1}))
     params = {"id": job["id"], "t": tenant, "s": job["source"], "k": job.get("source_kind", "file"),
               "ref": json.dumps(source_ref or job.get("source_ref") or {}, ensure_ascii=False),
@@ -96,14 +105,19 @@ def save(job: dict, tenant: str = "default", actor: str = "owner",
         " :v, :pb, :e, :cb) "
         "ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, stage=EXCLUDED.stage, "
         " artifact=EXCLUDED.artifact, review=EXCLUDED.review, schema_version=EXCLUDED.schema_version, "
-        " published_by=EXCLUDED.published_by, error=EXCLUDED.error, updated_at=now()", params)
+        " published_by=EXCLUDED.published_by, error=EXCLUDED.error, updated_at=now() "
+        "WHERE ontology.automodel_jobs.tenant_id=EXCLUDED.tenant_id", params)
+    with _LOCK:
+        _MEM[cache_key] = job
     return job
 
 
 def get(job_id: str, tenant: str = "default") -> dict | None:
+    cache_key = (str(tenant), str(job_id))
     with _LOCK:
-        if job_id in _MEM:
-            return _MEM[job_id]
+        cached = _MEM.get(cache_key)
+    if cached is not None:
+        return cached
     if not ensure_schema():
         return None
     row = _db().fetch_one(
@@ -116,15 +130,16 @@ def get(job_id: str, tenant: str = "default") -> dict | None:
            "source_ref": ref, "status": row["status"], "schema_version": row.get("schema_version"),
            "published_by": row.get("published_by"), "error": row.get("error"), **art}
     with _LOCK:
-        _MEM[job_id] = job
+        _MEM[cache_key] = job
     return job
 
 
 def listing(tenant: str = "default", limit: int = 50) -> list[dict]:
     if not ensure_schema():
         with _LOCK:
+            jobs = [j for (t, _), j in _MEM.items() if t == str(tenant)]
             return [{"id": j["id"], "source": j["source"], "status": j["status"]}
-                    for j in list(_MEM.values())[-limit:]]
+                    for j in jobs[-max(1, min(limit, 200)):]]
     return _db().fetch_all(
         "SELECT id, source_id, source_kind, status, stage, schema_version, created_at, updated_at, "
         " jsonb_array_length(review) AS needs_review FROM ontology.automodel_jobs "
