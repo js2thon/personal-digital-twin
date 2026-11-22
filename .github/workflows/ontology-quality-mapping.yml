@@ -106,3 +106,4 @@ jobs:
           tests/test_database_connector.py
           tests/test_automodel_discovery_boundary.py
           tests/test_automodel_pipeline_hardening.py
+          tests/test_ontology_ingestion_batches.py
