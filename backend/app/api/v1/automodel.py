@@ -415,6 +415,25 @@ def st_quality(job_id: str, request: Request):
     return studio.quality(job)
 
 
+@router.get("/automodel/jobs/{job_id}/studio/governance")
+def st_governance(job_id: str, request: Request):
+    job = _job(job_id, request)
+    _frames(job)
+    principal = getattr(getattr(request, "state", None), "principal", None) or {}
+    return studio.governance(job, principal)
+
+
+@router.get("/automodel/jobs/{job_id}/studio/provenance")
+def st_provenance(job_id: str, request: Request, entity: str, predicate: str | None = None,
+                  limit: int = 200):
+    job = _job(job_id, request)
+    _frames(job)
+    try:
+        return studio.provenance(job, entity, predicate, limit)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 class ActionIn(BaseModel):
     action: str                     # create / update / delete
     cls: str | None = None
