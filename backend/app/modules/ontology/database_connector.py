@@ -112,6 +112,18 @@ def _engine(url: str):
                          pool_timeout=5, pool_recycle=300, connect_args=connect_args)
 
 
+def _enforce_read_only(conn, dialect_name: str) -> None:
+    """Apply transaction-level read-only policy before any metadata/sample query."""
+    if dialect_name == "mysql":
+        # MySQL applies this characteristic to subsequent transactions on the session.
+        conn.exec_driver_sql("SET SESSION TRANSACTION READ ONLY")
+        conn.exec_driver_sql("SET SESSION max_execution_time = 5000")
+        conn.commit()
+    else:
+        # PostgreSQL connection options also set default_transaction_read_only.
+        conn.exec_driver_sql("SET TRANSACTION READ ONLY")
+
+
 def _allowed_tables(cfg: dict) -> set[tuple[str | None, str]]:
     result = set()
     for item in cfg.get("tables") or []:
@@ -150,16 +162,7 @@ def inspect_database(*, profile_name: str, tenant_id: str,
     engine = _engine(url)
     try:
         with engine.connect() as conn:
-            # PostgreSQL is additionally forced read-only by server-side connection
-            # options; this transaction mode is applied before metadata/sample reads.
-            if engine.dialect.name == "mysql":
-                # Apply read-only mode to every transaction on this short-lived session.
-                conn.exec_driver_sql("SET SESSION TRANSACTION READ ONLY")
-                conn.exec_driver_sql("SET SESSION max_execution_time = 5000")
-                conn.commit()
-            else:
-                # PostgreSQL connection options also set default_transaction_read_only.
-                conn.exec_driver_sql("SET TRANSACTION READ ONLY")
+            _enforce_read_only(conn, engine.dialect.name)
             inspector = inspect(conn)
             schemas = [schema_name] if schema_name else sorted(allowed_schemas)
             if not schemas:
