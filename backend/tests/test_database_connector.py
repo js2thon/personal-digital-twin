@@ -60,3 +60,25 @@ def test_requested_table_must_be_allowlisted(monkeypatch):
     with pytest.raises(PermissionError):
         connector.inspect_database(profile_name="crm", tenant_id="default",
                                    schema_name="public", table_names=["payments"])
+
+
+def test_sensitive_columns_are_redacted():
+    assert connector._is_sensitive_column("phone_number")
+    assert connector._is_sensitive_column("身份证号码")
+    assert connector._is_sensitive_column("custom_field", {"custom_field"})
+    assert not connector._is_sensitive_column("department_name")
+
+
+def test_mysql_and_postgresql_url_query_cannot_override_read_only_options(monkeypatch):
+    monkeypatch.setenv(connector._PROFILE_ENV, json.dumps({
+        "crm": {"url_env": "CRM_URL", "dialect": "postgresql",
+                "tables": ["public.customers"]}
+    }))
+    monkeypatch.setenv("CRM_URL", "postgresql://readonly:secret@localhost/crm?options=-c%20default_transaction_read_only%3Doff")
+    _, url = connector._profile("crm", "default")
+    assert "options" not in __import__("sqlalchemy").engine.make_url(url).query
+
+
+def test_profile_table_limit_and_sample_limit_constants():
+    assert connector.MAX_SAMPLE_ROWS == 100
+    assert connector.MAX_TABLES_PER_REQUEST == 50

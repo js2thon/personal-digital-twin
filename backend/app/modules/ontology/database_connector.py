@@ -84,7 +84,11 @@ def _profile(name: str, tenant_id: str) -> tuple[dict, str]:
     driver = _ALLOWED_DRIVERS.get(parsed.drivername)
     if not driver:
         raise ConnectorConfigError("仅支持 PostgreSQL(psycopg) 和 MySQL(PyMySQL)")
-    parsed = parsed.set(drivername=driver)
+    # Do not allow URL query parameters to weaken driver-level safety settings.
+    query = dict(parsed.query)
+    for unsafe_key in ("options", "init_command", "autocommit", "read_only", "transaction_isolation"):
+        query.pop(unsafe_key, None)
+    parsed = parsed.set(drivername=driver, query=query)
     expected = str(cfg.get("dialect") or "auto").lower()
     actual = "postgresql" if driver.startswith("postgresql") else "mysql"
     if expected not in {"auto", actual}:
@@ -148,7 +152,14 @@ def inspect_database(*, profile_name: str, tenant_id: str,
         with engine.connect() as conn:
             # PostgreSQL is additionally forced read-only by server-side connection
             # options; this transaction mode is applied before metadata/sample reads.
-            conn.exec_driver_sql("SET TRANSACTION READ ONLY")
+            if engine.dialect.name == "mysql":
+                # Apply read-only mode to every transaction on this short-lived session.
+                conn.exec_driver_sql("SET SESSION TRANSACTION READ ONLY")
+                conn.exec_driver_sql("SET SESSION max_execution_time = 5000")
+                conn.commit()
+            else:
+                # PostgreSQL connection options also set default_transaction_read_only.
+                conn.exec_driver_sql("SET TRANSACTION READ ONLY")
             inspector = inspect(conn)
             schemas = [schema_name] if schema_name else sorted(allowed_schemas)
             if not schemas:
@@ -166,6 +177,7 @@ def inspect_database(*, profile_name: str, tenant_id: str,
                     raise LookupError("白名单表不存在或不可见：" + ", ".join(missing))
             results = []
             metadata = MetaData()
+            configured_redactions = {str(x).casefold() for x in (cfg.get("redact_columns") or [])}
             for schema, table_name in found[:MAX_TABLES_PER_REQUEST]:
                 table = Table(table_name, metadata, schema=schema, autoload_with=conn)
                 columns = [{
@@ -174,16 +186,25 @@ def inspect_database(*, profile_name: str, tenant_id: str,
                     "nullable": bool(col.nullable),
                     "primary_key": bool(col.primary_key),
                 } for col in table.columns]
+                sensitive_columns = [
+                    col.name for col in table.columns
+                    if _is_sensitive_column(col.name, configured_redactions)
+                ]
                 samples = []
                 if limit:
                     rows = conn.execute(select(table).limit(limit)).mappings().all()
-                    samples = [{str(k): _safe_sample(v) for k, v in row.items()} for row in rows]
+                    samples = [{
+                        str(k): ("<redacted>" if _is_sensitive_column(str(k), configured_redactions)
+                                 else _safe_sample(v))
+                        for k, v in row.items()
+                    } for row in rows]
                 results.append({
                     "schema": schema,
                     "table": table_name,
                     "columns": columns,
                     "sample_rows": samples,
                     "sample_count": len(samples),
+                    "redacted_columns": sensitive_columns,
                 })
             return {
                 "profile": profile_name, "dialect": engine.dialect.name,
@@ -193,6 +214,20 @@ def inspect_database(*, profile_name: str, tenant_id: str,
             }
     finally:
         engine.dispose()
+
+
+def _is_sensitive_column(name: str, configured: set[str] | None = None) -> bool:
+    """Conservatively redact likely credentials and direct personal identifiers."""
+    normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", name.casefold())
+    configured = configured or set()
+    if name.casefold() in configured or normalized in configured:
+        return True
+    markers = (
+        "password", "passwd", "secret", "token", "apikey", "accesskey",
+        "privatekey", "credential", "手机号", "手机号码", "电话", "邮箱",
+        "电子邮箱", "身份证", "证件号", "银行卡", "银行账号", "家庭住址",
+    )
+    return any(marker in normalized for marker in markers)
 
 
 def _safe_sample(value: Any) -> Any:
