@@ -303,3 +303,43 @@ def test_publish_schema_merge_preserves_interfaces_and_source_bindings():
     assert set(employee["interfaces"]) == {"Identifiable", "Auditable"}
     assert "Auditable" in result["schema"]["interfaces"]
     assert result["conflicts"] == []
+
+
+def test_mapping_contract_uses_source_specific_bindings_for_same_business_object():
+    from app.modules.ontology.automodel import mapper, profiler
+
+    schema = {
+        "schema_version": "v2",
+        "entity_types": {"Employee": {
+            "title_property": "full_name",
+            "backing_sources": [
+                {"source_id": "hr", "table": "employees", "primary_key": ["emp_id"],
+                 "property_mappings": {"emp_name": "full_name"}},
+                {"source_id": "iam", "table": "accounts", "primary_key": ["account_id"],
+                 "property_mappings": {"login": "login_name"}},
+            ],
+        }},
+        "relation_types": {},
+        "attributes": {
+            "full_name": {"owner": "Employee", "column": "emp_name"},
+            "login_name": {"owner": "Employee", "column": "login"},
+        },
+    }
+    hr = connectors.TableSet("hr", "file")
+    hr.tables["employees"] = connectors.Table(
+        "employees", pd.DataFrame({"emp_id": [1], "emp_name": ["Alice"]}), row_count=1)
+    hr_contract = mapper.build_contract(
+        "hr", {"schema": schema, "class_map": {"employees": "Employee"}}, profiler.profile(hr))
+    assert len(hr_contract["mappings"]) == 1
+    assert hr_contract["mappings"][0]["primary_key"] == ["emp_id"]
+    assert hr_contract["mappings"][0]["attributes"] == {"full_name": "emp_name"}
+    assert hr_contract["mappings"][0]["name"] == "emp_name"
+
+    iam = connectors.TableSet("iam", "file")
+    iam.tables["accounts"] = connectors.Table(
+        "accounts", pd.DataFrame({"account_id": [2], "login": ["alice"]}), row_count=1)
+    iam_contract = mapper.build_contract(
+        "iam", {"schema": schema, "class_map": {"accounts": "Employee"}}, profiler.profile(iam))
+    assert len(iam_contract["mappings"]) == 1
+    assert iam_contract["mappings"][0]["primary_key"] == ["account_id"]
+    assert iam_contract["mappings"][0]["attributes"] == {"login_name": "login"}
