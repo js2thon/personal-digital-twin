@@ -7,13 +7,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 
 from app.db import session as db
 from app.modules.ontology import mapping_registry
 from app.modules.ontology.mapping_pipeline import _coerce_value, _schema_parts, validate_mappings
 from app.modules.ontology.semantic.service import OntologyService
-from app.modules.ontology.semantic.constraints import ConstraintViolation
 
 MAX_EXECUTION_ROWS = 500
 
@@ -175,7 +174,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                         " row_hash, entity_type, instance_id, ingestion_run_id) "
                         "VALUES (:t, CAST(:mid AS uuid), :sk, :src, :rn, :rh, :et, "
                         " gen_random_uuid(), CAST(:run AS uuid)) "
-                        "ON CONFLICT (tenant_id, mapping_set_id, source_key, entity_type) "
+                        "ON CONFLICT (tenant_id, mapping_set_id, source_key, source_row, entity_type) "
                         "DO NOTHING RETURNING id::text AS id, instance_id::text AS instance_id",
                         {"t": tenant_id, "mid": mapping_set_id, "sk": source_key,
                          "src": source_name, "rn": row_no, "rh": row_hash,
