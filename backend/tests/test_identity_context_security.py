@@ -53,6 +53,6 @@ def test_trusted_proxy_without_verified_client_ip_is_not_loopback(monkeypatch):
     )
     response = client.get(
         "/api/v1/semantic/meta",
-        headers={"X-Forwarded-For": "127.0.0.1, ::1"},
+        headers={"X-Forwarded-For": "127.0.0.1"},
     )
     assert response.status_code == 401
