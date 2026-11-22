@@ -337,8 +337,26 @@ def validate_plan(plan: dict, schema: dict, metric_set: dict) -> list[str]:
             errs.append("order 只能是 asc/desc")
     tf = plan.get("time_filter")
     if tf:
-        if tf.get("attr") not in schema["attributes"] or tf.get("op") not in (">=", "<", "between"):
+        attr = tf.get("attr") if isinstance(tf, dict) else None
+        op = tf.get("op") if isinstance(tf, dict) else None
+        value = tf.get("value") if isinstance(tf, dict) else None
+        spec = schema["attributes"].get(attr) if attr else None
+        if not spec or op not in (">=", "<", "between"):
             errs.append("时间过滤不合法")
+        elif spec.get("role") != "temporal" and str(spec.get("range") or "").lower() not in ("date", "datetime"):
+            errs.append(f"属性 {attr} 不是时间属性，不能用于时间过滤")
+        elif op == "between" and (
+            not isinstance(value, (list, tuple)) or len(value) != 2
+            or not all(isinstance(x, str) and x.strip() for x in value)
+        ):
+            errs.append("between 时间过滤必须提供两个非空日期字符串")
+        elif op in (">=", "<") and (not isinstance(value, str) or not value.strip()):
+            errs.append("时间过滤值必须是非空日期字符串")
+        elif op == "between" and isinstance(value, (list, tuple)) and len(value) == 2 and value[0] >= value[1]:
+            errs.append("between 时间范围的开始日期必须早于结束日期")
+        if spec and op in (">=", "<", "between") and plan.get("op") in ("list", "lookup"):
+            if spec.get("owner") != plan.get("cls"):
+                errs.append(f"时间属性 {attr} 不属于对象类型 {plan.get('cls')}")
     if op in ("list", "lookup") and plan.get("cls") not in schema["entity_types"]:
         errs.append(f"未登记的类：{plan.get('cls')}")
     if op == "lookup":
@@ -501,8 +519,10 @@ def _source_evidence(contract: dict | None, schema: dict, plan: dict | None,
     by_class = {m.get("class"): m for m in mappings if m.get("class")}
     refs = []
     classes = set()
-    if isinstance(plan, dict) and plan.get("cls"):
-        classes.add(plan["cls"])
+    if isinstance(plan, dict):
+        if plan.get("cls"):
+            classes.add(plan["cls"])
+        classes.update(x for x in (plan.get("classes") or []) if x)
     if isinstance(result, dict):
         for row in result.get("rows") or []:
             if row.get("_id"):
@@ -579,7 +599,16 @@ def ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
                 out["engine"] += "+llm"
         out["evidence"] = {
             "metric": out.get("metric"), "result": out["result"],
-            "provenance": _source_evidence(contract, schema, out.get("plan"), out.get("result")),
+            "provenance": _source_evidence(
+                contract, schema,
+                {**(out.get("plan") or {}), "classes": [
+                    x for x in (out.get("metric") or {}).get("classes", [])
+                    if x
+                ] + [x for x in (
+                    (out.get("metric") or {}).get("cls"),
+                    (out.get("metric") or {}).get("frame"),
+                ) if x]},
+                out.get("result")),
         }
         return out
 
