@@ -372,9 +372,17 @@ def instance_json_schema(schema: dict, type_name: str) -> dict:
 def validate_business_model(schema: SemanticSchema | dict) -> list[dict[str, str]]:
     """Validate Palantir-style business-object modeling invariants without I/O."""
     data = to_schema_dict(schema)
-    entities = data.get("entity_types") or {}
-    relations = data.get("relation_types") or {}
-    interfaces = data.get("interfaces") or {}
+
+    def named_map(value):
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, list):
+            return {str(item.get("name")): item for item in value if isinstance(item, dict) and item.get("name")}
+        return {}
+
+    entities = named_map(data.get("entity_types"))
+    relations = named_map(data.get("relation_types"))
+    interfaces = named_map(data.get("interfaces"))
     issues: list[dict[str, str]] = []
 
     def add(code: str, ref: str, message: str) -> None:
@@ -388,7 +396,8 @@ def validate_business_model(schema: SemanticSchema | dict) -> list[dict[str, str
         title = obj.get("title_property")
         if title and title not in attrs:
             add("UNKNOWN_TITLE_PROPERTY", name, f"展示属性 {title} 未在对象 {name} 中定义")
-        if kind != "action_created" and not obj.get("identity_rules") and not obj.get("backing_sources"):
+        action_created = any((b.get("mode") == "action_created") for b in obj.get("backing_sources") or [])
+        if not action_created and not obj.get("identity_rules") and not obj.get("backing_sources"):
             add("OBJECT_WITHOUT_IDENTITY_OR_SOURCE", name,
                 f"业务对象 {name} 既没有身份规则，也没有数据源绑定")
         for rule in obj.get("identity_rules") or []:
