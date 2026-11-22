@@ -7,6 +7,7 @@
   pick_object_external_id 路径 —— 不再依赖名字匹配。
 
 writer 可注入：默认只返回结果（便于测试）；`PgWriter` 写入 PG 并交给投影/Outbox。
+本模块接收的 TableSet 属于 Automodel Discovery 数据集，永远不能作为生产摄取凭据。
 """
 from __future__ import annotations
 
@@ -16,6 +17,8 @@ import re
 import pandas as pd
 
 from .connectors import TableSet
+
+DISCOVERY_DATA_SCOPE = "discovery_sample"
 
 
 def _clean(v):
@@ -114,7 +117,8 @@ def materialize(ts: TableSet, contract: dict) -> dict:
     linked = {f["subject_external_id"] for f in rel_facts} | \
              {f["object_value"]["external_id"] for f in rel_facts}
     isolated = [e["external_id"] for e in entities if e["external_id"] not in linked]
-    return {"entities": entities, "facts": facts, "errors": errors[:200],
+    return {"data_scope": DISCOVERY_DATA_SCOPE,
+            "entities": entities, "facts": facts, "errors": errors[:200],
             "dangling": dangling[:200],
             "stats": {"entities": len(entities), "facts": len(facts),
                       "relation_facts": len(rel_facts), "dangling": len(dangling),
@@ -147,6 +151,16 @@ class PgWriter:
 
     def write(self, result: dict, visibility: str = "owner",
               ontology_version: str | None = None, tenant_id: str = "default") -> dict:
+        # Automodel 的 connectors.py 对 CSV/Excel/JSON/Parquet/DB 都执行采样，
+        # 因此此处只允许 Discovery 预览结果，绝不能将其写入正式实体/事实表。
+        # 正式数据摄取走 mapping_execution 的审批映射、事务和 ingestion-run 路径。
+        data_scope = result.get("data_scope", DISCOVERY_DATA_SCOPE)
+        if data_scope != "production":
+            raise ValueError(
+                "拒绝将 Discovery 抽样数据写入生产实体/事实表；"
+                "请通过已审核的 ontology.mapping_execution 生产摄取流程执行全量/增量同步"
+            )
+
         import json
         ids: dict[str, str] = {}
         for e in result["entities"]:
