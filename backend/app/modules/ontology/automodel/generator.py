@@ -140,7 +140,8 @@ def _range(dtype: str) -> str:
 
 
 def generate(profiles: dict[str, TableProfile], version: str = "draft",
-             existing_schema: dict | None = None, llm=None) -> dict:
+             existing_schema: dict | None = None, llm=None,
+             source_id: str = "") -> dict:
     """返回 {schema, class_map, inferences, review}。"""
     existing_types = set(((existing_schema or {}).get("entity_types") or {}).keys())
     entity_types, relation_types, attributes = {}, {}, {}
@@ -231,8 +232,45 @@ def generate(profiles: dict[str, TableProfile], version: str = "draft",
             infer("attribute", key, conf, f"{t}.{c.name}：{c.dtype}/{c.role}，空值率 {c.null_ratio:.0%}",
                   table=t, column=c.name, role=c.role)
 
+    # 4) 将数据画像提升为业务对象定义：对象身份、展示属性、对象类别和数据源绑定。
+    for table, cls in class_map.items():
+        profile = profiles[table]
+        obj = entity_types[cls]
+        column_to_property = {
+            meta["column"]: prop for prop, meta in attributes.items()
+            if meta.get("owner") == cls and meta.get("column")
+        }
+        key_properties = [column_to_property[k] for k in profile.primary_key
+                          if k in column_to_property]
+        title_property = column_to_property.get(obj.get("name_column") or "")
+        table_lower = table.lower()
+        if re.search(r"(event|history|log|audit|activity|事件|历史|日志)", table_lower):
+            object_kind = "event"
+        elif re.search(r"(order|transaction|payment|invoice|approval|claim|订单|交易|付款|发票|审批)", table_lower):
+            object_kind = "transaction"
+        elif re.search(r"(dict|dictionary|lookup|reference|code_list|字典|码表)", table_lower):
+            object_kind = "reference"
+        else:
+            object_kind = "entity"
+        obj.update({
+            "object_kind": object_kind,
+            "title_property": title_property or "",
+            "identity_rules": ([{
+                "source_system": source_id, "key_properties": key_properties,
+                "normalization": "trim", "priority": 100, "unique": True,
+            }] if key_properties else []),
+            "backing_sources": [{
+                "source_id": source_id, "dataset": source_id, "table": table,
+                "primary_key": list(profile.primary_key),
+                "property_mappings": column_to_property,
+                "mode": "materialized",
+            }],
+            "source_table": table,
+        })
+
     schema = {"schema_version": version, "entity_types": entity_types,
               "relation_types": relation_types, "attributes": attributes,
+              "interfaces": {},
               "constraints": {"max_hops": 3,
                               "single_valued": [k for k, v in attributes.items()
                                                 if v.get("identifier")]},
