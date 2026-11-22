@@ -6,7 +6,7 @@
 
 ## 页面入口
 
-- Docker Web：`http://localhost:8200/console/ontology-app-studio/`
+- Docker Web：`http://localhost:8200/ontology-app-studio/`
 - 本机无 Docker：`http://127.0.0.1:8101/console/ontology-app-studio/`
 
 ## V1 页面流程
@@ -24,7 +24,7 @@
 - CSV/XLSX 暂不直接由此页面导入 KG 会话；应先经过本体字段映射、质量验证、映射版本审批和受控入库 Pipeline。
 - 图表聚合以本体显式声明的类/数据属性为依据；无实例、无可聚合属性或查询失败时显示空状态，不推断业务数据。
 - 当前图表布局和应用配置保存在浏览器本地并可导出；尚未实现服务端多用户应用发布、权限策略、可视化编辑器和定时刷新。
-- API Key 仅保存在当前浏览器会话的 sessionStorage，不写入应用配置文件。
+- API 地址和 API Key 可在页面顶部配置并仅保存在当前浏览器会话的 sessionStorage，不写入应用配置文件。Docker 默认访问同主机的 8100 API 端口；本机无 Docker 模式默认使用当前 8101 地址。
 - 关系图首版为本体 Schema 层图示，最多显示 18 个类；不是全量实例级网络图。
 
 ## 下一阶段
