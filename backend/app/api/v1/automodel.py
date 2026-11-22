@@ -110,6 +110,9 @@ def _summary(job: dict) -> dict:
             "review": d.get("review"), "issues": job.get("issues"),
             "materialized": (job.get("materialized") or {}).get("stats"),
             "metrics": (job.get("metrics") or {}).get("stats"),
+            "business_object_discovery": job.get("business_object_discovery"),
+            "standards_report": job.get("standards_report"),
+            "release_gate": job.get("release_gate"),
             "schema_version": job.get("schema_version")}
 
 
@@ -232,6 +235,7 @@ def get_job(job_id: str, request: Request, full: bool = False):
 
 class ReviewIn(BaseModel):
     decisions: list[dict] = Field(default_factory=list)
+    acknowledge_warnings: bool = False
 
 
 @router.post("/automodel/jobs/{job_id}/review")
@@ -246,8 +250,10 @@ def review(job_id: str, payload: ReviewIn, request: Request):
             raise HTTPException(400, f"非法审核决策：{d}")
         if d.get("new_name") and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", d["new_name"]):
             raise HTTPException(400, f"new_name 非法：{d['new_name']}")
-    pipeline.apply_review(job, payload.decisions)
+    pipeline.apply_review(job, payload.decisions, actor=actor)
     pipeline.rebuild(job, _source(job_id))
+    if payload.acknowledge_warnings:
+        pipeline.acknowledge_standards_warnings(job, actor)
     with _LOCK:
         _FRAMES.pop(job_id, None)
     jobs.save(job, tenant, actor)
