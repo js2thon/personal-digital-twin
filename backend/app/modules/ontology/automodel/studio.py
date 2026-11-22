@@ -211,6 +211,7 @@ def quality(job: dict) -> dict:
     finding("SELF_LOOP", "warning", len(loops), "存在自环关系")
     finding("UNMAPPED_PROPERTY", "warning", len(all_attrs - mapped), "部分本体属性未映射到来源字段")
     finding("REVIEW_PENDING", "warning", len(pending), "仍有待人工确认的建模候选")
+    warning_count = sum(1 for x in findings if x["level"] == "warning") + warning_count
     return {
         "quality_score": score,
         "score_label": "excellent" if score >= 90 else "good" if score >= 75 else "needs_attention" if score >= 60 else "critical",
