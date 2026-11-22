@@ -219,7 +219,18 @@ def generate(profiles: dict[str, TableProfile], version: str = "draft",
             if c.name in fk_cols:
                 continue
             key = c.name if c.name not in attributes else f"{_snake(cls)}_{c.name}"
+            column_lower = c.name.lower()
+            sensitivity = ("restricted" if re.search(
+                r"(id_card|identity_no|passport|phone|mobile|email|personal_address|身份证|手机号|电话|邮箱)", column_lower)
+                else "confidential" if re.search(
+                    r"(salary|wage|bank_account|account_no|medical|薪资|工资|银行账号)", column_lower)
+                else "internal")
+            temporal_role = ("valid_from" if re.search(r"(valid_from|effective_from|start_date|生效开始)", column_lower)
+                             else "valid_to" if re.search(r"(valid_to|effective_to|end_date|生效结束)", column_lower)
+                             else "event_time" if c.role == "temporal" else "")
             meta = {"range": _range(c.dtype), "owner": cls, "column": c.name, "role": c.role,
+                    "semantic_type": c.role, "sensitivity": sensitivity,
+                    "temporal_role": temporal_role,
                     "label": c.comment or COLUMN_LABELS.get(c.name) or _guess_label(c.name)}
             if c.role == "enum":
                 meta["enum_values"] = c.samples
@@ -252,6 +263,15 @@ def generate(profiles: dict[str, TableProfile], version: str = "draft",
             object_kind = "reference"
         else:
             object_kind = "entity"
+        obj["attributes"] = [
+            {"name": prop, "range": meta.get("range", "string"),
+             "required": False, "semantic_type": meta.get("semantic_type", ""),
+             "sensitivity": meta.get("sensitivity", "internal"),
+             "temporal_role": meta.get("temporal_role", ""),
+             "identifier": bool(meta.get("identifier")),
+             "description": meta.get("description", meta.get("label", ""))}
+            for prop, meta in attributes.items() if meta.get("owner") == cls
+        ]
         obj.update({
             "object_kind": object_kind,
             "title_property": title_property or "",
