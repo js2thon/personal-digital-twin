@@ -72,6 +72,8 @@ def _slim(job: dict) -> dict:
         "written": job.get("written"),
         "config": job.get("config"), "actions_log": (job.get("actions_log") or [])[-500:],
         "dataset_id": job.get("dataset_id"), "design_layout": job.get("design_layout"),
+        "change_set": (job.get("change_set") or [])[-500:],
+        "cq_results": job.get("cq_results"),
     }
 
 

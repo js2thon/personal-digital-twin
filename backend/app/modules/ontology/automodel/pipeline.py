@@ -1,14 +1,11 @@
-"""编排：profile → draft → map → validate →（审核）→ materialize。
-
-每阶段产物进 artifact，可持久化到 ontology.modelling_jobs 断点续跑。
-发布 Schema 与写库是两个显式动作（approve_and_publish / write），默认不自动执行。
-"""
+"""编排：profile → draft → map → validate → review → preview → publish gate。"""
 from __future__ import annotations
 
+import copy
 import time
 import uuid
 
-from . import generator, mapper, materializer, profiler
+from . import generator, mapper, materializer, profiler, release_gate
 from .connectors import TableSet
 
 STAGES = ("profile", "draft", "map", "validate", "materialize", "metrics")
@@ -36,15 +33,17 @@ def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
         return _done(job)
     contract = stage("map", lambda: mapper.build_contract(ts.source_id, draft, profiles))
     job["contract"] = contract
-    issues = stage("validate", lambda: mapper.validate_contract(contract, draft["schema"]))
+    issues = stage("validate", lambda: mapper.validate_contract(contract, draft["schema"], profiles))
     job["issues"] = issues
     if any(i["level"] == "error" for i in issues) or stop_after in ("map", "validate"):
         job["status"] = "needs_review" if issues else "validated"
+        job["release_gate"] = release_gate.evaluate(job)
         return _done(job, keep_status=True)
     job["materialized"] = stage("materialize", lambda: materializer.materialize(ts, contract))
     from . import metrics as mx
     job["metrics"] = stage("metrics", lambda: mx.generate(draft["schema"]))
     job["status"] = "needs_review" if draft["review"] else "ready_to_publish"
+    job["release_gate"] = release_gate.evaluate(job)
     return _done(job, keep_status=True)
 
 
@@ -55,86 +54,123 @@ def _done(job, keep_status=False):
     return job
 
 
-def apply_review(job: dict, decisions: list[dict]) -> dict:
-    """人工审核：逐条 accept / reject / rename / retarget，然后重建契约并复校验。
+def _audit(job: dict, action: str, actor: str, **details) -> dict:
+    event = {"change_id": str(uuid.uuid4()), "action": action, "actor": actor,
+             "reviewed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+             "schema_version": (job.get("draft") or {}).get("schema", {}).get("schema_version"),
+             **details}
+    job.setdefault("change_set", []).append(event)
+    job.setdefault("actions_log", []).append(event.copy())
+    return event
 
-    decisions: [{"kind": "class|relation|attribute", "ref": "...", "action": "accept|reject|rename",
-                 "new_name": "...", "label": "..."}]
-    """
+
+def apply_review(job: dict, decisions: list[dict], actor: str = "reviewer") -> dict:
+    """审核候选：accept/reject/rename/retarget；严格校验动作并记录不可丢失的变更审计。"""
     schema = job["draft"]["schema"]
-    sec = {"class": "entity_types", "relation": "relation_types", "attribute": "attributes"}
-    for d in decisions or []:
-        s = schema[sec[d["kind"]]]
-        ref = d["ref"]
-        if ref not in s:
-            continue
-        if d.get("label"):
-            s[ref]["label"] = d["label"]
-        if d["action"] == "reject":
-            s.pop(ref)
-            if d["kind"] == "class":
+    sections = {"class": "entity_types", "relation": "relation_types", "attribute": "attributes"}
+    allowed = {"accept", "reject", "rename", "retarget"}
+    for decision in decisions or []:
+        kind, ref, action = decision.get("kind"), decision.get("ref"), decision.get("action")
+        if kind not in sections:
+            raise ValueError(f"不支持的审核对象类型：{kind}")
+        if action not in allowed:
+            raise ValueError(f"不支持的审核动作：{action}")
+        section = schema[sections[kind]]
+        if ref not in section:
+            raise ValueError(f"待审核对象不存在：{kind}/{ref}")
+        before = copy.deepcopy(section[ref])
+        if decision.get("label"):
+            section[ref]["label"] = decision["label"]
+        if action == "reject":
+            section.pop(ref)
+            if kind == "class":
                 job["draft"]["class_map"] = {t: c for t, c in job["draft"]["class_map"].items() if c != ref}
-                for k in [k for k, v in schema["relation_types"].items() if ref in (v["source"], v["target"])]:
-                    schema["relation_types"].pop(k)
-                for k in [k for k, v in schema["attributes"].items() if v["owner"] == ref]:
-                    schema["attributes"].pop(k)
-        elif d["action"] == "rename" and d.get("new_name") and d["new_name"] not in s:
-            s[d["new_name"]] = s.pop(ref)
-            if d["kind"] == "class":
-                new = d["new_name"]
-                job["draft"]["class_map"] = {t: (new if c == ref else c) for t, c in job["draft"]["class_map"].items()}
-                for v in schema["relation_types"].values():
-                    v["source"] = new if v["source"] == ref else v["source"]
-                    v["target"] = new if v["target"] == ref else v["target"]
-                for v in schema["attributes"].values():
-                    v["owner"] = new if v["owner"] == ref else v["owner"]
-        kept = [i for i in job["draft"]["inferences"] if not (i["kind"] == d["kind"] and i["ref"] == ref)]
-        if d["action"] != "reject":
-            kept.append({"kind": d["kind"], "ref": d.get("new_name") or ref, "confidence": 1.0,
-                         "reason": f"人工审核：{d['action']}"})
-        job["draft"]["inferences"] = kept
-    job["draft"]["review"] = [i for i in job["draft"]["inferences"] if i["confidence"] < 0.8]
+                for key in [k for k, v in schema["relation_types"].items()
+                            if ref in (v.get("source"), v.get("target"))]:
+                    schema["relation_types"].pop(key)
+                for key in [k for k, v in schema["attributes"].items() if v.get("owner") == ref]:
+                    schema["attributes"].pop(key)
+        elif action == "rename":
+            new_name = decision.get("new_name")
+            if not isinstance(new_name, str) or not new_name.strip() or new_name in section:
+                raise ValueError("rename 必须提供非空且未占用的 new_name")
+            new_name = new_name.strip()
+            section[new_name] = section.pop(ref)
+            if kind == "class":
+                job["draft"]["class_map"] = {t: (new_name if c == ref else c)
+                                             for t, c in job["draft"]["class_map"].items()}
+                for relation in schema["relation_types"].values():
+                    relation["source"] = new_name if relation.get("source") == ref else relation.get("source")
+                    relation["target"] = new_name if relation.get("target") == ref else relation.get("target")
+                for attr in schema["attributes"].values():
+                    attr["owner"] = new_name if attr.get("owner") == ref else attr.get("owner")
+            ref_after = new_name
+        elif action == "retarget":
+            if kind != "relation":
+                raise ValueError("retarget 当前仅支持关系类型")
+            new_source = decision.get("new_source", before.get("source"))
+            new_target = decision.get("new_target", before.get("target"))
+            if new_source not in schema["entity_types"] or new_target not in schema["entity_types"]:
+                raise ValueError("关系 retarget 的 source/target 必须是已定义对象类型")
+            section[ref]["source"], section[ref]["target"] = new_source, new_target
+        ref_after = decision.get("new_name") if action == "rename" else ref
+        after = copy.deepcopy(section.get(ref_after)) if action != "reject" else None
+        _audit(job, action, actor, target_type=kind, target_ref=ref,
+               target_ref_after=ref_after, before=before, after=after,
+               evidence=decision.get("evidence"), comment=decision.get("comment"))
+        inferences = job["draft"].get("inferences") or []
+        job["draft"]["inferences"] = [
+            item for item in inferences if not (item.get("kind") == kind and item.get("ref") == ref)]
+        if action != "reject":
+            job["draft"]["inferences"].append({
+                "kind": kind, "ref": ref_after, "confidence": 1.0,
+                "reason": f"人工审核：{action}", "reviewed_by": actor})
+    job["draft"]["review"] = [i for i in job["draft"].get("inferences", []) if i.get("confidence", 0) < 0.8]
+    job["release_gate"] = release_gate.evaluate(job)
     return job
 
 
 def rebuild(job: dict, ts: TableSet) -> dict:
-    """审核后重建：契约 → 校验 → 物化 → 指标（画像与草案沿用已审核版本）。"""
+    """审核后重建契约、执行源字段验证、预览物化和指标生成。"""
     from . import metrics as mx
     profiles = profiler.profile(ts)
+    job["profiles"] = {k: v.to_dict() for k, v in profiles.items()}
     job["contract"] = mapper.build_contract(ts.source_id, job["draft"], profiles)
-    job["issues"] = mapper.validate_contract(job["contract"], job["draft"]["schema"])
+    job["issues"] = mapper.validate_contract(job["contract"], job["draft"]["schema"], profiles)
     if any(i["level"] == "error" for i in job["issues"]):
         job["status"] = "needs_review"
+        job["release_gate"] = release_gate.evaluate(job)
         return job
     job["materialized"] = materializer.materialize(ts, job["contract"])
     job["metrics"] = mx.generate(job["draft"]["schema"])
     job["status"] = "needs_review" if job["draft"]["review"] else "ready_to_publish"
+    job["release_gate"] = release_gate.evaluate(job)
     return job
 
 
 def approve_and_publish(job: dict, actor: str, tenant: str = "default",
                         version: str | None = None) -> dict:
-    """人工审核通过后：发布 Schema（cq_v2 Registry）+ 指标草稿入库。"""
+    """发布前强制执行统一门禁；不允许仅凭 review 列表为空就发布。"""
     from . import publish
-    if job["draft"]["review"]:
-        raise ValueError(f"仍有 {len(job['draft']['review'])} 项待审核")
+    gate = release_gate.assert_publishable(
+        job, require_cq=bool((job.get("config") or {}).get("require_cq_for_publish")))
     res = publish.publish_schema(job, actor, version)
     if not res.get("published"):
         return res
     job["schema_version"] = res["schema_version"]
     job["published_by"] = actor
-    res["metrics"] = publish.publish_metrics(job["metrics"], job["draft"]["schema"], tenant, actor,
-                                             res["schema_version"])
+    res["metrics"] = publish.publish_metrics(job.get("metrics") or {"metrics": {}},
+                                              job["draft"]["schema"], tenant, actor,
+                                              res["schema_version"])
     job["status"] = "published"
+    job["release_gate"] = gate
+    _audit(job, "publish", actor, schema_version=res["schema_version"])
     return res
 
 
 def write(job: dict, db, visibility: str = "owner") -> dict:
-    """写入实体/事实。必须在 approve_and_publish 之后（facts 依赖已发布的关系类型）。"""
-    if job.get("status") != "published":
-        raise ValueError("请先审核并发布本体")
-    res = materializer.PgWriter(db).write(job["materialized"], visibility,
-                                          ontology_version=job.get("schema_version"))
-    job["written"] = res
-    job["status"] = "written"
-    return res
+    """Discovery 物化样本不得写入正式库；正式写入使用已审核 mapping_execution API。"""
+    raise ValueError(
+        "Automodel Discovery 结果仅用于预览；正式数据写入请调用 ontology.mapping_execution，"
+        "并通过 IngestionRun 分批执行。"
+    )
