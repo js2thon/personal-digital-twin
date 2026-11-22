@@ -276,7 +276,10 @@ def stream_table_rows(*, profile_name: str, tenant_id: str, schema_name: str | N
 
     engine = _engine(url)
     try:
-        with engine.connect().execution_options(isolation_level="REPEATABLE READ") as conn:
+        connection = engine.connect()
+        if engine.dialect.name in {"postgresql", "mysql"}:
+            connection = connection.execution_options(isolation_level="REPEATABLE READ")
+        with connection as conn:
             _enforce_read_only(conn, engine.dialect.name)
             inspector = inspect(conn)
             available = {col["name"] for col in inspector.get_columns(table_name, schema=schema_name)}
