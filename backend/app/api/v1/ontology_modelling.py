@@ -146,6 +146,16 @@ class DatasetExecuteIn(DatasetInspectIn):
     sync_mode: str = "append"
     source_id_column: str | None = None
 
+class DatasetStreamExecuteIn(DatasetInspectIn):
+    """完整文件快照按 <=500 行分批执行；缺失记录仅支持显式软停用。"""
+    mapping_set_id: str
+    snapshot_id: str
+    sync_mode: str = "upsert"
+    source_id_column: str
+    batch_size: int = 500
+    reconcile_missing: bool = False
+
+
 class DatabaseInspectIn(BaseModel):
     """通过服务端白名单连接配置发现数据库元数据；不接收连接串或 SQL。"""
     schema_name: str | None = None
@@ -317,6 +327,48 @@ def dataset_execute(payload: DatasetExecuteIn, request: Request):
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(422, f"数据实例化失败，事务已回滚：{exc}") from exc
+
+
+@router.post("/ontology/modelling/dataset/execute-stream")
+def dataset_execute_stream(payload: DatasetStreamExecuteIn, request: Request):
+    """完整源快照分批入库；支持稳定源键 upsert、批次检查点和可选软停用对账。"""
+    import base64
+    import hashlib
+    from app.modules.ontology import ingestion_batches as IB
+    from app.modules.ontology import mapping_pipeline as MP
+    principal = _principal(request)
+    tenant_id = str(principal.get("tenant_id") or "default")
+    actor = str(principal.get("user_id") or "anonymous")
+    if payload.batch_size < 1 or payload.batch_size > 500:
+        raise HTTPException(400, "batch_size 必须在 1-500 之间")
+    if payload.sync_mode not in ("append", "upsert"):
+        raise HTTPException(400, "sync_mode 仅支持 append 或 upsert")
+    if payload.sync_mode == "upsert" and not payload.source_id_column:
+        raise HTTPException(400, "upsert 模式必须指定 source_id_column")
+    if payload.reconcile_missing and payload.sync_mode != "upsert":
+        raise HTTPException(400, "缺失记录对账仅支持 upsert 模式")
+    try:
+        if len(payload.content_base64) > 14 * 1024 * 1024:
+            raise HTTPException(413, "文件编码后超过上传限制")
+        raw = base64.b64decode(payload.content_base64, validate=True)
+        parsed = MP.read_tabular_file(payload.file_name, raw, payload.sheet_name)
+        result = IB.execute_approved_dataset_stream(
+            tenant_id=tenant_id, mapping_set_id=payload.mapping_set_id,
+            rows=parsed["rows"], source_name=payload.file_name,
+            snapshot_id=payload.snapshot_id, actor=actor,
+            source_sha256=hashlib.sha256(raw).hexdigest(),
+            sync_mode=payload.sync_mode, source_id_column=payload.source_id_column,
+            batch_size=payload.batch_size, reconcile_missing=payload.reconcile_missing)
+        result["dataset"] = {k: v for k, v in parsed.items() if k != "rows"}
+        return result
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(422, f"分批数据摄取失败：{type(exc).__name__}") from exc
 
 
 @router.get("/ontology/modelling/ingestion-runs/{run_id}")
