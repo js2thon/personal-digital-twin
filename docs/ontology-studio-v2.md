@@ -18,6 +18,13 @@
 - 仅对新物化且实际带有 source_ref 的事实提供字段级追踪。旧快照、手工 Action 创建/修改事实或缺失 source_ref 的数据会显示“未持久化”，不按字段名猜测。
 
 ### 3. 本体质量与治理
+
+### 4. Discovery 与 Production 摄取边界（P0.1）
+- Automodel connectors 当前对 CSV/TSV、Excel、JSON、Parquet 和数据库执行有界抽样；其 TableSet 用于数据画像、本体草案、映射建议和预览，不代表全量数据。
+- Automodel materializer 的结果显式标记为 `discovery_sample`，旧 `PgWriter` 已禁用，拒绝把该路径产物写入正式实体/事实表；即使调用方伪造 `data_scope=production` 也不能绕过。
+- 正式全量/增量数据写入使用独立的 `ontology.mapping_execution` 流程：审核通过的 Mapping Set、事务化执行、稳定源记录 ID、tenant/mapping/source 唯一性、ingestion-run 和字段级血缘。
+- Discovery 采样行数、正式摄取行数及其运行状态必须分别展示；不得将 Discovery 结果计数解释为生产物化结果。
+- 当前 Automodel 旧 PgWriter 被安全关闭；后续若要恢复统一的生产物化能力，应由受控 IngestionRun/执行服务提供不可伪造的授权上下文，而不是增加可由调用方传入的布尔标记。
 - 确定性质量评分（0–100）：基于契约错误、悬空引用、重复边、非法关系、自环、未映射属性和待审核项的规则扣分。
 - 报告包含评分说明、覆盖率、问题代码、严重级别、计数和明细；该分数不是模型置信度，也不替代业务验收。
 - 发布门禁汇总阻断问题和待人工审核候选。最终发布仍由既有发布 API 再次验证。
