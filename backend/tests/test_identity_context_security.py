@@ -38,3 +38,19 @@ def test_remote_api_key_cannot_spoof_tenant_user_role_or_schema(monkeypatch):
     assert permission["scope"] == ["owner", "organization"]
     assert response.headers["x-semantic-schema-version"] != "attacker-controlled-version"
     assert response.headers["x-semantic-context-source"] == "derived"
+
+
+
+def test_trusted_proxy_without_verified_client_ip_is_not_loopback(monkeypatch):
+    monkeypatch.setattr(cfg, "api_key", "")
+    monkeypatch.setattr(cfg, "trust_proxy_headers", True)
+    monkeypatch.setattr(cfg, "trusted_proxy_hosts", "127.0.0.1")
+    client = TestClient(
+        app, client=("127.0.0.1", 54321),
+        raise_server_exceptions=False,
+    )
+    response = client.get(
+        "/api/v1/semantic/meta",
+        headers={"X-Forwarded-For": "127.0.0.1, ::1"},
+    )
+    assert response.status_code == 401
