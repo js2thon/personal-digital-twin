@@ -189,7 +189,7 @@ def preview_from_store(payload: StorePreviewIn, request: Request):
         "records_evaluated": len(visible),
         "metric_versions": {mid: published[mid]["version"] for mid in metric_ids},
         "metric_checksums": {mid: published[mid]["checksum"] for mid in metric_ids},
-        "ontology_version": getattr(request.state, "semantic_context", None)
+        "schema_version": getattr(request.state, "semantic_context", None)
             and getattr(request.state.semantic_context, "schema_version", None),
     })
     return result
