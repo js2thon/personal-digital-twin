@@ -162,7 +162,7 @@ def apply_review(job: dict, decisions: list[dict], actor: str = "reviewer",
     """审核变更统一同步 Schema 引用；所有操作保留前后快照与审计。"""
     schema = job["draft"]["schema"]
     sections = {"class": "entity_types", "relation": "relation_types", "attribute": "attributes"}
-    allowed = {"accept", "reject", "rename", "retarget"}
+    allowed = {"accept", "reject", "rename", "retarget", "merge"}
     for decision in decisions or []:
         kind, ref, action = decision.get("kind"), decision.get("ref"), decision.get("action")
         if kind not in sections:
@@ -204,6 +204,33 @@ def apply_review(job: dict, decisions: list[dict], actor: str = "reviewer",
                 _rename_object_refs(schema, ref, new_name)
             elif kind == "attribute":
                 _rename_property_refs(schema, ref, new_name)
+        elif action == "merge":
+            if kind != "class":
+                raise ValueError("merge 当前仅支持业务对象类型")
+            target = decision.get("target")
+            if not isinstance(target, str) or target not in schema["entity_types"] or target == ref:
+                raise ValueError("merge 必须指定一个已存在且不同的 target 对象类型")
+            source_obj, target_obj = section[ref], section[target]
+            if (source_obj.get("object_kind") and target_obj.get("object_kind")
+                    and source_obj["object_kind"] != target_obj["object_kind"]):
+                raise ValueError("对象类别不一致，不能自动归并")
+            target_obj["attributes"] = list({x.get("name"): x for x in
+                (target_obj.get("attributes") or []) + (source_obj.get("attributes") or [])}.values())
+            for field in ("identity_rules", "backing_sources", "interfaces", "aliases"):
+                target_obj[field] = list({str(x): x for x in
+                    (target_obj.get(field) or []) + (source_obj.get(field) or [])}.values())
+            if not target_obj.get("title_property"):
+                target_obj["title_property"] = source_obj.get("title_property", "")
+            if not target_obj.get("description"):
+                target_obj["description"] = source_obj.get("description", "")
+            job["draft"]["class_map"] = {t: (target if c == ref else c)
+                                         for t, c in job["draft"]["class_map"].items()}
+            _rename_object_refs(schema, ref, target)
+            for attr in (schema.get("attributes") or {}).values():
+                if attr.get("owner") == ref:
+                    attr["owner"] = target
+            section.pop(ref)
+            ref_after = target
         elif action == "retarget":
             if kind != "relation":
                 raise ValueError("retarget 当前仅支持关系类型")
@@ -219,7 +246,7 @@ def apply_review(job: dict, decisions: list[dict], actor: str = "reviewer",
         inferences = job["draft"].get("inferences") or []
         job["draft"]["inferences"] = [
             item for item in inferences if not (item.get("kind") == kind and item.get("ref") == ref)]
-        if action != "reject":
+        if action not in ("reject",):
             job["draft"]["inferences"].append({
                 "kind": kind, "ref": ref_after, "confidence": 1.0,
                 "reason": f"人工审核：{action}", "reviewed_by": actor})
