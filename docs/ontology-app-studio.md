@@ -6,7 +6,7 @@
 
 ## 页面入口
 
-- Docker Web：`http://localhost:8200/ontology-app-studio/`
+- Docker Web：`http://localhost:8200/console/ontology-app-studio/`
 - 本机无 Docker：`http://127.0.0.1:8101/console/ontology-app-studio/`
 
 ## V1 页面流程
@@ -15,7 +15,7 @@
 2. **AI 构建本体**：文本需求调用 `POST /api/v1/kg/design/draft`；需求文档调用 `POST /api/v1/kg/design/doc`。生成结果仅为草稿，必须人工确认后调用 `POST /api/v1/kg/design/apply`。
 3. **接入实例数据**：复用 `POST /api/v1/kg/{sid}/data` 或 `POST /api/v1/kg/{sid}/data/text`。
 4. **自动构建应用**：读取 `GET /api/v1/kg/{sid}` 的类、属性、关系与实例元数据，生成业务对象导航和图谱视图。
-5. **自动生成图表**：对有实例的类及其数据属性，构造只读 SPARQL 聚合查询 `POST /api/v1/kg/{sid}/sparql`。低基数分类字段生成饼图，高基数/数值字段生成柱状图；图表不使用虚构数据。
+5. **自动生成图表**：对有实例的类及其数据属性，构造只读 SPARQL 聚合查询 `POST /api/v1/kg/{sid}/sparql`。低基数分类字段生成饼图，日期/时间字段生成折线图，数值字段生成分布柱状图，低基数分类字段生成饼图，高基数分类字段生成柱状图；图表不使用虚构数据。
 6. **应用配置导出**：导出 JSON 配置，浏览器本地保存当前应用配置，便于后续迁移到服务端应用注册中心。
 
 ## 当前支持范围与边界
