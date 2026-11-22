@@ -1,5 +1,3 @@
-import base64
-
 from app.modules.ontology.mapping_pipeline import preview_rows, read_tabular_file
 
 
