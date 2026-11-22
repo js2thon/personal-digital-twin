@@ -25,4 +25,5 @@ for (const endpoint of [
 for (const id of ["datasetFile", "datasetInspect", "datasetPreview", "mappingCreate", "mappingApprove", "datasetExecute", "pipelineStatus"])
   assert.ok(declared.has(id), "missing dataset pipeline control: " + id);
 assert.ok(html.includes("只有 approved 映射版本允许执行"), "approved-only execution guard must remain");
+assert.ok(html.includes("if(sel.value==='')return null"), "unselected dataset columns must remain unmapped");
 console.log("Ontology App Studio static validation passed.");
