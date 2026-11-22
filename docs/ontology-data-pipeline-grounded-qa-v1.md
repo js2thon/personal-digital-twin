@@ -62,6 +62,7 @@ Make ontology-backed answers accurate, concise, and auditable by first improving
 ## Known remaining work
 
 - The current source evidence is mapping-level (source/table/column) plus returned instance IDs. It is not yet a substitute for durable row-level field-lineage lookup.
-- The production mapping executor currently consumes tabular rows; database discovery and production database streaming ingestion still need a first-class connector adapter with keyset pagination/watermarks.
+- The database stream currently supports a stable single-column primary key and full repeatable-read snapshots. Composite-key cursors, CDC/log-based incremental capture, source watermarks, and change-only extraction remain unimplemented.
+- Snapshot ingestion is full-scan upsert; opt-in missing-record reconciliation marks source records inactive and does not physically delete ontology instances.
 - Metric-level provenance needs dependency expansion down to every contributing property and source row, not only the metric's declared frame.
 - Graph/RDF projection consistency, incremental change handling and production QA over the unified semantic store need end-to-end acceptance tests.
