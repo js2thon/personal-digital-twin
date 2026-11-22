@@ -37,7 +37,10 @@ def discover(spec: dict) -> dict:
             "dependencies": [], "formula": "", "status": "draft",
             "evidence": {"object_node_id": obj.get("id"), "source": "ontology.object"},
         })
-        for attr in obj.get("attrs", []) + obj.get("declared_attrs", []):
+        attrs_by_name = {a.get("name"): a for a in
+                         (obj.get("declared_attrs", []) + obj.get("attrs", []))
+                         if isinstance(a, dict) and a.get("name")}
+        for attr in attrs_by_name.values():
             if attr.get("range") not in ("integer", "number", "float", "decimal"):
                 continue
             candidates.append({
@@ -196,8 +199,12 @@ def preview(definitions: list[dict], data: dict) -> dict:
             try:
                 nums = [float(v) for v in present]
                 if agg == "count": value, note = len(rows), f"对象实例数 {len(rows)}"
-                elif agg == "distinct_count": value, note = len({str(v) for v in present}), f"去重计数 {len(present)} → {len({str(v) for v in present})}"
-                elif agg == "sum": value, note = sum(nums), f"{len(nums)} 个数值求和"
+                elif agg == "distinct_count":
+                    value = len({str(v) for v in present}) if present else None
+                    note = f"去重计数 {len(present)} → {len({str(v) for v in present})}" if present else "字段无可用值"
+                elif agg == "sum":
+                    value = sum(nums) if nums else None
+                    note = f"{len(nums)} 个数值求和" if nums else "字段无可用数值"
                 elif agg == "avg": value, note = (sum(nums) / len(nums) if nums else None), f"{len(nums)} 个数值求平均"
                 elif agg == "min": value, note = (min(nums) if nums else None), f"{len(nums)} 个数值取最小"
                 elif agg == "max": value, note = (max(nums) if nums else None), f"{len(nums)} 个数值取最大"
