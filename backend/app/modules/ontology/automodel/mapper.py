@@ -81,6 +81,29 @@ def validate_contract(contract: dict, schema: dict,
                 issue(table, "PROPERTY_OWNER_MISMATCH", f"属性 {a} 归属不符")
             if p and source_col not in (p.columns or {}):
                 issue(table, "MISSING_SOURCE_COLUMN", f"来源字段 {source_col} 不存在")
+            elif p:
+                column_profile = p.columns[source_col]
+                target_range = str((attrs.get(a) or {}).get("range") or "string").lower()
+                source_type = str(column_profile.dtype).lower()
+                expected = None
+                if any(token in target_range for token in ("integer", "int32", "int64", "long")):
+                    expected = {"integer"}
+                elif any(token in target_range for token in ("decimal", "double", "float", "number")):
+                    expected = {"integer", "number"}
+                elif "boolean" in target_range or "bool" in target_range:
+                    expected = {"boolean"}
+                elif "date" in target_range or "time" in target_range:
+                    expected = {"date", "text"}
+                if expected and source_type not in expected:
+                    issue(table, "PROPERTY_TYPE_MISMATCH",
+                          f"属性 {a} 的目标类型 {target_range} 与来源字段 {source_col} 类型 {source_type} 不兼容")
+                if (attrs.get(a) or {}).get("required") and column_profile.null_ratio > 0:
+                    issue(table, "REQUIRED_PROPERTY_NULL",
+                          f"必填属性 {a} 的来源字段 {source_col} 含空值")
+        for relation_name, relation_spec in rels.items():
+            if relation_spec.get("table") == table and relation_spec.get("cardinality") == "many_to_one":
+                if relation_name not in {r.get("type") for r in m.get("relations", [])}:
+                    issue(table, "MISSING_RELATION_MAPPING", f"关系 {relation_name} 缺少外键映射")
         for r in m.get("relations", []):
             spec = rels.get(r.get("type"))
             if not spec:
@@ -92,6 +115,11 @@ def validate_contract(contract: dict, schema: dict,
             target_table = r.get("target_table")
             if target_table and target_table not in mapped_tables:
                 issue(table, "UNMAPPED_RELATION_TARGET", f"关系目标表 {target_table} 未映射", "error")
+    mapped_links = {link.get("type") for link in contract.get("links", [])}
+    for relation_name, relation_spec in rels.items():
+        if relation_spec.get("cardinality") == "many_to_many" and relation_name not in mapped_links:
+            issue(relation_spec.get("via_table"), "MISSING_JUNCTION_MAPPING",
+                  f"多对多关系 {relation_name} 缺少关联表映射")
     for link in contract.get("links", []):
         table = link.get("table")
         p = profile_map.get(table)
