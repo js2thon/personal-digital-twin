@@ -426,17 +426,17 @@ def validate_business_model(schema: SemanticSchema | dict) -> list[dict[str, str
                     f"属性敏感级别不合法：{attr.get('sensitivity')}")
 
     for name, rel in relations.items():
-        sources = rel.get("source_types") or ["*"]
-        targets = rel.get("target_types") or ["*"]
+        sources = rel.get("source_types") or ([rel["source"]] if rel.get("source") else ["*"])
+        targets = rel.get("target_types") or ([rel["target"]] if rel.get("target") else ["*"])
         for endpoint in sources + targets:
             if endpoint != "*" and endpoint not in entities:
                 add("UNKNOWN_RELATION_ENDPOINT", name, f"关系 {name} 引用了不存在的对象类型：{endpoint}")
-        inverse = rel.get("inverse_of")
+        inverse = rel.get("inverse_of") or (rel.get("characteristics") or {}).get("inverse_of", "")
         if inverse:
             inverse_def = relations.get(inverse)
             if not inverse_def:
                 add("UNKNOWN_INVERSE_RELATION", name, f"反向关系 {inverse} 不存在")
-            elif name not in (inverse_def.get("inverse_of"), ""):
+            elif name not in (inverse_def.get("inverse_of"), (inverse_def.get("characteristics") or {}).get("inverse_of"), ""):
                 add("NON_RECIPROCAL_INVERSE", name, f"关系 {name} 与 {inverse} 的反向定义不一致")
     for name, interface in interfaces.items():
         if not name:
