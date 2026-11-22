@@ -29,8 +29,8 @@
 ### 4. Discovery 与 Production 摄取边界（P0.1）
 - Automodel connectors 当前对 CSV/TSV、Excel、JSON、Parquet 和数据库执行有界抽样；其 TableSet 用于数据画像、本体草案、映射建议和预览，不代表全量数据。
 - Automodel materializer 的结果显式标记为 `discovery_sample`，旧 `PgWriter` 已禁用，拒绝把该路径产物写入正式实体/事实表；即使调用方伪造 `data_scope=production` 也不能绕过。
-- 正式全量/增量数据写入使用独立的 `ontology.mapping_execution` 流程：审核通过的 Mapping Set、事务化执行、稳定源记录 ID、tenant/mapping/source 唯一性、ingestion-run 和字段级血缘。
-- Discovery 采样行数、正式摄取行数及其运行状态必须分别展示；不得将 Discovery 结果计数解释为生产物化结果。
+- 当前正式摄取入口是独立的 `ontology.mapping_execution`：仅支持已审核 Mapping Set 对上传表格数据执行，单次最多 500 行，支持 append/upsert、稳定源记录 ID、tenant/mapping/source 唯一性、事务和 ingestion-run/字段级血缘；调用方需分批提交。
+- 该执行器不会隐式删除源端缺失行；数据库连接器到生产全量/增量摄取的完整链路、自动分页/水位和删除同步仍未完成。Discovery 采样行数、正式摄取行数及其运行状态必须分别展示；不得将 Discovery 结果计数解释为生产物化结果。
 - 当前 Automodel 旧 PgWriter 被安全关闭；后续若要恢复统一的生产物化能力，应由受控 IngestionRun/执行服务提供不可伪造的授权上下文，而不是增加可由调用方传入的布尔标记。
 
 ## 新增 / 复用接口
