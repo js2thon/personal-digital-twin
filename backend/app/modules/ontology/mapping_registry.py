@@ -11,6 +11,7 @@ def _json(value) -> str:
 
 
 def ensure_schema() -> None:
+    db.execute("CREATE SCHEMA IF NOT EXISTS ontology")
     db.execute("""
     CREATE TABLE IF NOT EXISTS ontology.dataset_mapping_sets (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -43,6 +44,11 @@ def create_version(*, tenant_id: str, name: str, definition: dict,
     normalized = _json(definition)
     checksum = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
     with db.transaction():
+        # Serialize version allocation per tenant + mapping name to avoid concurrent
+        # requests producing the same next version.
+        lock_key = f"{tenant_id}:{name}"
+        db.fetch_one("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0)) AS locked",
+                     {"k": lock_key})
         current = db.fetch_one(
             "SELECT COALESCE(MAX(version), 0) AS v FROM ontology.dataset_mapping_sets "
             "WHERE tenant_id = :t AND name = :n",
