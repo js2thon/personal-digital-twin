@@ -54,3 +54,38 @@ def test_execution_supports_stable_source_record_upsert():
     assert 'sync_mode == "upsert"' in source
     assert 'instance_payload["id"] = source_state["instance_id"]' in source
     assert "Missing rows are never deleted implicitly" in source
+
+
+
+def test_full_snapshot_requires_upsert_mode():
+    from app.modules.ontology.mapping_execution import execute_approved_dataset
+    import inspect
+
+    params = inspect.signature(execute_approved_dataset).parameters
+    assert params["full_snapshot"].default is False
+    assert params["sync_mode"].default == "append"
+
+
+def test_full_snapshot_uses_tombstones_not_hard_deletes():
+    source = Path("app/modules/ontology/mapping_execution.py").read_text(encoding="utf-8")
+    assert "tombstoned_at=now()" in source
+    assert "last_seen_run_id IS DISTINCT FROM" in source
+    assert "it never deletes" in source or "never deletes" in source
+    assert "records_tombstoned" in source
+
+
+def test_full_snapshot_marks_seen_before_idempotency_reservation():
+    source = Path("app/modules/ontology/mapping_execution.py").read_text(encoding="utf-8")
+    mark = source.index("Mark the business key as present")
+    reservation = source.index("# A file-level reservation")
+    assert mark < reservation
+    assert "last_seen_run_id=CAST(:run AS uuid)" in source
+
+
+def test_source_record_identity_is_namespaced_by_mapping_and_source():
+    source = Path("app/modules/ontology/mapping_execution.py").read_text(encoding="utf-8")
+    assert "source_namespace VARCHAR(64)" in source
+    assert "hashlib.sha256(" in source
+    assert 'f"{mapping_set_id}:{source_name}"' in source
+    assert "UNIQUE (tenant_id, source_namespace, mapping_name, source_record_id, entity_type)" in source
+    assert "WHERE tenant_id=:t AND source_namespace=:ns AND mapping_name=:mn AND entity_type=:et" in source
