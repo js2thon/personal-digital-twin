@@ -27,7 +27,8 @@ def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
     if stop_after == "profile":
         return _done(job)
     draft = stage("draft", lambda: generator.generate(
-        profiles, version or f"auto-{ts.source_id}-{job['id']}", existing_schema, llm))
+        profiles, version or f"auto-{ts.source_id}-{job['id']}", existing_schema, llm,
+        source_id=ts.source_id))
     job["draft"] = draft
     if stop_after == "draft":
         return _done(job)
