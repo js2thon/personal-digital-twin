@@ -107,7 +107,7 @@ def next_version(current: str | None, job: dict) -> str:
     return f"{base}+{src}.{str(job['id'])[:6]}"[:VERSION_MAX]
 
 
-def publish_schema(job: dict, actor: str, version: str | None = None) -> dict:
+def publish_schema(job: dict, actor: str, version: str | None = None, tenant: str = "default") -> dict:
     from app.modules.ontology import cq_v2
     from app.modules.ontology import outbox
 
@@ -128,17 +128,51 @@ def publish_schema(job: dict, actor: str, version: str | None = None) -> dict:
         outbox.record("ontology.published", job["id"], {
             "schema_version": res["schema_version"], "job_id": job["id"],
             "compatibility": res.get("compatibility")}, aggregate_type="Ontology",
-            ontology_version=res["schema_version"])
+            tenant_id=tenant, ontology_version=res["schema_version"])
     except Exception as exc:  # noqa: BLE001  Schema 已提交但事件未登记，必须显式报告部分成功
         res["event"] = {"recorded": False, "error": str(exc)[:200]}
     runtime_ok = (res.get("runtime_catalog") or {}).get("installed") is True
     event_ok = res.get("event") != "outbox_record_failed" and not (
         isinstance(res.get("event"), dict) and res["event"].get("recorded") is False)
     if not runtime_ok or not event_ok:
-        return {"published": False, "partial_commit": True,
-                "schema_version": res.get("schema_version"), **res,
+        return {**res, "published": False, "partial_commit": True,
+                "schema_version": res.get("schema_version"),
                 "reason": "Schema 已提交，但运行时安装或发布事件登记失败；需执行恢复流程"}
     return {"published": True, **res}
+
+
+def recover_partial_publish(job: dict, actor: str, tenant: str,
+                            ontology_version: str) -> dict:
+    """在不重复创建 Schema 版本的前提下，恢复运行时目录、Outbox 和指标注册。"""
+    from app.modules.ontology import cq_v2, outbox, type_registry
+    from app.db import session as db
+
+    engine = cq_v2.get_engine()
+    registry = engine.registry
+    if registry.current_version() != ontology_version:
+        return {"published": False, "partial_commit": True,
+                "reason": "当前 Registry 版本已变化，不能自动恢复旧任务；需人工核对版本"}
+    runtime = type_registry.install(registry)
+    if runtime.get("installed") is not True:
+        return {"published": False, "partial_commit": True,
+                "reason": "运行时类型目录恢复失败", "runtime_catalog": runtime}
+    event = db.fetch_one(
+        "SELECT id FROM ingest.outbox_events WHERE event_type='ontology.published' "
+        "AND aggregate_id=:a AND tenant_id=:t AND payload->>'job_id'=:j LIMIT 1",
+        {"a": job["id"], "t": tenant, "j": job["id"]})
+    if not event:
+        outbox.record("ontology.published", job["id"], {
+            "schema_version": ontology_version, "job_id": job["id"]},
+            aggregate_type="Ontology", tenant_id=tenant, ontology_version=ontology_version)
+    metrics = publish_metrics(job.get("metrics") or {"metrics": {}},
+                              job["draft"]["schema"], tenant, actor, ontology_version)
+    if metrics.get("validation", {}).get("valid") is False:
+        return {"published": False, "partial_commit": True,
+                "reason": "Schema 和运行时已恢复，但指标校验仍未通过",
+                "runtime_catalog": runtime, "metrics": metrics}
+    return {"published": True, "schema_version": ontology_version,
+            "runtime_catalog": runtime, "event": "recorded", "metrics": metrics,
+            "recovered": True}
 
 
 def to_engine_definitions(metric_set: dict, schema: dict, ontology_version: str | None = None) -> list[dict]:
