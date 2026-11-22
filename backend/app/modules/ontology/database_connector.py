@@ -224,8 +224,9 @@ def _is_sensitive_column(name: str, configured: set[str] | None = None) -> bool:
         return True
     markers = (
         "password", "passwd", "secret", "token", "apikey", "accesskey",
-        "privatekey", "credential", "手机号", "手机号码", "电话", "邮箱",
-        "电子邮箱", "身份证", "证件号", "银行卡", "银行账号", "家庭住址",
+        "privatekey", "credential", "phone", "mobile", "email", "ssn",
+        "nationalid", "bankaccount", "address", "手机号", "手机号码", "电话",
+        "邮箱", "电子邮箱", "身份证", "证件号", "银行卡", "银行账号", "家庭住址",
     )
     return any(marker in normalized for marker in markers)
 
