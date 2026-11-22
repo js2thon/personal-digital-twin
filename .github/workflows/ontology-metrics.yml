@@ -1,0 +1,42 @@
+name: ontology-metrics
+on:
+  pull_request:
+    paths:
+      - "backend/app/modules/ontology/runtime/metric_engine.py"
+      - "backend/app/api/v1/ontology_metrics.py"
+      - "backend/app/main.py"
+      - "backend/tests/test_ontology_metric_engine.py"
+      - "web/ontology-app-studio/**"
+      - "docs/ontology-metrics-engine-v1.md"
+      - ".github/workflows/ontology-metrics.yml"
+  push:
+    branches: [feat/ontology-metrics-engine-v1]
+    paths:
+      - "backend/app/modules/ontology/runtime/metric_engine.py"
+      - "backend/app/api/v1/ontology_metrics.py"
+      - "backend/app/main.py"
+      - "backend/tests/test_ontology_metric_engine.py"
+      - "web/ontology-app-studio/**"
+      - "docs/ontology-metrics-engine-v1.md"
+      - ".github/workflows/ontology-metrics.yml"
+jobs:
+  metric-engine-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test runner
+        run: pip install pytest
+      - name: Run metric engine regression tests
+        working-directory: backend
+        env:
+          PYTHONPATH: .
+        run: pytest -q tests/test_ontology_metric_engine.py
+      - name: Compile changed Python modules
+        run: python -m py_compile backend/app/modules/ontology/runtime/metric_engine.py backend/app/api/v1/ontology_metrics.py backend/app/main.py
+      - name: Validate workbench JavaScript and DOM bindings
+        run: |
+          node --version
+          node web/ontology-app-studio/validate.mjs
