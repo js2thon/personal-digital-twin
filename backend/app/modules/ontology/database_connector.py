@@ -219,8 +219,11 @@ def inspect_database(*, profile_name: str, tenant_id: str,
 def _is_sensitive_column(name: str, configured: set[str] | None = None) -> bool:
     """Conservatively redact likely credentials and direct personal identifiers."""
     normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", name.casefold())
-    configured = configured or set()
-    if name.casefold() in configured or normalized in configured:
+    configured = {
+        re.sub(r"[^a-z0-9\\u4e00-\\u9fff]", "", str(item).casefold())
+        for item in (configured or set())
+    }
+    if normalized in configured:
         return True
     markers = (
         "password", "passwd", "secret", "token", "apikey", "accesskey",

@@ -82,3 +82,27 @@ def test_mysql_and_postgresql_url_query_cannot_override_read_only_options(monkey
 def test_profile_table_limit_and_sample_limit_constants():
     assert connector.MAX_SAMPLE_ROWS == 100
     assert connector.MAX_TABLES_PER_REQUEST == 50
+
+
+def test_custom_redaction_names_are_normalized():
+    assert connector._is_sensitive_column("customer_phone", {"customer phone"})
+    assert connector._is_sensitive_column("contact_email", {"CONTACT EMAIL"})
+
+
+def test_mysql_url_query_cannot_inject_init_command(monkeypatch):
+    monkeypatch.setenv(connector._PROFILE_ENV, json.dumps({
+        "crm": {"url_env": "CRM_URL", "dialect": "mysql", "tables": ["customers"]}
+    }))
+    monkeypatch.setenv("CRM_URL", "mysql://readonly:secret@localhost/crm?init_command=SET%20GLOBAL%20read_only%3D0&autocommit=true")
+    _, url = connector._profile("crm", "default")
+    parsed = __import__("sqlalchemy").engine.make_url(url)
+    assert "init_command" not in parsed.query
+    assert "autocommit" not in parsed.query
+
+
+def test_profile_output_does_not_expose_connection_secret(monkeypatch):
+    monkeypatch.setenv(connector._PROFILE_ENV, json.dumps({
+        "crm": {"url_env": "CRM_URL", "tables": ["customers"], "label": "CRM"}
+    }))
+    monkeypatch.setenv("CRM_URL", "mysql://dbuser:very-secret@db.internal/crm")
+    assert "very-secret" not in str(connector.list_profiles(tenant_id="default"))
