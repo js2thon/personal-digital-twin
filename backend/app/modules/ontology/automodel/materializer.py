@@ -6,7 +6,8 @@
   关系事实的 object_value = {"external_id": ...}，正好命中 projection.py 的
   pick_object_external_id 路径 —— 不再依赖名字匹配。
 
-writer 可注入：默认只返回结果（便于测试）；`PgWriter` 写入 PG 并交给投影/Outbox。
+物化结果仅用于 Discovery 预览与质量分析；旧 `PgWriter` 已禁用。
+本模块接收的 TableSet 属于 Automodel Discovery 数据集，永远不能作为生产摄取凭据。
 """
 from __future__ import annotations
 
@@ -16,6 +17,8 @@ import re
 import pandas as pd
 
 from .connectors import TableSet
+
+DISCOVERY_DATA_SCOPE = "discovery_sample"
 
 
 def _clean(v):
@@ -114,7 +117,8 @@ def materialize(ts: TableSet, contract: dict) -> dict:
     linked = {f["subject_external_id"] for f in rel_facts} | \
              {f["object_value"]["external_id"] for f in rel_facts}
     isolated = [e["external_id"] for e in entities if e["external_id"] not in linked]
-    return {"entities": entities, "facts": facts, "errors": errors[:200],
+    return {"data_scope": DISCOVERY_DATA_SCOPE,
+            "entities": entities, "facts": facts, "errors": errors[:200],
             "dangling": dangling[:200],
             "stats": {"entities": len(entities), "facts": len(facts),
                       "relation_facts": len(rel_facts), "dangling": len(dangling),
@@ -136,62 +140,17 @@ def _datatype(ov: dict) -> str:
 
 
 class PgWriter:
-    """写入 ontology.entities / knowledge.facts。按 external_id 幂等 upsert。
-
-    依赖：ontology.entities 上需有 (properties->'external_ids') 的 GIN 索引（jobs.ensure_schema 会建），
-    以及 knowledge.facts 写入后由触发器发 Outbox 事件（现有链路）。
-    """
+    """已禁用的旧 Automodel writer；生产摄取统一走 ontology.mapping_execution。"""
 
     def __init__(self, db):
         self.db = db
 
     def write(self, result: dict, visibility: str = "owner",
               ontology_version: str | None = None, tenant_id: str = "default") -> dict:
-        import json
-        ids: dict[str, str] = {}
-        for e in result["entities"]:
-            row = self.db.fetch_one(
-                "SELECT id FROM ontology.entities WHERE properties->'external_ids' @> CAST(:x AS jsonb) "
-                "AND status = 'active' LIMIT 1",
-                {"x": json.dumps([e["external_id"]])})
-            props = {**e["properties"], "external_ids": [e["external_id"]]}
-            if row:
-                self.db.execute(
-                    "UPDATE ontology.entities SET canonical_name=:n, entity_type=:t, "
-                    "properties = properties || CAST(:p AS jsonb) WHERE id = CAST(:i AS uuid)",
-                    {"n": e["canonical_name"], "t": e["entity_type"],
-                     "p": json.dumps(props, ensure_ascii=False, default=str), "i": str(row["id"])})
-                ids[e["external_id"]] = str(row["id"])
-            else:
-                ids[e["external_id"]] = str(self.db.insert_returning_id("ontology.entities", {
-                    "canonical_name": e["canonical_name"], "entity_type": e["entity_type"],
-                    "status": "active",
-                    "properties": json.dumps(props, ensure_ascii=False, default=str)}))
-        n = 0
-        for f in result["facts"]:
-            sid = ids.get(f["subject_external_id"])
-            if not sid:
-                continue
-            if not f.get("multi"):   # 单值谓词：旧结构化事实置为 superseded（双时间线）；多对多不覆盖
-                self.db.execute(
-                    "UPDATE knowledge.facts SET status='superseded', updated_at=now() "
-                    "WHERE subject_id = CAST(:s AS uuid) AND predicate = :p AND status='active' "
-                    "AND source_ref->>'origin'='structured_mapping' AND object_value <> CAST(:o AS jsonb)",
-                    {"s": sid, "p": f["predicate"], "o": json.dumps(f["object_value"], default=str)})
-            exists = self.db.fetch_one(
-                "SELECT 1 FROM knowledge.facts WHERE subject_id = CAST(:s AS uuid) AND predicate=:p "
-                "AND object_value = CAST(:o AS jsonb) AND status='active' LIMIT 1",
-                {"s": sid, "p": f["predicate"], "o": json.dumps(f["object_value"], default=str)})
-            if exists:
-                continue
-            self.db.insert_returning_id("knowledge.facts", {
-                "claim_id": None, "subject_id": sid, "predicate": f["predicate"],
-                "object_value": json.dumps(f["object_value"], ensure_ascii=False, default=str),
-                "status": "active", "trust_tier": f["trust_tier"], "visibility": visibility,
-                "tenant_id": tenant_id, "created_by": "agent",
-                "verification_status": "machine_checked",
-                "datatype": "ref" if "external_id" in f["object_value"] else _datatype(f["object_value"]),
-                **({"ontology_version": ontology_version[:50]} if ontology_version else {}),
-                "source_ref": json.dumps(f["source_ref"], ensure_ascii=False)})
-            n += 1
-        return {"entities_upserted": len(ids), "facts_inserted": n}
+        # 该 writer 属于旧 Automodel 样本物化路径。生产写入已由
+        # ontology.mapping_execution 承担（审核映射、事务、租户约束、摄取运行记录）。
+        # 不接受调用方传入的 data_scope 标记作为“全量数据”证明，避免样本被伪装成生产数据。
+        raise ValueError(
+            "Automodel PgWriter 已禁用：Discovery 数据仅用于画像/本体构建/预览；"
+            "生产全量或增量写入必须使用已审核的 ontology.mapping_execution 流程"
+        )
