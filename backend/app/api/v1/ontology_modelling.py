@@ -151,7 +151,7 @@ class DatasetStreamExecuteIn(DatasetInspectIn):
     mapping_set_id: str
     snapshot_id: str
     sync_mode: str = "upsert"
-    source_id_column: str
+    source_id_column: str | None = None
     batch_size: int = 500
     reconcile_missing: bool = False
 
@@ -361,6 +361,8 @@ def dataset_execute_stream(payload: DatasetStreamExecuteIn, request: Request):
             batch_size=payload.batch_size, reconcile_missing=payload.reconcile_missing)
         result["dataset"] = {k: v for k, v in parsed.items() if k != "rows"}
         return result
+    except HTTPException:
+        raise
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except PermissionError as exc:
