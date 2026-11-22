@@ -332,6 +332,7 @@ def test_mapping_contract_uses_source_specific_bindings_for_same_business_object
         "hr", {"schema": schema, "class_map": {"employees": "Employee"}}, profiler.profile(hr))
     assert len(hr_contract["mappings"]) == 1
     assert hr_contract["mappings"][0]["primary_key"] == ["emp_id"]
+    assert hr_contract["mappings"][0]["id"] == "hr:employees:{emp_id}"
     assert hr_contract["mappings"][0]["attributes"] == {"full_name": "emp_name"}
     assert hr_contract["mappings"][0]["name"] == "emp_name"
 
