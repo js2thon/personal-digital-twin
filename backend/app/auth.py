@@ -36,13 +36,15 @@ def peer_host(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for", "")
     parts = [p.strip() for p in forwarded.split(",") if p.strip()]
     if not parts:
-        return host
+        return "unknown-proxy-client"
     trusted = _trusted_proxies()
     # 从右往左跳过可信代理，取第一个不可信地址 —— 客户端伪造的左段不生效
     for candidate in reversed(parts):
         if candidate not in trusted:
             return candidate
-    return host
+    # A trusted proxy without a verifiable client address is not the client.
+    # Never inherit loopback trust from the proxy socket itself.
+    return "unknown-proxy-client"
 
 
 def actor_from_request(request: Request) -> str:
