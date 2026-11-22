@@ -308,14 +308,33 @@ def approve_and_publish(job: dict, actor: str, tenant: str = "default",
     from . import publish
     gate = release_gate.assert_publishable(
         job, require_cq=bool((job.get("config") or {}).get("require_cq_for_publish")))
-    res = publish.publish_schema(job, actor, version)
+    if job.get("status") == "publish_partial_failure" and job.get("schema_version"):
+        res = publish.recover_partial_publish(job, actor, tenant, job["schema_version"])
+        if not res.get("published"):
+            job["publish_error"] = res.get("reason") or "本体发布恢复失败"
+            return res
+        job["publish_steps"] = {"schema_committed": True, "runtime_installed": True,
+                                "event_recorded": True, "metrics_registered": True,
+                                "completed": True}
+        job["status"] = "published"
+        job["published_by"] = actor
+        job["release_gate"] = gate
+        _audit(job, "publish_recovered", actor, schema_version=job["schema_version"])
+        return res
+    res = publish.publish_schema(job, actor, version, tenant=tenant)
     if not res.get("published"):
         if res.get("partial_commit"):
             job["status"] = "publish_partial_failure"
             job["schema_version"] = res.get("schema_version")
             job["publish_error"] = res.get("reason") or "本体发布部分提交失败"
-            job["publish_steps"] = {"schema_committed": True, "runtime_installed": False,
-                                    "completed": False}
+            runtime = res.get("runtime_catalog") or {}
+            event = res.get("event")
+            job["publish_steps"] = {
+                "schema_committed": True,
+                "runtime_installed": runtime.get("installed") is True,
+                "event_recorded": event != "outbox_record_failed" and not (
+                    isinstance(event, dict) and event.get("recorded") is False),
+                "metrics_registered": False, "completed": False}
         return res
     runtime = res.get("runtime_catalog") or {}
     if runtime.get("installed") is not True:
