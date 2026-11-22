@@ -164,25 +164,122 @@ def shortest_path(job: dict, src: str, dst: str, directed: bool = False) -> dict
 
 # ------------------------------------------------------------------ 质量
 def quality(job: dict) -> dict:
+    """Deterministic governance report. Scores only checks backed by task data."""
     mat, s = job["materialized"], job["draft"]["schema"]
-    ids = {e["external_id"] for e in mat["entities"]}
+    entities, facts = mat.get("entities") or [], mat.get("facts") or []
+    ids = {e["external_id"] for e in entities}
     E = _edges(job)
     linked = {a for a, _, _ in E} | {b for _, _, b in E}
     seen, dup = set(), []
-    for t in E:
-        (dup.append(t) if t in seen else seen.add(t))
+    for edge in E:
+        (dup.append(edge) if edge in seen else seen.add(edge))
+    dangling = [{"relation": f["predicate"], "source": f["subject_external_id"],
+                 "target_value": f["object_value"]["external_id"]}
+                for f in mat.get("dangling") or []]
+    invalid = [r for r, v in s["relation_types"].items()
+               if v.get("source") not in s["entity_types"] or v.get("target") not in s["entity_types"]]
+    loops = [{"source": a, "relation": r} for a, r, b in E if a == b]
+    duplicates = [{"source": a, "relation": r, "target": b} for a, r, b in dup]
+    issues = list(job.get("issues") or [])
+    pending = list(job.get("draft", {}).get("review") or [])
+    mapped = {a for m in (job.get("contract") or {}).get("mappings", [])
+              for a in (m.get("attributes") or {})}
+    all_attrs = set(s.get("attributes") or {})
+    mapping_coverage = 1.0 if not all_attrs else len(mapped & all_attrs) / len(all_attrs)
+    dangling_rate = len(dangling) / max(1, len(E))
+    duplicate_rate = len(duplicates) / max(1, len(E))
+    error_count = sum(1 for x in issues if str(x.get("level", "")).lower() == "error")
+    warning_count = sum(1 for x in issues if str(x.get("level", "")).lower() != "error")
+    penalties = {
+        "contract_errors": min(40, error_count * 10),
+        "dangling_references": min(25, round(dangling_rate * 100)),
+        "duplicate_edges": min(10, round(duplicate_rate * 100)),
+        "invalid_relations": min(20, len(invalid) * 10),
+        "self_loops": min(10, len(loops) * 5),
+        "unmapped_properties": round((1 - mapping_coverage) * 15),
+        "pending_reviews": min(10, len(pending) * 2),
+    }
+    score = max(0, min(100, 100 - sum(penalties.values())))
+    findings = []
+    def finding(code, level, count, message):
+        if count:
+            findings.append({"code": code, "level": level, "count": count, "message": message})
+    finding("CONTRACT_ERROR", "error", error_count, "映射契约存在阻断性错误")
+    finding("DANGLING_REFERENCE", "error", len(dangling), "关系事实引用了不存在的目标实体")
+    finding("INVALID_RELATION", "error", len(invalid), "关系端点类型未在本体中定义")
+    finding("DUPLICATE_EDGE", "warning", len(duplicates), "存在重复关系事实")
+    finding("SELF_LOOP", "warning", len(loops), "存在自环关系")
+    finding("UNMAPPED_PROPERTY", "warning", len(all_attrs - mapped), "部分本体属性未映射到来源字段")
+    finding("REVIEW_PENDING", "warning", len(pending), "仍有待人工确认的建模候选")
     return {
-        "node_count": len(ids), "edge_count": len(E),
+        "quality_score": score,
+        "score_label": "excellent" if score >= 90 else "good" if score >= 75 else "needs_attention" if score >= 60 else "critical",
+        "score_method": "100 - deterministic issue penalties; not an ML confidence score",
+        "score_breakdown": penalties,
+        "coverage": {"mapped_properties": len(mapped & all_attrs), "total_properties": len(all_attrs),
+                     "mapping_ratio": round(mapping_coverage, 4)},
+        "node_count": len(ids), "edge_count": len(E), "fact_count": len(facts),
         "isolated_nodes": sorted(ids - linked)[:500],
-        "dangling_references": [{"relation": f["predicate"], "source": f["subject_external_id"],
-                                 "target_value": f["object_value"]["external_id"]}
-                                for f in mat.get("dangling") or []][:500],
-        "invalid_relation_types": [r for r, v in s["relation_types"].items()
-                                   if v["source"] not in s["entity_types"] or v["target"] not in s["entity_types"]],
-        "self_loops": [{"source": a, "relation": r} for a, r, b in E if a == b][:200],
-        "duplicate_edges": [{"source": a, "relation": r, "target": b} for a, r, b in dup][:200],
-        "contract_issues": job.get("issues") or [],
-        "review_pending": (job["draft"].get("review") or []),
+        "dangling_references": dangling[:500], "invalid_relation_types": invalid,
+        "self_loops": loops[:200], "duplicate_edges": duplicates[:200],
+        "contract_issues": issues, "review_pending": pending,
+        "findings": findings, "warning_count": warning_count,
+    }
+
+
+def provenance(job: dict, entity: str, predicate: str | None = None, limit: int = 200) -> dict:
+    """Return persisted in-task fact lineage without guessing missing source coordinates."""
+    entities = {e["external_id"]: e for e in (job.get("materialized") or {}).get("entities", [])}
+    target = entities.get(entity)
+    if target is None:
+        raise LookupError("实例不存在")
+    schema = job["draft"]["schema"]
+    labels = {k: v.get("label") or k for k, v in schema.get("attributes", {}).items()}
+    rows = []
+    for fact in (job.get("materialized") or {}).get("facts", []):
+        if fact.get("subject_external_id") != entity:
+            continue
+        pred = fact.get("predicate")
+        if predicate and pred != predicate:
+            continue
+        ref = fact.get("source_ref") or {}
+        rows.append({"entity_id": entity, "entity_name": target.get("canonical_name"),
+                     "entity_type": target.get("entity_type"), "predicate": pred,
+                     "property_label": labels.get(pred, pred), "value": _f(fact.get("object_value", {}).get("value")),
+                     "target_entity": fact.get("object_value", {}).get("external_id"),
+                     "source_ref": ref, "origin": ref.get("origin"),
+                     "source": ref.get("source"), "source_table": ref.get("table"),
+                     "source_column": ref.get("column"), "contract_version": ref.get("contract_version"),
+                     "trust_tier": fact.get("trust_tier"),
+                     "verification_status": fact.get("verification_status")})
+    return {"entity": {"id": entity, "name": target.get("canonical_name"),
+                       "type": target.get("entity_type")},
+            "items": rows[:max(1, min(limit, 500))], "total": len(rows),
+            "lineage_completeness": round(sum(1 for x in rows if x.get("source_table")) / len(rows), 4) if rows else 0,
+            "note": "仅返回事实中实际持久化的 source_ref；未存储的源字段坐标不会推断。"}
+
+
+def governance(job: dict, principal: dict | None = None) -> dict:
+    """Read-only governance snapshot; authorization remains enforced by the API layer."""
+    q = quality(job)
+    pending = q["review_pending"]
+    blockers = [x for x in q["findings"] if x["level"] == "error"]
+    principal = principal or {}
+    return {
+        "asset": {"job_id": job.get("id"), "status": job.get("status"),
+                  "schema_version": job.get("schema_version"), "published": job.get("status") in ("published", "written")},
+        "quality": {"score": q["quality_score"], "label": q["score_label"],
+                    "blockers": len(blockers), "warnings": q["warning_count"]},
+        "review": {"pending": len(pending), "required": bool(pending)},
+        "release_gate": {"ready": not blockers and not pending,
+                         "reasons": [x["message"] for x in blockers] +
+                                    (["仍有待审核候选"] if pending else [])},
+        "access": {"authenticated_principal": bool(principal),
+                   "tenant_scoped_lookup": True, "authorization_enforced_by": "backend",
+                   "client_write_enabled": False},
+        "audit": {"action_events": len(job.get("actions_log") or []),
+                  "last_action": (job.get("actions_log") or [])[-1] if job.get("actions_log") else None},
+        "limitations": ["权限矩阵与角色策略未由当前 API 暴露；此处不推断用户角色。"],
     }
 
 
