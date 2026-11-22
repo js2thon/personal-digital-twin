@@ -43,6 +43,15 @@ def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
         "level": "error", "code": item["code"],
         "table": item.get("ref"), "msg": item["message"],
     } for item in business_issues)
+    from app.modules.ontology.semantic.standards import check_ontology_modeling_standards
+    standards_report = stage("modeling_standards",
+                             lambda: check_ontology_modeling_standards(draft["schema"]))
+    job["standards_report"] = standards_report
+    issues.extend({
+        "level": "error" if item["severity"] == "error" else "warning",
+        "code": item["code"], "table": item.get("ref"),
+        "msg": item["message"], "recommendation": item["recommendation"],
+    } for item in standards_report["findings"])
     job["issues"] = issues
     if any(i["level"] == "error" for i in issues) or stop_after in ("map", "validate"):
         job["status"] = "needs_review" if issues else "validated"
@@ -152,6 +161,13 @@ def rebuild(job: dict, ts: TableSet) -> dict:
         "level": "error", "code": item["code"],
         "table": item.get("ref"), "msg": item["message"],
     } for item in job["business_model_issues"])
+    from app.modules.ontology.semantic.standards import check_ontology_modeling_standards
+    job["standards_report"] = check_ontology_modeling_standards(job["draft"]["schema"])
+    job["issues"].extend({
+        "level": "error" if item["severity"] == "error" else "warning",
+        "code": item["code"], "table": item.get("ref"),
+        "msg": item["message"], "recommendation": item["recommendation"],
+    } for item in job["standards_report"]["findings"])
     if any(i["level"] == "error" for i in job["issues"]):
         job["status"] = "needs_review"
         job["release_gate"] = release_gate.evaluate(job)
