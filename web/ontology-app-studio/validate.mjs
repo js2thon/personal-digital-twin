@@ -19,11 +19,18 @@ for (const endpoint of [
   "/ontology/modelling/mapping/validate",
   "/ontology/modelling/mapping/preview-file",
   "/ontology/modelling/mapping-sets",
-  "/ontology/modelling/dataset/execute"
+  "/ontology/modelling/dataset/execute",
+  "/ontology/metrics/catalog", "/ontology/metrics/discover",
+  "/ontology/metrics/validate", "/ontology/metrics/preview",
+  "/ontology/metrics/preview-from-store"
 ]) assert.ok(html.includes(endpoint), "missing endpoint integration: " + endpoint);
 
 for (const id of ["datasetFile", "datasetInspect", "datasetPreview", "mappingCreate", "mappingApprove", "datasetExecute", "pipelineStatus"])
   assert.ok(declared.has(id), "missing dataset pipeline control: " + id);
 assert.ok(html.includes("只有 approved 映射版本允许执行"), "approved-only execution guard must remain");
 assert.ok(html.includes("if(sel.value==='')return null"), "unselected dataset columns must remain unmapped");
+for (const id of ["metricSpec", "metricDiscover", "metricDefs", "metricData", "metricValidate",
+  "metricPreview", "metricRunStore", "metricSave", "metricApprove", "metricPublish", "metricList"])
+  assert.ok(declared.has(id), "missing metric center control: " + id);
+assert.ok(html.includes("读取语义实例库计算"), "live semantic-store metric execution control must exist");
 console.log("Ontology App Studio static validation passed.");
