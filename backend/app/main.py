@@ -18,6 +18,7 @@ from app.api.v1 import (  # noqa: F401
     messages,
     ontology,
     ontology_modelling,
+    ontology_metrics,
     ontology_semantic,
     pipeline,
     platform,
