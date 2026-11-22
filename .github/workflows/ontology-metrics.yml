@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install backend and test dependencies
-        run: pip install -r backend/requirements.txt pytest
+        run: pip install -e "backend[dev]"
       - name: Run metric engine regression tests
         working-directory: backend
         env:
