@@ -122,7 +122,7 @@ def suggest_mappings(columns: list[dict], ontology_schema: dict | None = None,
             score = 0.78 if exact else 0.0
             evidence = ["字段名/别名与本体属性名称完全匹配"] if exact else []
             if not exact:
-                overlap = max((len(a & b) / max(1, len(a | b))
+                overlap = max((len(set(a) & set(b)) / max(1, len(set(a) | set(b)))
                                for a in source_norms for b in target_norms), default=0.0)
                 if overlap >= 0.5:
                     score += 0.38 * overlap
