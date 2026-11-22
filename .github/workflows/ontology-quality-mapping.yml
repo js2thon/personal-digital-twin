@@ -10,6 +10,8 @@ on:
       - "backend/tests/test_ontology_dataset_preview.py"
       - "backend/tests/test_database_connector.py"
       - "backend/tests/test_database_connector_integration.py"
+      - "backend/tests/test_automodel_pipeline_hardening.py"
+      - "backend/app/modules/ontology/ingestion_batches.py"
       - "backend/pyproject.toml"
       - ".github/workflows/ontology-quality-mapping.yml"
   push:
@@ -103,3 +105,4 @@ jobs:
           tests/test_ontology_mapping_execution.py
           tests/test_database_connector.py
           tests/test_automodel_discovery_boundary.py
+          tests/test_automodel_pipeline_hardening.py
