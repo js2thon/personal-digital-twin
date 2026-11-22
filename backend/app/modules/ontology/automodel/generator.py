@@ -141,7 +141,7 @@ def _range(dtype: str) -> str:
 
 def generate(profiles: dict[str, TableProfile], version: str = "draft",
              existing_schema: dict | None = None, llm=None,
-             source_id: str = "") -> dict:
+             source_id: str = "", discovery: dict | None = None) -> dict:
     """返回 {schema, class_map, inferences, review}。"""
     existing_types = set(((existing_schema or {}).get("entity_types") or {}).keys())
     entity_types, relation_types, attributes = {}, {}, {}
@@ -272,7 +272,10 @@ def generate(profiles: dict[str, TableProfile], version: str = "draft",
              "description": meta.get("description", meta.get("label", ""))}
             for prop, meta in attributes.items() if meta.get("owner") == cls
         ]
+        discovery_item = next((x for x in (discovery or {}).get("candidates", [])
+                               if x.get("table") == table), None)
         obj.update({
+            "discovery_evidence": discovery_item or {},
             "object_kind": object_kind,
             "title_property": title_property or "",
             "identity_rules": ([{
@@ -299,6 +302,7 @@ def generate(profiles: dict[str, TableProfile], version: str = "draft",
         _llm_polish(schema, profiles, llm, inferences)
     review = [i for i in inferences if i["confidence"] < REVIEW_THRESHOLD]
     return {"schema": schema, "class_map": class_map, "inferences": inferences,
+            "business_object_discovery": discovery or {},
             "review": review,
             "stats": {"classes": len(entity_types), "relations": len(relation_types),
                       "attributes": len(attributes), "needs_review": len(review)}}
