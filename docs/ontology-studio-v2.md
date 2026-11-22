@@ -1,51 +1,61 @@
-# Ontology Studio V2
+# Ontology Studio V2 — Enterprise Governance Upgrade
 
 入口：`/ontology-studio/`（Docker Web）或对应静态站点路径；现有 Ontology App Studio 顶栏增加入口。
 
-## 能力
+## 交付能力
 
-- **本体关系设计**：RDF/OWL KG Session 视图展示 Object Types、Properties、Link Types；点击对象查看 URI/CURIE、实例数、属性、出入向关系。
-- **自动建模 Schema 图**：通过 `studio/schema-graph` 展示 Object Type、Property 节点与 `hasProperty` / Link Type 边；点击对象查看主键、来源表、值类型和关联关系。
-- **端到端数据血缘**：通过 `/pipeline` 读取数据源、数据画像、本体草案、人工审核、映射契约、契约校验、物化、指标、发布和图谱写入阶段及其状态。
-- **映射与数据概览**：读取自动建模 Schema 的 entity_types / relation_types / attributes、来源表、主键与 Pipeline 阶段摘要。
-- **Actions**：读取 `studio/actions` 中真实的对象操作审计记录；不在工作台中绕过权限策略执行写操作。
-- **Functions / Metrics**：展示自动建模任务的指标定义与依赖血缘，并读取租户指标注册表。
-- **质量与治理**：读取 `studio/quality` 的实体/关系统计、孤立实体、悬空引用、非法关系类型、自环、重复边和契约问题；显示任务版本与审核信息。
-- **证据与置信度**：仅展示服务端审核队列实际返回的证据、决策和分数；未返回时明确显示暂无数据。
-- **跨视图联动**：对象详情可跳转血缘和指标视图；左侧会话与自动建模任务可切换。
+### 1. 本体可视化
+- Schema 图展示 Object Types、Properties、Link Types；节点详情展示主键、来源表、属性和出入向关系。
+- Schema / 实例图切换；实例图支持关键词筛选、选中实例、邻居 2-hop 展开和节点聚焦。
+- 画布缩放、适配；实例图通过服务端 `studio/instance-graph` 限制返回规模，默认最多 1,000 节点（API 上限 3,000）。
+- RDF/OWL Session 与 Automodel Job 保持独立数据域；RDF Session 不会自动获得 Automodel 实例图。
 
-## 数据接口
+### 2. 双向字段级数据血缘
+- 正向：实例 external_id → 本体属性/关系事实 → source_ref → 源表/源字段/来源行标识。
+- 反向：源表 + 源字段 → 受影响的本体实例、属性/关系和值。
+- 物化阶段在结构化映射事实的 `source_ref` 中持久化 `table`、`column`、`source_row_key`、`contract_version`。
+- 指标血缘沿用指标引擎的 ontology → atomic → derived → composite DAG；工作台并列展示指标定义和数据字段血缘。
+- 仅对新物化且实际带有 source_ref 的事实提供字段级追踪。旧快照、手工 Action 创建/修改事实或缺失 source_ref 的数据会显示“未持久化”，不按字段名猜测。
 
-### RDF / OWL Session
-- `GET /api/v1/kg/sessions`
-- `GET /api/v1/kg/{session_id}`
+### 3. 本体质量与治理
+- 确定性质量评分（0–100）：基于契约错误、悬空引用、重复边、非法关系、自环、未映射属性和待审核项的规则扣分。
+- 报告包含评分说明、覆盖率、问题代码、严重级别、计数和明细；该分数不是模型置信度，也不替代业务验收。
+- 发布门禁汇总阻断问题和待人工审核候选。最终发布仍由既有发布 API 再次验证。
+- 版本管理支持版本列表和两版本差异（类、属性、关系、映射、指标）。
+- 操作审计显示任务已有 Actions 记录。
+- 权限摘要只显示服务端返回的身份上下文、租户隔离执行状态和写入边界；当前 API 未提供角色/权限矩阵，因此不推断用户角色或可执行权限。
 
-### 自动建模任务工作台
-- `GET /api/v1/automodel/jobs`
-- `GET /api/v1/automodel/jobs/{job_id}?full=true`
-- `GET /api/v1/automodel/jobs/{job_id}/studio/overview`
+## 新增 / 复用接口
+
+### 图与实例
 - `GET /api/v1/automodel/jobs/{job_id}/studio/schema-graph?props=true`
+- `POST /api/v1/automodel/jobs/{job_id}/studio/instance-graph`（JSON: `focus`, `hops`, `max_nodes`）
+- `GET /api/v1/automodel/jobs/{job_id}/studio/neighbors?entity=...`
+
+### 血缘
+- `GET /api/v1/automodel/jobs/{job_id}/studio/provenance?entity=...&predicate=...`
+- `GET /api/v1/automodel/jobs/{job_id}/studio/provenance/source?table=...&column=...`
+- `GET /api/v1/automodel/jobs/{job_id}/metrics`（指标 DAG）
+
+### 治理与版本
 - `GET /api/v1/automodel/jobs/{job_id}/studio/quality`
-- `GET /api/v1/automodel/jobs/{job_id}/studio/actions`
-- `GET /api/v1/automodel/jobs/{job_id}/pipeline`
+- `GET /api/v1/automodel/jobs/{job_id}/studio/governance`
 - `GET /api/v1/automodel/jobs/{job_id}/versions`
-- `GET /api/v1/automodel/jobs/{job_id}/metrics`
+- `GET /api/v1/automodel/versions/diff?a=...&b=...`
+- `GET /api/v1/automodel/jobs/{job_id}/studio/actions`
 
-### 指标注册表
-- `GET /api/v1/ontology/metrics`
+## 关键治理规则
 
-页面使用与 Ontology App Studio 相同的 API Base / API Key 会话设置（`ontoStudioApiBase` / `ontoStudioKey`）。
+1. API 通过现有 `_job(job_id, request)` 按当前 principal 的 tenant scope 读取任务；新接口不接受客户端 tenant_id。
+2. 前端治理页面只读，不开放未经审批的发布、回滚或实例写入。
+3. 质量评分是可解释的确定性规则评分；不能被解释为 LLM 置信度、数据正确率或合规认证。
+4. `release_gate.ready` 是工作台摘要，不是发布授权凭证；发布 API 必须再次执行后端校验。
+5. 当前未暴露角色权限矩阵、审批人矩阵或细粒度字段 ACL，界面明确显示缺口。
+6. source_ref 中只保存数据源标识、表字段、契约版本和源行主键标识，不保存原始整行数据。
+7. 数据库源如果未物化/持久化字段血缘，不能从 Schema 映射推断实际运行时字段来源。
 
-## 设计边界
+## 验证
 
-1. RDF Session 与 Automodel Job 是不同数据域；页面不会把 KG Session 当作语义实例库，也不会假设两者已自动投影。
-2. 自动建模 schema 的关系图使用 `from/to` 边结构；RDF Session 图使用 KG API 返回的对象与关系结构。
-3. Actions 面板展示服务端操作日志；写操作仍须通过现有后端 Action API、权限策略与再次写入流程。
-4. Functions 当前以指标定义/计算语义呈现；尚未提供独立的函数目录 API 时，不虚构函数清单。
-5. 字段级实例血缘当前取决于后端持久化的 source_ref / fact lineage 能力；页面不根据字段名猜测来源。
-6. 页面为只读治理视图；审批、发布、写库仍走现有后端 API 和人工确认流程。
-7. 权限、租户隔离和行级访问由服务端执行；前端只展示 API 已授权返回的数据。
-
-## 校验
-
-`node web/ontology-studio/validate.mjs` 检查内嵌 JavaScript 语法、DOM 引用和关键 API 集成。
+- `node web/ontology-studio/validate.mjs`：检查内嵌 JavaScript 语法、DOM 引用、核心接口路径和工作台控件。
+- `cd backend && python -m pytest tests/test_automodel.py -q`：自动建模、指标、问答和本次新增的质量/双向血缘回归测试。
+- 仍需在部署环境完成真实 API、浏览器 E2E、租户隔离和私有数据库连接验证。
