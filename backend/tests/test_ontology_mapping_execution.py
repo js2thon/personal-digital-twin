@@ -24,3 +24,33 @@ def test_api_exposes_execution_run_and_lineage_routes():
     assert '"/ontology/modelling/dataset/execute"' in source
     assert '"/ontology/modelling/ingestion-runs/{run_id}"' in source
     assert '"/ontology/modelling/instances/{instance_id}/lineage"' in source
+
+
+
+def test_upsert_requires_unique_stable_source_ids():
+    from app.modules.ontology.mapping_execution import _validated_source_ids
+
+    assert _validated_source_ids(
+        [{"external_id": "A-1"}, {"external_id": "A-2"}], "external_id"
+    ) == ["A-1", "A-2"]
+
+
+def test_upsert_rejects_missing_or_duplicate_source_ids():
+    import pytest
+    from app.modules.ontology.mapping_execution import _validated_source_ids
+
+    with pytest.raises(ValueError, match="缺少稳定源记录标识"):
+        _validated_source_ids([{"external_id": "A-1"}, {}], "external_id")
+    with pytest.raises(ValueError, match="重复"):
+        _validated_source_ids(
+            [{"external_id": "A-1"}, {"external_id": "A-1"}], "external_id"
+        )
+
+
+def test_execution_supports_stable_source_record_upsert():
+    source = Path("app/modules/ontology/mapping_execution.py").read_text(encoding="utf-8")
+    assert "ontology.dataset_source_records" in source
+    assert "mapping_checksum" in source
+    assert 'sync_mode == "upsert"' in source
+    assert 'instance_payload["id"] = source_state["instance_id"]' in source
+    assert "Missing rows are never deleted implicitly" in source

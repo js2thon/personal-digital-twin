@@ -55,6 +55,25 @@ def ensure_schema() -> None:
     )
     """)
     db.execute("""
+    CREATE TABLE IF NOT EXISTS ontology.dataset_source_records (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id VARCHAR(120) NOT NULL,
+        mapping_name VARCHAR(200) NOT NULL,
+        source_record_id VARCHAR(500) NOT NULL,
+        entity_type VARCHAR(200) NOT NULL,
+        instance_id UUID,
+        row_hash VARCHAR(64) NOT NULL,
+        mapping_checksum VARCHAR(64) NOT NULL,
+        last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (tenant_id, mapping_name, source_record_id, entity_type)
+    )
+    """)
+    db.execute("""
+    CREATE INDEX IF NOT EXISTS idx_dataset_source_records_instance
+    ON ontology.dataset_source_records (tenant_id, instance_id)
+    """)
+    db.execute("""
     CREATE TABLE IF NOT EXISTS ontology.dataset_field_lineage (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id VARCHAR(120) NOT NULL,
@@ -94,6 +113,29 @@ def _digest(value) -> str:
     return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
 
 
+def _validated_source_ids(rows: list[dict], source_id_column: str | None) -> list[str]:
+    """Validate a stable business key for every row in an upsert batch."""
+    if not source_id_column or not str(source_id_column).strip():
+        raise ValueError("upsert 模式必须指定 source_id_column")
+    column = str(source_id_column).strip()
+    if len(column) > 200:
+        raise ValueError("source_id_column 长度不能超过 200")
+    result: list[str] = []
+    seen: set[str] = set()
+    for row_no, row in enumerate(rows, start=1):
+        value = row.get(column)
+        if value is None or not str(value).strip():
+            raise ValueError(f"第 {row_no} 行缺少稳定源记录标识字段：{column}")
+        source_id = str(value).strip()
+        if len(source_id) > 500:
+            raise ValueError(f"第 {row_no} 行源记录标识长度超过 500")
+        if source_id in seen:
+            raise ValueError(f"数据集中源记录标识重复：{source_id}")
+        seen.add(source_id)
+        result.append(source_id)
+    return result
+
+
 def _create_run(*, tenant_id, mapping_set_id, source_name, source_sha256,
                 rows_received, actor, status="running", error=None) -> dict:
     return db.fetch_one(
@@ -111,11 +153,14 @@ def _create_run(*, tenant_id, mapping_set_id, source_name, source_sha256,
 def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                               rows: list[dict], source_name: str,
                               source_sha256: str, actor: str,
-                              max_rows: int = MAX_EXECUTION_ROWS) -> dict:
+                              max_rows: int = MAX_EXECUTION_ROWS,
+                              sync_mode: str = "append",
+                              source_id_column: str | None = None) -> dict:
     """Atomically instantiate rows using a tenant-owned approved mapping set.
 
-    Idempotency key is source file hash + row number + normalized row hash +
-    entity type. Re-running the same source/mapping does not duplicate instances.
+    Append mode uses source file hash + row number. Upsert mode requires a stable
+    source ID column and updates the existing ontology instance when the row or
+    approved mapping checksum changes. Missing rows are never deleted implicitly.
     """
     ensure_schema()
     if not rows:
@@ -123,6 +168,14 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
     cap = max(1, min(int(max_rows), MAX_EXECUTION_ROWS))
     if len(rows) > cap:
         raise ValueError(f"本次数据行数 {len(rows)} 超过执行上限 {cap}；请分批执行")
+    if sync_mode not in {"append", "upsert"}:
+        raise ValueError("sync_mode 仅支持 append 或 upsert")
+    if sync_mode == "upsert":
+        stable_source_ids = _validated_source_ids(rows, source_id_column)
+    else:
+        if source_id_column:
+            raise ValueError("仅 upsert 模式允许指定 source_id_column")
+        stable_source_ids = [None] * len(rows)
     mapping_set = mapping_registry.get(mapping_set_id, tenant_id=tenant_id)
     if not mapping_set:
         raise LookupError("映射版本不存在或不属于当前租户")
@@ -139,7 +192,8 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
     source_key = hashlib.sha256(
         f"{source_sha256}:{mapping_set_id}".encode("utf-8")).hexdigest()
     run_id = None
-    inserted_records, skipped_records, inserted_instances = 0, 0, 0
+    inserted_records, skipped_records, inserted_instances, updated_instances = 0, 0, 0, 0
+    mapping_checksum = str(mapping_set.get("checksum") or _digest(definition))
     try:
         with db.transaction():
             run = _create_run(
@@ -150,8 +204,10 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
             service = OntologyService(schema=schema, tenant_id=tenant_id, actor=actor)
             # Bind the instance records to the versions frozen in the approved mapping.
             service.ov = str(mapping_set.get("ontology_version") or service.ov)
-            for row_no, row in enumerate(rows, start=1):
+            for row_index, row in enumerate(rows):
+                row_no = row_index + 1
                 row_hash = _digest(row)
+                stable_source_id = stable_source_ids[row_index]
                 grouped: dict[str, dict] = {}
                 source_columns: dict[str, dict] = {}
                 for mapping in mappings:
@@ -166,8 +222,45 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                     source_columns.setdefault(entity, {})[prop] = {
                         "column": source, "raw": raw, "value": value}
                 for entity, properties in grouped.items():
-                    # Reserve the idempotency key before writing the instance. A conflict
-                    # means this exact row/entity was already ingested by this mapping.
+                    source_state = None
+                    if sync_mode == "upsert":
+                        source_state = db.fetch_one(
+                            "SELECT id::text AS id, instance_id::text AS instance_id, "
+                            "row_hash, mapping_checksum FROM ontology.dataset_source_records "
+                            "WHERE tenant_id=:t AND mapping_name=:mn AND source_record_id=:sid "
+                            "AND entity_type=:et FOR UPDATE",
+                            {"t": tenant_id, "mn": str(mapping_set.get("name") or ""),
+                             "sid": stable_source_id, "et": entity},
+                        )
+                        if not source_state:
+                            created_state = db.fetch_one(
+                                "INSERT INTO ontology.dataset_source_records "
+                                "(tenant_id, mapping_name, source_record_id, entity_type, "
+                                " instance_id, row_hash, mapping_checksum) "
+                                "VALUES (:t, :mn, :sid, :et, NULL, :rh, :mc) "
+                                "ON CONFLICT (tenant_id, mapping_name, source_record_id, entity_type) "
+                                "DO NOTHING RETURNING id::text AS id",
+                                {"t": tenant_id, "mn": str(mapping_set.get("name") or ""),
+                                 "sid": stable_source_id, "et": entity,
+                                 "rh": row_hash, "mc": mapping_checksum},
+                            )
+                            if created_state:
+                                source_state = {"id": created_state["id"], "instance_id": None,
+                                                "row_hash": row_hash, "mapping_checksum": mapping_checksum}
+                            else:
+                                # Another transaction may have reserved the same source ID.
+                                source_state = db.fetch_one(
+                                    "SELECT id::text AS id, instance_id::text AS instance_id, "
+                                    "row_hash, mapping_checksum FROM ontology.dataset_source_records "
+                                    "WHERE tenant_id=:t AND mapping_name=:mn AND source_record_id=:sid "
+                                    "AND entity_type=:et FOR UPDATE",
+                                    {"t": tenant_id, "mn": str(mapping_set.get("name") or ""),
+                                     "sid": stable_source_id, "et": entity},
+                                )
+                        if not source_state:
+                            raise RuntimeError("无法锁定稳定源记录，事务已中止")
+
+                    # A file-level reservation preserves retry idempotency for both modes.
                     reservation = db.fetch_one(
                         "INSERT INTO ontology.dataset_ingestion_records "
                         "(tenant_id, mapping_set_id, source_key, source_name, source_row, "
@@ -183,18 +276,47 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                     if not reservation:
                         skipped_records += 1
                         continue
-                    result = service.write_instance({
+
+                    if (source_state and source_state.get("instance_id")
+                            and source_state.get("row_hash") == row_hash
+                            and source_state.get("mapping_checksum") == mapping_checksum):
+                        iid = source_state["instance_id"]
+                        db.execute(
+                            "UPDATE ontology.dataset_ingestion_records SET instance_id=CAST(:iid AS uuid) "
+                            "WHERE id=CAST(:id AS uuid)",
+                            {"iid": iid, "id": reservation["id"]},
+                        )
+                        skipped_records += 1
+                        continue
+
+                    instance_payload = {
                         "type_name": entity,
                         "canonical_name": str(properties.get("name") or properties.get("full_name") or ""),
                         "properties": properties,
-                    })
+                    }
+                    if source_state and source_state.get("instance_id"):
+                        instance_payload["id"] = source_state["instance_id"]
+                    result = service.write_instance(instance_payload)
                     iid = result["id"]
+                    if source_state:
+                        db.execute(
+                            "UPDATE ontology.dataset_source_records SET instance_id=CAST(:iid AS uuid), "
+                            "row_hash=:rh, mapping_checksum=:mc, last_seen_at=now() "
+                            "WHERE id=CAST(:id AS uuid)",
+                            {"iid": iid, "rh": row_hash, "mc": mapping_checksum,
+                             "id": source_state["id"]},
+                        )
+                        if source_state.get("instance_id"):
+                            updated_instances += 1
+                        else:
+                            inserted_instances += 1
+                    else:
+                        inserted_instances += 1
                     db.execute(
                         "UPDATE ontology.dataset_ingestion_records SET instance_id = CAST(:iid AS uuid) "
                         "WHERE id = CAST(:id AS uuid)",
                         {"iid": iid, "id": reservation["id"]},
                     )
-                    inserted_instances += 1
                     inserted_records += 1
                     for prop, item in source_columns[entity].items():
                         db.execute(
@@ -238,6 +360,9 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
         "rows_received": len(rows), "records_inserted": inserted_records,
         "records_skipped_idempotent": skipped_records,
         "instances_inserted": inserted_instances,
+        "instances_updated": updated_instances,
+        "sync_mode": sync_mode,
+        "source_id_column": source_id_column,
         "mapping_set_id": mapping_set_id,
         "mapping_version": mapping_set.get("version"),
         "ontology_version": mapping_set.get("ontology_version"),
