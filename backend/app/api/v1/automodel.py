@@ -246,7 +246,7 @@ def review(job_id: str, payload: ReviewIn, request: Request):
         raise HTTPException(409, "已发布的任务不能再审核，请新建任务")
     for d in payload.decisions:
         if d.get("kind") not in ("class", "relation", "attribute") or \
-                d.get("action") not in ("accept", "reject", "rename"):
+                d.get("action") not in ("accept", "reject", "rename", "merge"):
             raise HTTPException(400, f"非法审核决策：{d}")
         if d.get("new_name") and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", d["new_name"]):
             raise HTTPException(400, f"new_name 非法：{d['new_name']}")
