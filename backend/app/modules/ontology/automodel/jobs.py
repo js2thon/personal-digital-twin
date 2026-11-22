@@ -79,11 +79,17 @@ def save(job: dict, tenant: str = "default", actor: str = "owner",
          source_ref: dict | None = None) -> dict:
     job["updated_at"] = time.time()
     cache_key = (str(tenant), str(job["id"]))
-    with _LOCK:
-        _MEM[cache_key] = job
     if not ensure_schema():
+        with _LOCK:
+            _MEM[cache_key] = job
         return job
     db = _db()
+    # A primary-key collision must not let another tenant's job enter this
+    # process cache even though the guarded upsert below would be a no-op.
+    existing = db.fetch_one(
+        "SELECT tenant_id FROM ontology.automodel_jobs WHERE id=:i", {"i": job["id"]})
+    if existing and str(existing["tenant_id"]) != str(tenant):
+        raise PermissionError("Automodel job belongs to another tenant")
     stage = next(reversed(job.get("stages") or {"created": 1}))
     params = {"id": job["id"], "t": tenant, "s": job["source"], "k": job.get("source_kind", "file"),
               "ref": json.dumps(source_ref or job.get("source_ref") or {}, ensure_ascii=False),
@@ -101,6 +107,8 @@ def save(job: dict, tenant: str = "default", actor: str = "owner",
         " artifact=EXCLUDED.artifact, review=EXCLUDED.review, schema_version=EXCLUDED.schema_version, "
         " published_by=EXCLUDED.published_by, error=EXCLUDED.error, updated_at=now() "
         "WHERE ontology.automodel_jobs.tenant_id=EXCLUDED.tenant_id", params)
+    with _LOCK:
+        _MEM[cache_key] = job
     return job
 
 
