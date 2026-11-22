@@ -106,3 +106,56 @@ def test_profile_output_does_not_expose_connection_secret(monkeypatch):
     }))
     monkeypatch.setenv("CRM_URL", "mysql://dbuser:very-secret@db.internal/crm")
     assert "very-secret" not in str(connector.list_profiles(tenant_id="default"))
+
+
+
+def test_keyset_stream_reads_all_rows_in_stable_order(monkeypatch):
+    from sqlalchemy import create_engine
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE employees (employee_no INTEGER PRIMARY KEY, full_name TEXT, dept TEXT)"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO employees VALUES "
+            "(1, '张三', '研发'), (2, '李四', '产品'), (3, '王五', '研发'), "
+            "(4, '赵六', '销售'), (5, '钱七', '研发')"
+        )
+    monkeypatch.setattr(connector, "_profile", lambda name, tenant: (
+        {"schemas": [], "tables": ["employees"]}, "sqlite://"
+    ))
+    monkeypatch.setattr(connector, "_engine", lambda url: engine)
+    monkeypatch.setattr(connector, "_enforce_read_only", lambda conn, dialect: None)
+
+    rows = list(connector.stream_table_rows(
+        profile_name="hr", tenant_id="tenant-a", schema_name=None,
+        table_name="employees", columns=["full_name", "dept"],
+        primary_key="employee_no", batch_size=2,
+    ))
+    assert [row["employee_no"] for row in rows] == [1, 2, 3, 4, 5]
+    assert rows[0] == {"full_name": "张三", "dept": "研发", "employee_no": 1}
+    engine.dispose()
+
+
+def test_keyset_stream_rejects_non_primary_key_cursor(monkeypatch):
+    from sqlalchemy import create_engine
+    from app.modules.ontology.database_connector import ConnectorConfigError
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as conn:
+        conn.exec_driver_sql("CREATE TABLE employees (employee_no INTEGER, full_name TEXT)")
+        conn.exec_driver_sql("INSERT INTO employees VALUES (1, '张三')")
+    monkeypatch.setattr(connector, "_profile", lambda name, tenant: (
+        {"schemas": [], "tables": ["employees"]}, "sqlite://"
+    ))
+    monkeypatch.setattr(connector, "_engine", lambda url: engine)
+    monkeypatch.setattr(connector, "_enforce_read_only", lambda conn, dialect: None)
+
+    with pytest.raises(ConnectorConfigError, match="单列主键"):
+        list(connector.stream_table_rows(
+            profile_name="hr", tenant_id="tenant-a", schema_name=None,
+            table_name="employees", columns=["full_name"],
+            primary_key="employee_no", batch_size=10,
+        ))
+    engine.dispose()
