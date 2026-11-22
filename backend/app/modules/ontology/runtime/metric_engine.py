@@ -231,6 +231,26 @@ def preview(definitions: list[dict], data: dict) -> dict:
                         for x in output]}
 
 
+def semantic_instances_to_data(instances: list[dict]) -> dict:
+    """Adapt tenant-filtered semantic-store records to the metric engine's entity rows."""
+    entities: dict[str, list[dict]] = {}
+    for instance in instances:
+        if not isinstance(instance, dict):
+            continue
+        type_name = str(instance.get("type_name") or "").strip()
+        if not type_name:
+            continue
+        properties = instance.get("properties") or {}
+        if not isinstance(properties, dict):
+            continue
+        row = dict(properties)
+        # Preserve explicit business properties; add technical identifiers only when absent.
+        row.setdefault("id", instance.get("id"))
+        row.setdefault("_canonical_name", instance.get("canonical_name") or "")
+        entities.setdefault(type_name, []).append(row)
+    return {"entities": entities}
+
+
 def checksum(definition: dict) -> str:
     raw = json.dumps(definition, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
