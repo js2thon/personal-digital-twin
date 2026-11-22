@@ -19,6 +19,7 @@ MAX_EXECUTION_ROWS = 500
 
 
 def ensure_schema() -> None:
+    mapping_registry.ensure_schema()
     db.execute("CREATE SCHEMA IF NOT EXISTS ontology")
     db.execute("""
     CREATE TABLE IF NOT EXISTS ontology.dataset_ingestion_runs (
@@ -51,7 +52,7 @@ def ensure_schema() -> None:
         instance_id UUID NOT NULL,
         ingestion_run_id UUID NOT NULL REFERENCES ontology.dataset_ingestion_runs(id),
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        UNIQUE (tenant_id, mapping_set_id, source_key, entity_type)
+        UNIQUE (tenant_id, mapping_set_id, source_key, source_row, entity_type)
     )
     """)
     db.execute("""
