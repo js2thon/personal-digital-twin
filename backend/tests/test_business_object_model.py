@@ -108,3 +108,82 @@ def test_automodel_generates_business_object_identity_title_and_source_binding()
     assert properties["salary"]["sensitivity"] == "confidential"
     assert properties["hire_date"]["temporal_role"] == "event_time"
     assert job["business_model_issues"] == []
+
+
+
+def test_modeling_standards_report_distinguishes_blocking_errors_and_review_warnings():
+    from app.modules.ontology.semantic.standards import check_ontology_modeling_standards
+
+    report = check_ontology_modeling_standards({
+        "entity_types": {
+            "employee": {
+                "name": "employee", "object_kind": "invalid_kind",
+                "attributes": [
+                    {"name": "EmployeeNo", "range": "enum", "enum_values": [],
+                     "description": "", "sensitivity": "internal"},
+                ],
+                "identity_rules": [{"key_properties": ["EmployeeNo"]}],
+                "title_property": "unknown_title",
+                "backing_sources": [{
+                    "source_id": "hr", "table": "employees", "primary_key": ["id"],
+                    "property_mappings": {"name": "unknown_property"},
+                }],
+            }
+        },
+        "relation_types": {
+            "works_for": {
+                "source_types": ["*"], "target_types": ["MissingDepartment"],
+                "cardinality": "invalid",
+            }
+        },
+        "interfaces": {},
+    })
+    codes = {item["code"] for item in report["findings"]}
+    assert report["status"] == "fail"
+    assert report["summary"]["errors"] > 0
+    assert report["summary"]["warnings"] > 0
+    assert {
+        "OBJECT_NAME_NOT_PASCAL_CASE", "OBJECT_KIND_INVALID",
+        "PROPERTY_NAME_NOT_SNAKE_CASE", "ENUM_VALUES_MISSING",
+        "OBJECT_TITLE_UNKNOWN", "SOURCE_TARGET_PROPERTY_UNKNOWN",
+        "RELATION_CARDINALITY_INVALID", "RELATION_ENDPOINT_UNTYPED",
+        "RELATION_ENDPOINT_UNKNOWN",
+    } <= codes
+
+
+def test_modeling_standards_checks_interface_per_implementing_object_and_inheritance_cycles():
+    from app.modules.ontology.semantic.standards import check_ontology_modeling_standards
+
+    report = check_ontology_modeling_standards({
+        "entity_types": {
+            "Employee": {"name": "Employee", "parent": "Manager",
+                         "interfaces": ["Identifiable"],
+                         "attributes": [{"name": "employee_no", "description": "工号"}]},
+            "Manager": {"name": "Manager", "parent": "Employee",
+                        "attributes": [{"name": "manager_no", "description": "管理者编号"}]},
+        },
+        "relation_types": {},
+        "interfaces": {"Identifiable": {"name": "Identifiable",
+                                        "properties": ["employee_no", "global_id"]}},
+    })
+    codes = {item["code"] for item in report["findings"]}
+    assert "OBJECT_INHERITANCE_CYCLE" in codes
+    assert "INTERFACE_PROPERTY_NOT_IMPLEMENTED" in codes
+
+
+def test_automodel_pipeline_exposes_standards_report():
+    ts = connectors.TableSet("hr", "file")
+    ts.tables["employees"] = connectors.Table(
+        "employees",
+        pd.DataFrame({
+            "emp_no": [1001, 1002, 1003],
+            "full_name": ["Zhang San", "Li Si", "Wang Wu"],
+            "salary": [12000.0, 15000.0, 18000.0],
+            "hire_date": ["2022-01-01", "2023-02-01", "2024-03-01"],
+        }),
+        row_count=3,
+    )
+    job = pipeline.run(ts, stop_after="validate")
+    assert "standards_report" in job
+    assert job["standards_report"]["summary"]["total"] >= 0
+    assert job["stages"]["modeling_standards"]["ok"] is True
