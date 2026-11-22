@@ -10,7 +10,7 @@ on:
       - "docs/ontology-metrics-engine-v1.md"
       - ".github/workflows/ontology-metrics.yml"
   push:
-    branches: [feat/ontology-metrics-engine-v1]
+    branches: [feat/ontology-metrics-engine-v1-final]
     paths:
       - "backend/app/modules/ontology/runtime/metric_engine.py"
       - "backend/app/api/v1/ontology_metrics.py"
