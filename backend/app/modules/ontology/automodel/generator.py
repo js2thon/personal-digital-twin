@@ -67,8 +67,9 @@ def _guess_label(col: str) -> str:
     base = next((zh for k, zh in _ROOTS if c.startswith(k) or f"_{k}" in c), None)
     if not base:
         return col
-    if re.search(r"_lv(\d+)$", c):
-        base = f"{re.search(r'_lv(\d+)$', c).group(1)}级{base}"
+    level = re.search(r"_lv(\d+)$", c)
+    if level:
+        base = f"{level.group(1)}级{base}"
     if c.endswith("_code") or c.endswith("_id"):
         return base + "编码"
     if "_en_" in c or c.endswith("_en_name"):
