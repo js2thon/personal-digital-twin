@@ -132,6 +132,13 @@ class DatasetPreviewIn(DatasetInspectIn):
     preview_limit: int = 20
 
 
+class MappingSetCreateIn(BaseModel):
+    """保存映射草稿快照；创建新版本，不覆盖历史版本。"""
+    name: str
+    mappings: list[dict]
+    ontology_schema: dict | None = None
+
+
 
 def _mapping_schema(schema: dict | None) -> dict:
     if schema:
@@ -197,6 +204,65 @@ def mapping_preview_file(payload: DatasetPreviewIn, request: Request):
                              source_name=payload.file_name, limit=payload.preview_limit)
     result["dataset"] = {k: v for k, v in dataset.items() if k != "rows"}
     result["principal"] = _principal(request).get("user_id", "anonymous")
+    return result
+
+
+@router.post("/ontology/modelling/mapping-sets")
+def mapping_set_create(payload: MappingSetCreateIn, request: Request):
+    """保存映射草稿为不可变版本快照；不触发数据写入。"""
+    from app.modules.ontology import mapping_pipeline as MP
+    from app.modules.ontology import mapping_registry as MR
+    principal = _principal(request)
+    name = payload.name.strip()
+    if not name or len(name) > 200:
+        raise HTTPException(400, "映射方案名称长度须为 1-200")
+    schema = _mapping_schema(payload.ontology_schema)
+    validation = MP.validate_mappings(payload.mappings, schema)
+    if not validation["valid"]:
+        raise HTTPException(400, {"message": "映射定义未通过校验", "issues": validation["issues"]})
+    from app.modules.ontology.semantic import versioning as OV
+    current = OV.current_version()
+    result = MR.create_version(
+        tenant_id=str(principal.get("tenant_id") or "default"),
+        name=name,
+        definition={"mappings": payload.mappings, "ontology_schema": schema},
+        schema_version=str(schema.get("schema_version") or current.get("schema_version") or ""),
+        ontology_version=str(schema.get("ontology_version") or current.get("ontology_version") or ""),
+        created_by=str(principal.get("user_id") or "anonymous"))
+    return result
+
+
+@router.post("/ontology/modelling/mapping-sets/{mapping_id}/approve")
+def mapping_set_approve(mapping_id: str, request: Request):
+    """经当前已认证用户显式确认后，将草稿版本标记为 approved。"""
+    from app.modules.ontology import mapping_registry as MR
+    principal = _principal(request)
+    result = MR.approve(
+        mapping_id, tenant_id=str(principal.get("tenant_id") or "default"),
+        approved_by=str(principal.get("user_id") or "anonymous"))
+    if not result:
+        raise HTTPException(404, "映射草稿不存在、非当前租户或已不是 draft 状态")
+    return result
+
+
+@router.get("/ontology/modelling/mapping-sets")
+def mapping_set_list(request: Request, name: str | None = None, limit: int = 50):
+    """列出当前租户的映射版本及审批状态。"""
+    from app.modules.ontology import mapping_registry as MR
+    principal = _principal(request)
+    return {"items": MR.list_versions(
+        tenant_id=str(principal.get("tenant_id") or "default"),
+        name=name, limit=limit)}
+
+
+@router.get("/ontology/modelling/mapping-sets/{mapping_id}")
+def mapping_set_get(mapping_id: str, request: Request):
+    """读取当前租户的映射快照，包含绑定的本体 Schema。"""
+    from app.modules.ontology import mapping_registry as MR
+    principal = _principal(request)
+    result = MR.get(mapping_id, tenant_id=str(principal.get("tenant_id") or "default"))
+    if not result:
+        raise HTTPException(404, "映射版本不存在")
     return result
 
 
