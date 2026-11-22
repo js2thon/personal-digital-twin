@@ -56,3 +56,9 @@ def test_reports_unknown_class_reference():
 
 def test_selftest():
     assert rdf_quality.selftest()["passed"] is True
+
+
+def test_quality_report_route_is_registered():
+    from app.api.v1 import ontology_modelling
+    paths = {route.path for route in ontology_modelling.router.routes}
+    assert "/ontology/modelling/quality-report" in paths
