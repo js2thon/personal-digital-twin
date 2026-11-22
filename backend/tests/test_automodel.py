@@ -295,3 +295,39 @@ def test_evaluate_generates_and_scores(ctx):
     # 判分器本身要能识别错误答案
     bad = ev.score({"gold": {"type": "number", "value": 10}}, {"ok": True, "result": {"value": 3}, "answer": "3"})
     assert not bad["pass"]
+
+
+# ---------------------------------------------------------------- 本体工作台治理与字段级血缘
+def test_studio_governance_and_bidirectional_provenance(ctx):
+    from app.modules.ontology.automodel import studio
+    job, *_ = ctx
+    first = job["materialized"]["entities"][0]
+    report = studio.quality(job)
+    assert 0 <= report["quality_score"] <= 100
+    assert report["score_method"].startswith("100 - deterministic")
+    assert "findings" in report and "coverage" in report
+
+    eid = first["external_id"]
+    lineage = studio.provenance(job, eid)
+    assert lineage["entity"]["id"] == eid
+    assert lineage["items"]
+    assert all("source_ref" in item for item in lineage["items"])
+    # Structured mapping facts now retain the exact source column.
+    mapped = [x for x in lineage["items"] if x.get("origin") == "structured_mapping"]
+    assert mapped and all(x.get("source_column") for x in mapped)
+
+    sample = mapped[0]
+    reverse = studio.source_provenance(job, sample["source_table"], sample["source_column"])
+    assert reverse["total"] >= 1
+    assert any(x["entity_id"] == eid for x in reverse["items"])
+
+    governance = studio.governance(job, {"tenant_id": "test", "user_id": "tester"})
+    assert governance["asset"]["job_id"] == job["id"]
+    assert governance["access"]["tenant_scoped_lookup"] is True
+    assert governance["access"]["client_write_enabled"] is False
+    assert "release_gate" in governance
+
+
+def test_generator_level_suffix_label():
+    from app.modules.ontology.automodel.generator import _guess_label
+    assert _guess_label("dept_name_lv5") == "5级部门"
