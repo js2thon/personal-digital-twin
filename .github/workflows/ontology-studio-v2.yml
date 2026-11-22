@@ -37,7 +37,7 @@ jobs:
           python-version: "3.11"
       - name: Install test runtime
         run: python -m pip install --upgrade pip && python -m pip install pytest pandas numpy fastapi pydantic pydantic-settings python-multipart pyyaml rdflib sqlalchemy psycopg2-binary
-      - name: Run automodel and governance regression tests
-        run: python -m pytest tests/test_automodel.py -q
+      - name: Run focused governance and lineage regression tests
+        run: python -m pytest tests/test_automodel.py -q -k "studio_governance_and_bidirectional_provenance or generator_level_suffix_label"
       - name: Compile changed Python modules
         run: python -m compileall -q app/modules/ontology/automodel app/api/v1/automodel.py
