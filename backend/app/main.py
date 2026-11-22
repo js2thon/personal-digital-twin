@@ -18,6 +18,7 @@ from app.api.v1 import (  # noqa: F401
     messages,
     ontology,
     ontology_modelling,
+    ontology_metrics,
     ontology_semantic,
     pipeline,
     platform,
@@ -354,6 +355,8 @@ app.include_router(ontology_semantic.router, prefix=API, tags=["ontology-semanti
 app.include_router(retrieval.router, prefix=API, tags=["retrieval"])
 # 本体建模工作流：画布 7 类建模节点 + 收尾区四类完整验证门禁（纯计算，不写业务库）
 app.include_router(ontology_modelling.router, prefix=API, tags=["ontology-modelling"])
+# 指标智能层：原生/衍生/复合指标发现、质量门禁、预览、版本与发布
+app.include_router(ontology_metrics.router, prefix=API, tags=["ontology-metrics"])
 # 本体驱动知识图谱：导入本体/数据 → 自动生成设计模型 → 只读 SPARQL → 语义问答
 app.include_router(kg.router, prefix=API, tags=["kg"])
 
