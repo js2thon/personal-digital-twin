@@ -105,6 +105,50 @@ class QualityReportIn(BaseModel):
     text: str | None = None
     format: str | None = None
 
+class MappingSuggestIn(BaseModel):
+    """数据集字段元数据 + 本体语义 Schema，生成可解释候选（不写库）。"""
+    columns: list[dict]
+    ontology_schema: dict | None = None
+    min_score: float = 0.25
+    top_k: int = 3
+
+
+class MappingValidateIn(BaseModel):
+    """人工确认后的字段映射；仅校验结构，不执行数据写入。"""
+    mappings: list[dict]
+    ontology_schema: dict | None = None
+
+
+def _mapping_schema(schema: dict | None) -> dict:
+    if schema:
+        return schema
+    from app.modules.ontology.semantic import schema_def as SD
+    return SD.to_schema_dict(SD.default_semantic_schema())
+
+
+@router.post("/ontology/modelling/mapping/suggest")
+def mapping_suggest(payload: MappingSuggestIn, request: Request):
+    """字段元数据/样例值 → 本体属性候选 + 证据 + 置信等级；纯计算。"""
+    from app.modules.ontology import mapping_pipeline as MP
+    if not payload.columns:
+        raise HTTPException(400, "columns 不能为空")
+    if not 0 <= payload.min_score <= 1:
+        raise HTTPException(400, "min_score 必须在 0 到 1 之间")
+    result = MP.suggest_mappings(
+        payload.columns, _mapping_schema(payload.ontology_schema),
+        min_score=payload.min_score, top_k=payload.top_k)
+    result["principal"] = _principal(request).get("user_id", "anonymous")
+    return result
+
+
+@router.post("/ontology/modelling/mapping/validate")
+def mapping_validate(payload: MappingValidateIn, request: Request):
+    """校验人工确认的字段映射；不触发连接器、SQL 或业务数据写入。"""
+    from app.modules.ontology import mapping_pipeline as MP
+    result = MP.validate_mappings(payload.mappings, _mapping_schema(payload.ontology_schema))
+    result["principal"] = _principal(request).get("user_id", "anonymous")
+    return result
+
 
 def _principal(request: Request) -> dict:
     p = getattr(getattr(request, "state", None), "principal", None)
