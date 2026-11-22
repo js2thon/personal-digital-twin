@@ -135,7 +135,6 @@ def test_keyset_stream_reads_all_rows_in_stable_order(monkeypatch):
     ))
     assert [row["employee_no"] for row in rows] == [1, 2, 3, 4, 5]
     assert rows[0] == {"full_name": "张三", "dept": "研发", "employee_no": 1}
-    engine.dispose()
 
 
 def test_keyset_stream_rejects_non_primary_key_cursor(monkeypatch):
@@ -162,18 +161,20 @@ def test_keyset_stream_rejects_non_primary_key_cursor(monkeypatch):
 
 
 
-def test_sensitive_columns_require_explicit_ingestion_allowlist(monkeypatch):
+def test_sensitive_columns_require_explicit_ingestion_allowlist(monkeypatch, tmp_path):
     from sqlalchemy import create_engine
 
-    engine = create_engine("sqlite://")
+    db_url = f"sqlite:///{tmp_path / 'contacts.db'}"
+    engine = create_engine(db_url)
     with engine.begin() as conn:
         conn.exec_driver_sql(
             "CREATE TABLE contacts (id INTEGER PRIMARY KEY, phone_number TEXT)"
         )
         conn.exec_driver_sql("INSERT INTO contacts VALUES (1, '13800138000')")
+    engine.dispose()
     profile = {"schemas": [], "tables": ["contacts"]}
-    monkeypatch.setattr(connector, "_profile", lambda name, tenant: (profile, "sqlite://"))
-    monkeypatch.setattr(connector, "_engine", lambda url: engine)
+    monkeypatch.setattr(connector, "_profile", lambda name, tenant: (profile, db_url))
+    monkeypatch.setattr(connector, "_engine", lambda url: create_engine(url))
     monkeypatch.setattr(connector, "_enforce_read_only", lambda conn, dialect: None)
 
     with pytest.raises(PermissionError, match="敏感字段未获准"):
