@@ -283,6 +283,20 @@ def stream_table_rows(*, profile_name: str, tenant_id: str, schema_name: str | N
             missing = sorted(set(selected) - available)
             if missing:
                 raise LookupError("源表缺少映射列：" + ", ".join(missing))
+            # Discovery always redacts likely PII. Production ingestion is also deny-by-default:
+            # a profile must explicitly allow each sensitive column before it can be streamed.
+            configured_redactions = {str(x).casefold() for x in (cfg.get("redact_columns") or [])}
+            sensitive = {
+                name for name in selected
+                if _is_sensitive_column(name, configured_redactions)
+            }
+            allowed_sensitive = {str(x).casefold() for x in (cfg.get("ingest_sensitive_columns") or [])}
+            blocked_sensitive = sorted(sensitive - allowed_sensitive)
+            if blocked_sensitive:
+                raise PermissionError(
+                    "敏感字段未获准进入本体数据集，请在连接配置 ingest_sensitive_columns 中显式授权："
+                    + ", ".join(blocked_sensitive)
+                )
             pk = inspector.get_pk_constraint(table_name, schema=schema_name) or {}
             pk_columns = list(pk.get("constrained_columns") or [])
             if pk_columns != [primary_key]:
