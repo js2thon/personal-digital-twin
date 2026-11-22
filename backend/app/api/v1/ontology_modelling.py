@@ -284,8 +284,9 @@ def dataset_execute(payload: DatasetExecuteIn, request: Request):
     if payload.max_rows < 1 or payload.max_rows > ME.MAX_EXECUTION_ROWS:
         raise HTTPException(400, f"max_rows 必须在 1-{ME.MAX_EXECUTION_ROWS} 之间")
     try:
+        if len(payload.content_base64) > 14 * 1024 * 1024:
+            raise HTTPException(413, "文件编码后超过上传限制")
         raw = base64.b64decode(payload.content_base64, validate=True)
-        dataset = ME  # keep execution module import explicit for API instrumentation
         from app.modules.ontology import mapping_pipeline as MP
         parsed = MP.read_tabular_file(payload.file_name, raw, payload.sheet_name)
     except (ValueError, UnicodeError) as exc:
