@@ -11,8 +11,8 @@ from typing import Any
 
 
 def _norm(value: Any) -> str:
-    text = str(value or "").strip().lower()
-    text = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
+    text = str(value or "").strip()
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text).lower()
     return re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", text)
 
 
