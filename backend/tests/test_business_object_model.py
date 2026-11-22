@@ -187,3 +187,119 @@ def test_automodel_pipeline_exposes_standards_report():
     assert "standards_report" in job
     assert job["standards_report"]["summary"]["total"] >= 0
     assert job["stages"]["modeling_standards"]["ok"] is True
+
+
+def test_business_object_discovery_is_an_independent_pipeline_stage():
+    ts = connectors.TableSet("hr", "file")
+    ts.tables["employees"] = connectors.Table(
+        "employees",
+        pd.DataFrame({"emp_no": [1, 2], "full_name": ["A", "B"]}),
+        row_count=2,
+    )
+    job = pipeline.run(ts, stop_after="business_object_discovery")
+    assert "profile" in job["stages"]
+    assert "business_object_discovery" in job["stages"]
+    assert "draft" not in job["stages"]
+    assert job["business_object_discovery"]["candidate_count"] == 1
+
+
+def test_business_object_discovery_proposes_cross_table_merge_with_evidence():
+    from app.modules.ontology.automodel import business_object_discovery, profiler
+
+    ts = connectors.TableSet("hr", "file")
+    ts.tables["employees"] = connectors.Table(
+        "employees", pd.DataFrame({"emp_no": [1, 2], "full_name": ["A", "B"]}), row_count=2)
+    ts.tables["staff"] = connectors.Table(
+        "staff", pd.DataFrame({"emp_no": [3, 4], "full_name": ["C", "D"]}), row_count=2)
+    report = business_object_discovery.discover(profiler.profile(ts))
+    assert report["candidate_count"] == 2
+    assert report["merge_candidate_count"] == 1
+    assert report["merge_candidates"][0]["decision"] == "review_merge"
+    assert report["policy"]["auto_merge"] is False
+
+
+def test_review_attribute_rename_updates_all_business_object_references():
+    job = {
+        "id": "review-attr",
+        "draft": {
+            "schema": {
+                "entity_types": {"Employee": {
+                    "attributes": [{"name": "employee_no"}],
+                    "title_property": "employee_no",
+                    "identity_rules": [{"key_properties": ["employee_no"]}],
+                    "backing_sources": [{"source_id": "hr", "table": "employees",
+                                         "property_mappings": {"emp_no": "employee_no"}}],
+                }},
+                "relation_types": {},
+                "attributes": {"employee_no": {"owner": "Employee", "column": "emp_no"}},
+                "interfaces": {"Identifiable": {"properties": ["employee_no"]}},
+            },
+            "class_map": {"employees": "Employee"}, "inferences": [], "review": [],
+        },
+    }
+    pipeline.apply_review(job, [{"kind": "attribute", "ref": "employee_no",
+                                 "action": "rename", "new_name": "staff_no"}])
+    schema = job["draft"]["schema"]
+    assert "staff_no" in schema["attributes"]
+    assert schema["entity_types"]["Employee"]["attributes"][0]["name"] == "staff_no"
+    assert schema["entity_types"]["Employee"]["title_property"] == "staff_no"
+    assert schema["entity_types"]["Employee"]["identity_rules"][0]["key_properties"] == ["staff_no"]
+    assert schema["entity_types"]["Employee"]["backing_sources"][0]["property_mappings"]["emp_no"] == "staff_no"
+    assert schema["interfaces"]["Identifiable"]["properties"] == ["staff_no"]
+
+
+def test_review_merge_consolidates_classes_and_keeps_source_bindings():
+    job = {
+        "id": "review-merge",
+        "draft": {
+            "schema": {
+                "entity_types": {
+                    "Person": {"object_kind": "entity", "attributes": [{"name": "name"}],
+                               "backing_sources": [{"source_id": "hr", "table": "employees"}]},
+                    "Staff": {"object_kind": "entity", "attributes": [{"name": "staff_code"}],
+                              "backing_sources": [{"source_id": "iam", "table": "accounts"}]},
+                },
+                "relation_types": {"works_for": {"source": "Staff", "target": "Person"}},
+                "attributes": {"name": {"owner": "Person"}, "staff_code": {"owner": "Staff"}},
+                "interfaces": {},
+            },
+            "class_map": {"employees": "Person", "accounts": "Staff"},
+            "inferences": [], "review": [],
+        },
+    }
+    pipeline.apply_review(job, [{"kind": "class", "ref": "Staff", "action": "merge", "target": "Person"}])
+    schema = job["draft"]["schema"]
+    assert "Staff" not in schema["entity_types"]
+    assert job["draft"]["class_map"] == {"employees": "Person", "accounts": "Person"}
+    assert len(schema["entity_types"]["Person"]["backing_sources"]) == 2
+    assert schema["relation_types"]["works_for"]["source"] == "Person"
+    assert schema["attributes"]["staff_code"]["owner"] == "Person"
+
+
+def test_publish_schema_merge_preserves_interfaces_and_source_bindings():
+    from app.modules.ontology.automodel.publish import merge_schema
+
+    current = {
+        "entity_types": {"Employee": {
+            "object_kind": "entity", "identity_rules": [{"source_system": "hr", "key_properties": ["employee_no"]}],
+            "backing_sources": [{"source_id": "hr", "table": "employees"}],
+            "interfaces": ["Identifiable"], "attributes": [{"name": "employee_no", "range": "string"}],
+        }},
+        "relation_types": {}, "attributes": {}, "interfaces": {},
+    }
+    draft = {
+        "entity_types": {"Employee": {
+            "object_kind": "entity", "identity_rules": [{"source_system": "iam", "key_properties": ["login"]}],
+            "backing_sources": [{"source_id": "iam", "table": "accounts"}],
+            "interfaces": ["Auditable"], "attributes": [{"name": "login", "range": "string"}],
+        }},
+        "relation_types": {}, "attributes": {},
+        "interfaces": {"Auditable": {"name": "Auditable", "properties": ["login"]}},
+    }
+    result = merge_schema(current, draft, "v2")
+    employee = result["schema"]["entity_types"]["Employee"]
+    assert len(employee["backing_sources"]) == 2
+    assert {x["source_system"] for x in employee["identity_rules"]} == {"hr", "iam"}
+    assert set(employee["interfaces"]) == {"Identifiable", "Auditable"}
+    assert "Auditable" in result["schema"]["interfaces"]
+    assert result["conflicts"] == []
