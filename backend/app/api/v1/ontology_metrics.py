@@ -90,7 +90,7 @@ def preview_from_store(payload: StorePreviewIn, request: Request):
     ensure_schema()
     tenant, _ = _tenant(request)
     rows = db.fetch_all(
-        "SELECT DISTINCT ON (metric_id) metric_id, name, version, definition, checksum "
+        "SELECT DISTINCT ON (metric_id) metric_id, name, version, definition, checksum, ontology_version "
         "FROM ontology.metric_definitions WHERE tenant_id=:t AND status='published' "
         "ORDER BY metric_id, version DESC", {"t": tenant})
     published = {}
@@ -101,7 +101,7 @@ def preview_from_store(payload: StorePreviewIn, request: Request):
         if isinstance(definition, dict):
             published[row["metric_id"]] = {
                 "definition": definition, "version": row["version"],
-                "checksum": row["checksum"], "name": row["name"],
+                "checksum": row["checksum"], "name": row["name"],\n                "ontology_version": row.get("ontology_version"),
             }
     if not published:
         raise HTTPException(404, "当前租户没有已发布指标")
@@ -136,7 +136,9 @@ def preview_from_store(payload: StorePreviewIn, request: Request):
 
     # Use the same tenant-scoped semantic store as the existing ingestion pipeline.
     from app.modules.ontology.semantic import store as semantic_store
+    from app.modules.ontology.semantic import service as semantic_service
     from app import policy as pol
+    semantic_service.ensure_ready()
     total_row = db.fetch_one(
         "SELECT count(*) AS n FROM ontology.entity_instances "
         "WHERE tenant_id=:t AND status='active'", {"t": tenant})
@@ -157,10 +159,31 @@ def preview_from_store(payload: StorePreviewIn, request: Request):
             "records_evaluated": len(visible), "items": [], "lineage": [],
             "reason": "当前用户的数据权限只能访问部分实例；为避免不完整口径，本次不计算。",
         }
+    data_versions = sorted({str(x.get("ontology_version") or "") for x in visible})
+    if len(data_versions) > 1:
+        return {
+            "ok": False, "complete": False, "execution_source": "ontology.entity_instances",
+            "records_evaluated": len(visible), "items": [], "lineage": [],
+            "reason": "语义实例库包含多个本体版本；需先完成版本迁移或按版本隔离计算。",
+            "ontology_versions": data_versions,
+        }
+    data_version = data_versions[0] if data_versions else ""
+    mismatched = {
+        mid: published[mid]["ontology_version"] for mid in metric_ids
+        if published[mid]["ontology_version"] and data_version
+        and str(published[mid]["ontology_version"]) != data_version
+    }
+    if mismatched:
+        raise HTTPException(409, {
+            "message": "指标定义版本与实例数据本体版本不一致",
+            "data_ontology_version": data_version,
+            "metric_ontology_versions": mismatched,
+        })
     data = ME.semantic_instances_to_data(visible)
     result = ME.preview(definitions, data)
     result.update({
         "complete": True,
+        "data_ontology_version": data_version or None,
         "execution_source": "ontology.entity_instances",
         "records_evaluated": len(visible),
         "metric_versions": {mid: published[mid]["version"] for mid in metric_ids},
