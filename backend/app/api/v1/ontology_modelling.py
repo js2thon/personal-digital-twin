@@ -143,6 +143,8 @@ class DatasetExecuteIn(DatasetInspectIn):
     """仅允许已批准映射版本执行，写入本体实例库。"""
     mapping_set_id: str
     max_rows: int = 500
+    sync_mode: str = "append"
+    source_id_column: str | None = None
 
 class DatabaseInspectIn(BaseModel):
     """通过服务端白名单连接配置发现数据库元数据；不接收连接串或 SQL。"""
@@ -303,7 +305,8 @@ def dataset_execute(payload: DatasetExecuteIn, request: Request):
             tenant_id=tenant_id, mapping_set_id=payload.mapping_set_id,
             rows=parsed["rows"], source_name=payload.file_name,
             source_sha256=hashlib.sha256(raw).hexdigest(), actor=actor,
-            max_rows=payload.max_rows)
+            max_rows=payload.max_rows, sync_mode=payload.sync_mode,
+            source_id_column=payload.source_id_column)
         result["dataset"] = {k: v for k, v in parsed.items() if k != "rows"}
         return result
     except LookupError as exc:
