@@ -434,6 +434,13 @@ def st_provenance(job_id: str, request: Request, entity: str, predicate: str | N
         raise HTTPException(404, str(exc)) from exc
 
 
+@router.get("/automodel/jobs/{job_id}/studio/provenance/source")
+def st_source_provenance(job_id: str, request: Request, table: str, column: str, limit: int = 200):
+    job = _job(job_id, request)
+    _frames(job)
+    return studio.source_provenance(job, table, column, limit)
+
+
 class ActionIn(BaseModel):
     action: str                     # create / update / delete
     cls: str | None = None
