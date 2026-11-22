@@ -144,6 +144,13 @@ class DatasetExecuteIn(DatasetInspectIn):
     mapping_set_id: str
     max_rows: int = 500
 
+class DatabaseInspectIn(BaseModel):
+    """通过服务端白名单连接配置发现数据库元数据；不接收连接串或 SQL。"""
+    schema_name: str | None = None
+    table_names: list[str] = []
+    sample_rows: int = 5
+    ontology_schema: dict | None = None
+
 
 
 def _mapping_schema(schema: dict | None) -> dict:
@@ -327,6 +334,53 @@ def instance_lineage_get(instance_id: str, request: Request):
     tenant_id = str(_principal(request).get("tenant_id") or "default")
     return {"instance_id": instance_id,
             "items": ME.get_instance_lineage(instance_id, tenant_id=tenant_id)}
+
+@router.get("/ontology/modelling/connectors")
+def database_connector_list(request: Request):
+    """列出当前租户可用的服务端数据库连接配置（不返回连接串/凭据）。"""
+    from app.modules.ontology import database_connector as DC
+    tenant_id = str(_principal(request).get("tenant_id") or "default")
+    try:
+        return {"items": DC.list_profiles(tenant_id=tenant_id), "read_only": True}
+    except DC.ConnectorConfigError as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+
+@router.post("/ontology/modelling/connectors/{profile_name}/inspect")
+def database_connector_inspect(profile_name: str, payload: DatabaseInspectIn,
+                                request: Request):
+    """发现白名单表结构、读取有限样本，并生成字段到本体属性的映射建议。"""
+    from app.modules.ontology import database_connector as DC
+    from app.modules.ontology import mapping_pipeline as MP
+    principal = _principal(request)
+    tenant_id = str(principal.get("tenant_id") or "default")
+    if payload.sample_rows < 0 or payload.sample_rows > DC.MAX_SAMPLE_ROWS:
+        raise HTTPException(400, f"sample_rows 必须在 0-{DC.MAX_SAMPLE_ROWS} 之间")
+    try:
+        result = DC.inspect_database(
+            profile_name=profile_name, tenant_id=tenant_id,
+            schema_name=payload.schema_name, table_names=payload.table_names,
+            sample_rows=payload.sample_rows)
+        schema = _mapping_schema(payload.ontology_schema)
+        for table in result["tables"]:
+            columns = []
+            for column in table["columns"]:
+                columns.append({
+                    "name": column["name"], "data_type": column["data_type"],
+                    "samples": [row.get(column["name"]) for row in table["sample_rows"]],
+                })
+            table["mapping_suggestions"] = MP.suggest_mappings(columns, schema)
+        result["principal"] = principal.get("user_id", "anonymous")
+        return result
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except DC.ConnectorConfigError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        # Do not echo SQLAlchemy exception text: it can contain host/user details.
+        raise HTTPException(502, f"数据库只读检查失败：{type(exc).__name__}") from exc
 
 
 def _principal(request: Request) -> dict:
