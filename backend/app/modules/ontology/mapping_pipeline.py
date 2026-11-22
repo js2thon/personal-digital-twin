@@ -202,3 +202,164 @@ def validate_mappings(mappings: list[dict], ontology_schema: dict | None = None)
             "issues": issues, "mappings": checked,
             "execution": "not_executed",
             "note": "校验通过仅代表映射结构合法；尚未执行数据转换或写入。"}
+
+
+def _coerce_value(value: Any, target_range: str) -> tuple[Any, str | None]:
+    """Conservatively convert tabular strings to declared ontology ranges."""
+    if value is None or value == "":
+        return None, None
+    rng = (target_range or "string").lower()
+    try:
+        if rng == "integer":
+            if isinstance(value, bool):
+                raise ValueError()
+            return int(str(value).strip()), None
+        if rng == "number":
+            if isinstance(value, bool):
+                raise ValueError()
+            return float(str(value).strip()), None
+        if rng == "boolean":
+            if isinstance(value, bool):
+                return value, None
+            token = str(value).strip().lower()
+            if token in {"true", "1", "yes", "y", "是"}:
+                return True, None
+            if token in {"false", "0", "no", "n", "否"}:
+                return False, None
+            raise ValueError()
+        if rng == "enum":
+            return str(value).strip(), None
+        return str(value).strip(), None
+    except (TypeError, ValueError):
+        return value, f"无法将值 {value!r} 转换为 {rng}"
+
+
+def preview_rows(rows: list[dict], mappings: list[dict],
+                 ontology_schema: dict | None = None,
+                 source_name: str = "dataset",
+                 limit: int = 20) -> dict:
+    """Transform rows using explicitly approved mappings and validate instances.
+
+    This is a preview only: no database writes, connector side effects or IDs
+    are created. Each output property carries source-column lineage.
+    """
+    from app.modules.ontology.semantic.constraints import validate_instance
+
+    schema = ontology_schema or {}
+    _, attrs = _schema_parts(schema)
+    attr_index = {(a["entity_type"], a["name"]): a for a in attrs}
+    approved = validate_mappings(mappings, schema)
+    if not approved["valid"]:
+        return {"valid": False, "stage": "mapping_validation",
+                "issues": approved["issues"], "execution": "not_executed",
+                "preview": []}
+    if not rows:
+        return {"valid": False, "stage": "dataset_validation",
+                "issues": [{"code": "empty_dataset", "message": "数据集没有数据行"}],
+                "execution": "not_executed", "preview": []}
+
+    preview, row_errors = [], []
+    for row_no, row in enumerate(rows[:max(1, min(int(limit), 100))], start=1):
+        grouped: dict[str, dict] = {}
+        lineage: dict[str, dict] = {}
+        conversion_errors = []
+        for mapping in mappings:
+            entity = mapping["entity_type"]
+            prop = mapping["property"]
+            spec = attr_index.get((entity, prop), {})
+            raw = row.get(mapping["source"])
+            value, error = _coerce_value(raw, spec.get("range", "string"))
+            grouped.setdefault(entity, {})[prop] = value
+            lineage.setdefault(entity, {})[prop] = {
+                "source": source_name, "row": row_no,
+                "column": mapping["source"], "raw_value": raw,
+            }
+            if error:
+                conversion_errors.append({"property": prop, "message": error})
+        for entity, properties in grouped.items():
+            report = validate_instance(schema, {
+                "type_name": entity, "properties": properties,
+            })
+            issues = list(report.get("violations") or []) + conversion_errors
+            preview.append({
+                "source_row": row_no, "type_name": entity,
+                "properties": properties, "lineage": lineage.get(entity, {}),
+                "valid": not bool(report.get("blocking") or conversion_errors),
+                "validation": report, "conversion_errors": conversion_errors,
+            })
+            if report.get("blocking") or conversion_errors:
+                row_errors.append({"row": row_no, "entity_type": entity,
+                                   "issues": issues})
+    return {
+        "valid": not row_errors, "stage": "preview",
+        "source": source_name, "rows_received": len(rows),
+        "rows_previewed": min(len(rows), max(1, min(int(limit), 100))),
+        "instances_previewed": len(preview), "invalid_instances": len(row_errors),
+        "preview": preview, "row_errors": row_errors,
+        "execution": "not_executed",
+        "note": "预览结果未写入本体实例库；请审核映射、类型转换和逐字段血缘后再进入受控写入阶段。",
+    }
+
+
+def read_tabular_file(file_name: str, content: bytes,
+                      sheet_name: str | None = None) -> dict:
+    """Read CSV/XLSX bytes into column metadata and row dictionaries.
+
+    SQL/database connectors intentionally live behind a separate adapter contract;
+    this function handles user-provided tabular files without external side effects.
+    """
+    import csv
+    import io
+    from pathlib import Path
+
+    suffix = Path(file_name or "").suffix.lower()
+    if not content:
+        raise ValueError("文件内容为空")
+    if len(content) > 10 * 1024 * 1024:
+        raise ValueError("文件超过 10 MiB 限制")
+    if suffix == ".csv":
+        decoded = None
+        for encoding in ("utf-8-sig", "gb18030"):
+            try:
+                decoded = content.decode(encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        if decoded is None:
+            raise ValueError("CSV 编码不支持，请使用 UTF-8 或 GB18030")
+        sample = decoded[:8192]
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\\t|")
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.DictReader(io.StringIO(decoded), dialect=dialect)
+        headers = [str(x or "").strip() for x in (reader.fieldnames or [])]
+        if not headers or any(not h for h in headers):
+            raise ValueError("CSV 首行必须包含非空字段名")
+        rows = [{headers[i]: value for i, value in enumerate(row.values())
+                 if i < len(headers)} for row in reader]
+    elif suffix in {".xlsx", ".xlsm"}:
+        try:
+            from openpyxl import load_workbook
+            workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        except Exception as exc:
+            raise ValueError(f"Excel 文件解析失败：{exc}") from exc
+        sheet = workbook[sheet_name] if sheet_name and sheet_name in workbook.sheetnames else workbook.active
+        iterator = sheet.iter_rows(values_only=True)
+        header_row = next(iterator, None)
+        headers = [str(x or "").strip() for x in (header_row or [])]
+        if not headers or any(not h for h in headers):
+            workbook.close()
+            raise ValueError("Excel 首行必须包含非空字段名")
+        rows = [{headers[i]: value for i, value in enumerate(values or ())
+                 if i < len(headers)} for values in iterator]
+        workbook.close()
+    else:
+        raise ValueError("仅支持 .csv、.xlsx、.xlsm 文件")
+    columns = []
+    for name in headers:
+        samples = [row.get(name) for row in rows[:100] if row.get(name) not in (None, "")]
+        columns.append({"name": name, "samples": samples[:20]})
+    return {"file_name": file_name, "columns": columns,
+            "rows": rows, "row_count": len(rows),
+            "sheet_name": sheet_name if suffix in {".xlsx", ".xlsm"} else None}
