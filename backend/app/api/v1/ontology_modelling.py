@@ -98,6 +98,14 @@ class SparqlExamplesIn(BaseModel):
     format: str | None = None
 
 
+class QualityReportIn(BaseModel):
+    """RDF/OWL 本体静态质量报告；content/text 与 spec 二选一。"""
+    spec: dict | None = None
+    content: str | None = None
+    text: str | None = None
+    format: str | None = None
+
+
 def _principal(request: Request) -> dict:
     p = getattr(getattr(request, "state", None), "principal", None)
     return p if isinstance(p, dict) else {}
@@ -116,6 +124,39 @@ def contract(request: Request):
 @router.get("/ontology/modelling/sample")
 def get_sample(request: Request):
     return {"spec": S.sample_spec(), "data": S.sample_data()}
+
+
+@router.post("/ontology/modelling/quality-report")
+def quality_report(payload: QualityReportIn, request: Request):
+    """对 RDF/OWL/TTL 或当前画布草稿执行本体结构质量检查（纯计算、只读）。"""
+    from app.modules.ontology import rdf_quality
+    from app.modules.ontology.modelling import sparql as SP
+
+    raw = payload.content if payload.content is not None else (payload.text or "")
+    try:
+        if raw.strip():
+            graph, used_format = SP.graph_from_text(raw, payload.format)
+            source = "rdf-text"
+        elif payload.spec:
+            graph = SP.graph_from_spec(payload.spec)
+            used_format = "jsonld"
+            source = "canvas-spec"
+        else:
+            raise HTTPException(400, "需要 content/text（本体原文）或 spec（画布草稿）之一")
+        report = rdf_quality.analyze(graph)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(400, f"本体解析失败：{exc}") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, f"本体质量分析失败：{type(exc).__name__}: {exc}") from exc
+
+    return {
+        "principal": _principal(request).get("user_id", "anonymous"),
+        "source": source,
+        "format": used_format,
+        "report": report,
+    }
 
 
 @router.post("/ontology/modelling/validate")
@@ -400,7 +441,9 @@ def selftest(request: Request):
     from app.modules.ontology import nlquery as NLQ
     from app.modules.ontology.modelling import jsonld as JL, rdf_import as RI, sparql as SP
     from app.modules.ontology.modelling import ontology_qa as OQ
+    from app.modules.ontology import rdf_quality
     return {
+        "rdf_quality": rdf_quality.selftest(),
         "validator": V.self_check(),
         "workflow": WF.self_check(),
         "assistant": ASST.self_check(),
