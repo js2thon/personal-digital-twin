@@ -8,6 +8,7 @@ on:
       - "backend/tests/test_rdf_quality.py"
       - "backend/tests/test_ontology_mapping_*.py"
       - "backend/tests/test_ontology_dataset_preview.py"
+      - "backend/tests/test_database_connector.py"
       - "backend/pyproject.toml"
       - ".github/workflows/ontology-quality-mapping.yml"
   push:
@@ -49,3 +50,4 @@ jobs:
           tests/test_ontology_mapping_pipeline.py
           tests/test_ontology_dataset_preview.py
           tests/test_ontology_mapping_execution.py
+          tests/test_database_connector.py
