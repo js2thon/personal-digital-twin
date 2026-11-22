@@ -662,9 +662,22 @@ def _metric_ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
            "chart": chart_spec(plan, res, metric_set), "attempts": attempts}
     if plan["op"] == "metric":
         m = metric_set["metrics"][plan["metric"]]
+        source_classes = set()
+        for dep_id in [plan["metric"], *(m.get("deps") or [])]:
+            dep_metric = ms.get(dep_id) or {}
+            for cls in (dep_metric.get("cls"), dep_metric.get("frame")):
+                if cls:
+                    source_classes.add(cls)
+            try:
+                root_cls = mx._root(dep_metric, ms).get("cls")
+                if root_cls:
+                    source_classes.add(root_cls)
+            except (KeyError, TypeError, AttributeError):
+                pass
         out["metric"] = {"id": m["id"], "label": m["label"], "kind": m["kind"],
                          "expr": m.get("expr"), "deps": m.get("deps"),
-                         "cls": m.get("cls"), "frame": m.get("frame")}
+                         "cls": m.get("cls"), "frame": m.get("frame"),
+                         "classes": sorted(source_classes)}
         if contract and not plan.get("filters"):
             try:
                 out["sql"] = mx.to_sql(plan["metric"], metric_set["metrics"], schema, contract, plan.get("dim"))
