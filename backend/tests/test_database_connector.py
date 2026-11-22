@@ -159,3 +159,33 @@ def test_keyset_stream_rejects_non_primary_key_cursor(monkeypatch):
             primary_key="employee_no", batch_size=10,
         ))
     engine.dispose()
+
+
+
+def test_sensitive_columns_require_explicit_ingestion_allowlist(monkeypatch):
+    from sqlalchemy import create_engine
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE contacts (id INTEGER PRIMARY KEY, phone_number TEXT)"
+        )
+        conn.exec_driver_sql("INSERT INTO contacts VALUES (1, '13800138000')")
+    profile = {"schemas": [], "tables": ["contacts"]}
+    monkeypatch.setattr(connector, "_profile", lambda name, tenant: (profile, "sqlite://"))
+    monkeypatch.setattr(connector, "_engine", lambda url: engine)
+    monkeypatch.setattr(connector, "_enforce_read_only", lambda conn, dialect: None)
+
+    with pytest.raises(PermissionError, match="敏感字段未获准"):
+        list(connector.stream_table_rows(
+            profile_name="crm", tenant_id="tenant-a", schema_name=None,
+            table_name="contacts", columns=["phone_number"], primary_key="id",
+        ))
+
+    profile["ingest_sensitive_columns"] = ["phone_number"]
+    rows = list(connector.stream_table_rows(
+        profile_name="crm", tenant_id="tenant-a", schema_name=None,
+        table_name="contacts", columns=["phone_number"], primary_key="id",
+    ))
+    assert rows[0]["phone_number"] == "13800138000"
+    engine.dispose()
