@@ -22,6 +22,7 @@ dependencies = [
     "openpyxl>=3.1",
     "python-pptx>=1.0",
     "pypdf>=5.0",
+    "rdflib>=7.0",  # RDF/OWL/TTL 本体解析与静态质量检查
 ]
 
 [project.optional-dependencies]
