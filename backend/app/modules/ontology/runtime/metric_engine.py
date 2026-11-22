@@ -210,7 +210,8 @@ def preview(definitions: list[dict], data: dict) -> dict:
                 elif agg == "max": value, note = (max(nums) if nums else None), f"{len(nums)} 个数值取最大"
             except (TypeError, ValueError):
                 note = "字段存在非数值数据，聚合无法执行"
-            if not rows:\n                value, note = None, "无实例数据，未生成数值"
+            if not rows:
+                value, note = None, "无实例数据，未生成数值"
             if not vals and agg != "count": note = "字段不存在或无可用值"
         else:
             refs = item.get("_compiled_refs") or _formula_refs(str(item.get("formula") or ""))
