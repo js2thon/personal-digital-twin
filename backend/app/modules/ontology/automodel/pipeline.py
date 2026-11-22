@@ -310,6 +310,12 @@ def approve_and_publish(job: dict, actor: str, tenant: str = "default",
         job, require_cq=bool((job.get("config") or {}).get("require_cq_for_publish")))
     res = publish.publish_schema(job, actor, version)
     if not res.get("published"):
+        if res.get("partial_commit"):
+            job["status"] = "publish_partial_failure"
+            job["schema_version"] = res.get("schema_version")
+            job["publish_error"] = res.get("reason") or "本体发布部分提交失败"
+            job["publish_steps"] = {"schema_committed": True, "runtime_installed": False,
+                                    "completed": False}
         return res
     runtime = res.get("runtime_catalog") or {}
     if runtime.get("installed") is not True:
@@ -319,6 +325,8 @@ def approve_and_publish(job: dict, actor: str, tenant: str = "default",
                 "reason": job["publish_error"]}
     job["schema_version"] = res["schema_version"]
     job["published_by"] = actor
+    job["publish_steps"] = {"schema_committed": True, "runtime_installed": True,
+                            "metrics_registered": False, "completed": False}
     try:
         res["metrics"] = publish.publish_metrics(job.get("metrics") or {"metrics": {}},
                                                   job["draft"]["schema"], tenant, actor,
@@ -334,6 +342,8 @@ def approve_and_publish(job: dict, actor: str, tenant: str = "default",
         job["publish_error"] = "Schema 已提交，但指标注册校验失败"
         return {**res, "published": False, "partial_commit": True,
                 "reason": job["publish_error"]}
+    job["publish_steps"]["metrics_registered"] = True
+    job["publish_steps"]["completed"] = True
     job["status"] = "published"
     job["release_gate"] = gate
     _audit(job, "publish", actor, schema_version=res["schema_version"])
