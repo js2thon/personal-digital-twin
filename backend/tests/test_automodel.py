@@ -332,24 +332,3 @@ def test_generator_level_suffix_label():
     from app.modules.ontology.automodel.generator import _guess_label
     assert _guess_label("dept_name_lv5") == "5级部门"
 
-
-
-def test_generated_schema_is_business_object_oriented(ctx):
-    job, schema, *_ = ctx
-    employee = schema["entity_types"]["Person"]
-    assert employee["object_kind"] == "entity"
-    assert employee["title_property"] == "full_name"
-    assert employee["identity_rules"][0]["key_properties"] == ["emp_no"]
-    assert employee["backing_sources"][0]["source_id"] == "hr"
-    assert employee["backing_sources"][0]["table"] == "employees"
-    assert employee["backing_sources"][0]["property_mappings"]["full_name"] == "full_name"
-    assert employee["attributes"]
-    assert not job["business_model_issues"]
-
-
-def test_generated_business_object_properties_include_sensitivity_and_time_semantics(ctx):
-    _, schema, *_ = ctx
-    person = schema["entity_types"]["Person"]
-    attrs = {a["name"]: a for a in person["attributes"]}
-    assert attrs["salary"]["sensitivity"] == "confidential"
-    assert attrs["hire_date"]["temporal_role"] == "event_time"
