@@ -12,7 +12,7 @@ from typing import Iterable, Iterator
 
 from app.db import session as db
 from app.modules.ontology import mapping_registry
-from app.modules.ontology.mapping_execution import execute_approved_dataset, MAX_EXECUTION_ROWS
+from app.modules.ontology.mapping_execution import execute_approved_dataset, ensure_schema as ensure_mapping_schema, MAX_EXECUTION_ROWS
 
 
 def _digest(value) -> str:
@@ -36,6 +36,7 @@ def _chunks(rows: Iterable[dict], size: int) -> Iterator[tuple[int, list[dict]]]
 
 
 def ensure_schema() -> None:
+    ensure_mapping_schema()
     db.execute("""
     CREATE TABLE IF NOT EXISTS ontology.dataset_ingestion_checkpoints (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
