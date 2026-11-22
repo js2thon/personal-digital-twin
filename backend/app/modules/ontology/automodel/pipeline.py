@@ -319,9 +319,15 @@ def approve_and_publish(job: dict, actor: str, tenant: str = "default",
                 "reason": job["publish_error"]}
     job["schema_version"] = res["schema_version"]
     job["published_by"] = actor
-    res["metrics"] = publish.publish_metrics(job.get("metrics") or {"metrics": {}},
-                                              job["draft"]["schema"], tenant, actor,
-                                              res["schema_version"])
+    try:
+        res["metrics"] = publish.publish_metrics(job.get("metrics") or {"metrics": {}},
+                                                  job["draft"]["schema"], tenant, actor,
+                                                  res["schema_version"])
+    except Exception as exc:  # noqa: BLE001  Schema 已提交，指标失败必须作为部分成功暴露
+        job["status"] = "publish_partial_failure"
+        job["publish_error"] = f"Schema 已提交，但指标注册异常：{type(exc).__name__}"
+        return {**res, "published": False, "partial_commit": True,
+                "reason": job["publish_error"]}
     metric_result = res["metrics"] or {}
     if metric_result.get("validation", {}).get("valid") is False:
         job["status"] = "publish_partial_failure"
