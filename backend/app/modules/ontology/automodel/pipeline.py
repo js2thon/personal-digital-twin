@@ -5,10 +5,10 @@ import copy
 import time
 import uuid
 
-from . import generator, mapper, materializer, profiler, release_gate
+from . import business_object_discovery, generator, mapper, materializer, profiler, release_gate
 from .connectors import TableSet
 
-STAGES = ("profile", "draft", "map", "validate", "materialize", "metrics")
+STAGES = ("profile", "business_object_discovery", "draft", "map", "validate", "materialize", "metrics")
 
 
 def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
@@ -26,9 +26,15 @@ def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
     job["profiles"] = {k: v.to_dict() for k, v in profiles.items()}
     if stop_after == "profile":
         return _done(job)
+    discovery = stage("business_object_discovery", lambda: business_object_discovery.discover(
+        profiles, existing_schema=existing_schema))
+    job["business_object_discovery"] = discovery
+    if stop_after == "business_object_discovery":
+        return _done(job)
     draft = stage("draft", lambda: generator.generate(
         profiles, version or f"auto-{ts.source_id}-{job['id']}", existing_schema, llm,
-        source_id=ts.source_id))
+        source_id=ts.source_id, discovery=discovery))
+    draft["business_object_discovery"] = discovery
     job["draft"] = draft
     if stop_after == "draft":
         return _done(job)
@@ -53,14 +59,16 @@ def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
         "msg": item["message"], "recommendation": item["recommendation"],
     } for item in standards_report["findings"])
     job["issues"] = issues
-    if any(i["level"] == "error" for i in issues) or stop_after in ("map", "validate"):
-        job["status"] = "needs_review" if issues else "validated"
+    has_blocking = any(i["level"] == "error" for i in issues)
+    has_warnings = any(i["level"] == "warning" for i in issues)
+    if has_blocking or has_warnings or stop_after in ("map", "validate"):
+        job["status"] = "needs_review" if (issues or draft.get("review")) else "validated"
         job["release_gate"] = release_gate.evaluate(job)
         return _done(job, keep_status=True)
     job["materialized"] = stage("materialize", lambda: materializer.materialize(ts, contract))
     from . import metrics as mx
     job["metrics"] = stage("metrics", lambda: mx.generate(draft["schema"]))
-    job["status"] = "needs_review" if draft["review"] else "ready_to_publish"
+    job["status"] = "needs_review" if (draft["review"] or has_warnings) else "ready_to_publish"
     job["release_gate"] = release_gate.evaluate(job)
     return _done(job, keep_status=True)
 
@@ -82,7 +90,8 @@ def _audit(job: dict, action: str, actor: str, **details) -> dict:
     return event
 
 
-def apply_review(job: dict, decisions: list[dict], actor: str = "reviewer") -> dict:
+def apply_review(job: dict, decisions: list[dict], actor: str = "reviewer",
+                 acknowledge_warnings: bool = False) -> dict:
     """审核候选：accept/reject/rename/retarget；严格校验动作并记录不可丢失的变更审计。"""
     schema = job["draft"]["schema"]
     sections = {"class": "entity_types", "relation": "relation_types", "attribute": "attributes"}
@@ -144,6 +153,11 @@ def apply_review(job: dict, decisions: list[dict], actor: str = "reviewer") -> d
                 "kind": kind, "ref": ref_after, "confidence": 1.0,
                 "reason": f"人工审核：{action}", "reviewed_by": actor})
     job["draft"]["review"] = [i for i in job["draft"].get("inferences", []) if i.get("confidence", 0) < 0.8]
+    if acknowledge_warnings:
+        job["standards_review_acknowledged"] = True
+        _audit(job, "acknowledge_standards_warnings", actor,
+               finding_codes=[x.get("code") for x in (job.get("standards_report") or {}).get("findings", [])
+                              if x.get("severity") == "warning"])
     job["release_gate"] = release_gate.evaluate(job)
     return job
 
@@ -163,12 +177,13 @@ def rebuild(job: dict, ts: TableSet) -> dict:
     } for item in job["business_model_issues"])
     from app.modules.ontology.semantic.standards import check_ontology_modeling_standards
     job["standards_report"] = check_ontology_modeling_standards(job["draft"]["schema"])
+    job["standards_review_acknowledged"] = False
     job["issues"].extend({
         "level": "error" if item["severity"] == "error" else "warning",
         "code": item["code"], "table": item.get("ref"),
         "msg": item["message"], "recommendation": item["recommendation"],
     } for item in job["standards_report"]["findings"])
-    if any(i["level"] == "error" for i in job["issues"]):
+    if any(i["level"] in ("error", "warning") for i in job["issues"]):
         job["status"] = "needs_review"
         job["release_gate"] = release_gate.evaluate(job)
         return job
@@ -188,11 +203,23 @@ def approve_and_publish(job: dict, actor: str, tenant: str = "default",
     res = publish.publish_schema(job, actor, version)
     if not res.get("published"):
         return res
+    runtime = res.get("runtime_catalog") or {}
+    if runtime.get("installed") is not True:
+        job["status"] = "publish_partial_failure"
+        job["publish_error"] = "Schema 已提交，但运行时类型目录安装失败；禁止标记为 published"
+        return {**res, "published": False, "partial_commit": True,
+                "reason": job["publish_error"]}
     job["schema_version"] = res["schema_version"]
     job["published_by"] = actor
     res["metrics"] = publish.publish_metrics(job.get("metrics") or {"metrics": {}},
                                               job["draft"]["schema"], tenant, actor,
                                               res["schema_version"])
+    metric_result = res["metrics"] or {}
+    if metric_result.get("validation", {}).get("valid") is False:
+        job["status"] = "publish_partial_failure"
+        job["publish_error"] = "Schema 已提交，但指标注册校验失败"
+        return {**res, "published": False, "partial_commit": True,
+                "reason": job["publish_error"]}
     job["status"] = "published"
     job["release_gate"] = gate
     _audit(job, "publish", actor, schema_version=res["schema_version"])
