@@ -34,6 +34,8 @@ def test_in_memory_job_cache_is_tenant_scoped(monkeypatch):
     jobs.save(job, tenant="tenant-a")
     assert jobs.get("same-job", tenant="tenant-a") is job
     assert jobs.get("same-job", tenant="tenant-b") is None
+    with pytest.raises(PermissionError, match="不属于当前租户"):
+        jobs.save({"id": "same-job", "source": "spoof", "status": "ready", "stages": {}}, tenant="tenant-b")
     assert [x["id"] for x in jobs.listing(tenant="tenant-a")] == ["same-job"]
     assert jobs.listing(tenant="tenant-b") == []
 
