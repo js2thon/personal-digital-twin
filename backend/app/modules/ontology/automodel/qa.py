@@ -494,6 +494,55 @@ def chart_spec(plan: dict, res: dict, metric_set: dict) -> dict | None:
     return {"type": typ, "title": m["label"], "categories": res["index"], "data": res["values"]}
 
 
+def _source_evidence(contract: dict | None, schema: dict, plan: dict | None,
+                     result: dict | None) -> dict:
+    """Attach deterministic source mapping evidence; never imply discovery samples are production data."""
+    mappings = (contract or {}).get("mappings") or []
+    by_class = {m.get("class"): m for m in mappings if m.get("class")}
+    refs = []
+    classes = set()
+    if isinstance(plan, dict) and plan.get("cls"):
+        classes.add(plan["cls"])
+    if isinstance(result, dict):
+        for row in result.get("rows") or []:
+            if row.get("_id"):
+                refs.append({"instance_id": str(row["_id"])})
+        for row in result.get("entities") or []:
+            if row.get("id"):
+                refs.append({"instance_id": str(row["id"])})
+                if row.get("class"):
+                    classes.add(row["class"])
+        for row in result.get("items") or []:
+            for member in row.get("members") or []:
+                if isinstance(member, dict) and member.get("id"):
+                    refs.append({"instance_id": str(member["id"])})
+    source_map = []
+    for cls in sorted(classes):
+        mapping = by_class.get(cls)
+        if not mapping:
+            continue
+        source_map.append({
+            "entity_type": cls,
+            "source": (contract or {}).get("source"),
+            "table": mapping.get("table"),
+            "primary_key": mapping.get("primary_key") or [],
+            "property_columns": dict(mapping.get("attributes") or {}),
+            "relation_columns": [
+                {"relation": rel.get("type"), "column": rel.get("column"),
+                 "target_table": rel.get("target_table")}
+                for rel in mapping.get("relations") or []
+            ],
+        })
+    unique_refs = list({r["instance_id"]: r for r in refs}.values())[:50]
+    return {
+        "data_scope": "discovery_sample",
+        "scope_note": "当前 Automodel 问答基于本体建模阶段的 Discovery 样本，不代表源库全量统计。",
+        "source_mappings": source_map,
+        "matched_instances": unique_refs,
+        "traceability_level": "source_table_and_column",
+    }
+
+
 # ------------------------------------------------------------------ 主入口
 def ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
         llm=None, contract: dict | None = None) -> dict:
@@ -513,9 +562,11 @@ def ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
     g = gq.retrieve(question, schema, F, L, idx)
     if g:
         ans = gq.grounded_answer(question, {"本体结构": brief, "检索结果": g}, llm) if llm else None
+        evidence = {"ontology_result": g,
+                    "provenance": _source_evidence(contract, schema, {"op": g.get("op")}, g)}
         return {"ok": True, "engine": "ontology_graph" + ("+llm" if ans else ""), "plan": {"op": g["op"]},
                 "result": g, "answer": ans or gq.template_answer(g), "chart": gq.chart_of(g),
-                "evidence": g}
+                "evidence": evidence}
 
     # ② 指标计划
     out = _metric_ask(question, schema, metric_set, F, L, llm, contract)
@@ -526,7 +577,10 @@ def ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
             if ans:
                 out["template_answer"], out["answer"] = out["answer"], ans
                 out["engine"] += "+llm"
-        out["evidence"] = {"metric": out.get("metric"), "result": out["result"]}
+        out["evidence"] = {
+            "metric": out.get("metric"), "result": out["result"],
+            "provenance": _source_evidence(contract, schema, out.get("plan"), out.get("result")),
+        }
         return out
 
     # ③ 兜底：关键词检索相关实例，交给 LLM 依据作答
