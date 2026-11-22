@@ -99,7 +99,12 @@ def list_metrics(request: Request, metric_id: str | None = None, limit: int = 10
 def save_metric(payload: SaveIn, request: Request):
     ensure_schema()
     tenant, actor = _tenant(request)
-    definition = payload.definition
+    definition = dict(payload.definition)
+    if definition.get("kind") in ("derived", "composite"):
+        try:
+            definition["dependencies"] = ME._formula_refs(str(definition.get("formula") or ""))
+        except ValueError as exc:
+            raise HTTPException(400, f"指标公式无效：{exc}") from exc
     mid = str(definition.get("metric_id") or "").strip()
     name = str(definition.get("name") or "").strip()
     if not mid or not name:
