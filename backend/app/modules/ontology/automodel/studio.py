@@ -12,6 +12,7 @@ import uuid
 from collections import deque
 
 from . import graphqa as gq
+from . import release_gate
 
 
 def _f(v):
@@ -283,8 +284,10 @@ def source_provenance(job: dict, table: str, column: str, limit: int = 200) -> d
 def governance(job: dict, principal: dict | None = None) -> dict:
     """Read-only governance snapshot; authorization remains enforced by the API layer."""
     q = quality(job)
+    gate = release_gate.evaluate(
+        job, require_cq=bool((job.get("config") or {}).get("require_cq_for_publish")))
     pending = q["review_pending"]
-    blockers = [x for x in q["findings"] if x["level"] == "error"]
+    blockers = gate["blockers"]
     principal = principal or {}
     return {
         "asset": {"job_id": job.get("id"), "status": job.get("status"),
@@ -292,9 +295,9 @@ def governance(job: dict, principal: dict | None = None) -> dict:
         "quality": {"score": q["quality_score"], "label": q["score_label"],
                     "blockers": len(blockers), "warnings": q["warning_count"]},
         "review": {"pending": len(pending), "required": bool(pending)},
-        "release_gate": {"ready": not blockers and not pending,
-                         "reasons": [x["message"] for x in blockers] +
-                                    (["仍有待审核候选"] if pending else [])},
+        "release_gate": {"ready": gate["ready"],
+                         "reasons": [x["message"] for x in blockers],
+                         "checks": gate["checks"], "policy": gate["policy"]},
         "access": {"authenticated_principal": bool(principal),
                    "tenant_scoped_lookup": True, "authorization_enforced_by": "backend",
                    "client_write_enabled": False},
