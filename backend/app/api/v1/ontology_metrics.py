@@ -101,7 +101,8 @@ def preview_from_store(payload: StorePreviewIn, request: Request):
         if isinstance(definition, dict):
             published[row["metric_id"]] = {
                 "definition": definition, "version": row["version"],
-                "checksum": row["checksum"], "name": row["name"],\n                "ontology_version": row.get("ontology_version"),
+                "checksum": row["checksum"], "name": row["name"],
+                "ontology_version": row.get("ontology_version"),
             }
     if not published:
         raise HTTPException(404, "当前租户没有已发布指标")
