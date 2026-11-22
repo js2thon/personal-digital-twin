@@ -30,6 +30,8 @@ def evaluate(job: dict, *, require_cq: bool = False) -> dict[str, Any]:
         add("MAPPING_CONTRACT_ERRORS", "映射契约仍存在阻断错误", count=len(errors))
     if not contract.get("mappings"):
         add("MAPPING_NOT_DEFINED", "尚未生成可执行映射契约")
+    if not materialized or not materialized.get("data_scope"):
+        add("PREVIEW_NOT_GENERATED", "尚未生成带数据范围标记的映射预览")
 
     pending = list(draft.get("review") or [])
     if pending:
