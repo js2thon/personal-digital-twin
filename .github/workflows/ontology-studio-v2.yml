@@ -1,0 +1,20 @@
+name: Ontology Studio V2
+on:
+  pull_request:
+    paths:
+      - "web/ontology-studio/**"
+      - ".github/workflows/ontology-studio-v2.yml"
+  push:
+    branches: [main]
+    paths:
+      - "web/ontology-studio/**"
+      - ".github/workflows/ontology-studio-v2.yml"
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node web/ontology-studio/validate.mjs
