@@ -23,6 +23,38 @@ from pydantic import BaseModel, Field
 RANGES = ("string", "integer", "number", "boolean", "date", "datetime", "enum")
 RULE_TYPES = ("integrity", "derivation", "authorization")
 CARDINALITIES = ("one_to_one", "one_to_many", "many_to_one", "many_to_many")
+OBJECT_KINDS = ("entity", "event", "transaction", "reference", "association")
+SENSITIVITY_LEVELS = ("public", "internal", "confidential", "restricted")
+SOURCE_MODES = ("materialized", "federated", "action_created")
+
+
+class ObjectIdentityRule(BaseModel):
+    """跨数据源识别同一业务对象的身份规则。"""
+    source_system: str = ""
+    key_properties: list[str] = Field(default_factory=list)
+    normalization: str = "trim"
+    priority: int = 100
+    unique: bool = True
+
+
+class ObjectSourceBinding(BaseModel):
+    """对象到真实数据资产的绑定；一个对象允许多个数据源共同供数。"""
+    source_id: str
+    dataset: str = ""
+    table: str = ""
+    primary_key: list[str] = Field(default_factory=list)
+    property_mappings: dict[str, str] = Field(default_factory=dict)
+    mode: str = "materialized"
+    filter: dict[str, Any] = Field(default_factory=dict)
+
+
+class InterfaceDef(BaseModel):
+    """可复用业务接口：多个对象类型共享属性形状和能力契约。"""
+    name: str
+    label: str = ""
+    description: str = ""
+    properties: list[str] = Field(default_factory=list)
+    capabilities: list[str] = Field(default_factory=list)
 
 
 class StateMachineDef(BaseModel):
@@ -43,10 +75,17 @@ class StateMachineDef(BaseModel):
 
 
 class AttributeDef(BaseModel):
-    """属性定义：类型 / 必填 / 枚举 / 值域 / 正则 / 状态机（可选）。"""
+    """属性定义：类型、业务语义、敏感级别、单位、时间角色和来源映射。"""
     name: str
     range: str = "string"
     required: bool = False
+    semantic_type: str = ""
+    unit: str = ""
+    sensitivity: str = "internal"
+    temporal_role: str = ""
+    identifier: bool = False
+    title: bool = False
+    source_mappings: list[dict[str, str]] = Field(default_factory=list)
     enum_values: list[str] = Field(default_factory=list)
     pattern: str | None = None
     minimum: float | None = None
@@ -56,11 +95,18 @@ class AttributeDef(BaseModel):
 
 
 class EntityTypeDef(BaseModel):
-    """实体类型：`parent` 支持继承（子类实例可被父类查询命中）。"""
+    """业务对象类型：业务身份、展示属性、多源绑定、接口与生命周期。"""
     name: str
     label: str = ""
+    description: str = ""
+    object_kind: str = "entity"
     parent: str = ""
     aliases: list[str] = Field(default_factory=list)
+    title_property: str = ""
+    identity_rules: list[ObjectIdentityRule] = Field(default_factory=list)
+    backing_sources: list[ObjectSourceBinding] = Field(default_factory=list)
+    interfaces: list[str] = Field(default_factory=list)
+    lifecycle_property: str = ""
     attributes: list[AttributeDef] = Field(default_factory=list)
     constraints: dict[str, Any] = Field(default_factory=dict)
 
@@ -74,12 +120,20 @@ class Characteristics(BaseModel):
 
 
 class RelationTypeDef(BaseModel):
-    """关系类型：source/target 强类型约束 + 特性 + 基数。"""
+    """业务关系：端点、基数、反向关系、有效时间和关系自身属性。"""
     name: str
     label: str = ""
+    description: str = ""
     source_types: list[str] = Field(default_factory=lambda: ["*"])
     target_types: list[str] = Field(default_factory=lambda: ["*"])
     cardinality: str = "many_to_many"
+    inverse_of: str = ""
+    relationship_kind: str = "business"
+    temporal: bool = False
+    valid_from_property: str = ""
+    valid_to_property: str = ""
+    backing_sources: list[ObjectSourceBinding] = Field(default_factory=list)
+    properties: list[AttributeDef] = Field(default_factory=list)
     characteristics: Characteristics = Field(default_factory=Characteristics)
     constraints: dict[str, Any] = Field(default_factory=dict)
 
@@ -100,6 +154,7 @@ class SemanticSchema(BaseModel):
     ontology_version: str = "v1.0.0"
     entity_types: list[EntityTypeDef] = Field(default_factory=list)
     relation_types: list[RelationTypeDef] = Field(default_factory=list)
+    interfaces: list[InterfaceDef] = Field(default_factory=list)
     business_rules: list[BusinessRuleDef] = Field(default_factory=list)
     constraints: dict[str, Any] = Field(default_factory=dict)
     source: str = "cq_v2.registry+semantic_enrichment"
@@ -238,6 +293,7 @@ def from_registry(reg: dict | None = None) -> SemanticSchema:
         ontology_version=published,
         entity_types=list(ent.values()),
         relation_types=list(rel.values()),
+        interfaces=[],
         business_rules=list(_DEFAULT_RULES),
         constraints={"max_transitive_depth": 3,
                      "max_hops": (reg.get("constraints") or {}).get("max_hops", 3),
@@ -263,6 +319,7 @@ def to_schema_dict(sem: SemanticSchema | dict) -> dict:
         "constraints": d.get("constraints", {}),
         "entity_types": {e["name"]: e for e in d["entity_types"]},
         "relation_types": {r["name"]: r for r in d["relation_types"]},
+        "interfaces": {i["name"]: i for i in d.get("interfaces", [])},
         "business_rules": d["business_rules"],
     }
 
@@ -309,3 +366,75 @@ def instance_json_schema(schema: dict, type_name: str) -> dict:
         "required": required,
         "additionalProperties": True,
     }
+
+
+
+def validate_business_model(schema: SemanticSchema | dict) -> list[dict[str, str]]:
+    """Validate Palantir-style business-object modeling invariants without I/O."""
+    data = to_schema_dict(schema)
+    entities = data.get("entity_types") or {}
+    relations = data.get("relation_types") or {}
+    interfaces = data.get("interfaces") or {}
+    issues: list[dict[str, str]] = []
+
+    def add(code: str, ref: str, message: str) -> None:
+        issues.append({"code": code, "ref": ref, "message": message})
+
+    for name, obj in entities.items():
+        kind = obj.get("object_kind", "entity")
+        if kind not in OBJECT_KINDS:
+            add("INVALID_OBJECT_KIND", name, f"对象类型 {name} 的 object_kind 不合法：{kind}")
+        attrs = {a.get("name") for a in obj.get("attributes") or []}
+        title = obj.get("title_property")
+        if title and title not in attrs:
+            add("UNKNOWN_TITLE_PROPERTY", name, f"展示属性 {title} 未在对象 {name} 中定义")
+        if kind != "action_created" and not obj.get("identity_rules") and not obj.get("backing_sources"):
+            add("OBJECT_WITHOUT_IDENTITY_OR_SOURCE", name,
+                f"业务对象 {name} 既没有身份规则，也没有数据源绑定")
+        for rule in obj.get("identity_rules") or []:
+            if not rule.get("key_properties"):
+                add("EMPTY_IDENTITY_RULE", name, "对象身份规则必须指定至少一个业务键属性")
+            unknown = set(rule.get("key_properties") or []) - attrs
+            if unknown:
+                add("UNKNOWN_IDENTITY_PROPERTY", name,
+                    f"身份规则引用了未定义属性：{', '.join(sorted(unknown))}")
+        for binding in obj.get("backing_sources") or []:
+            if binding.get("mode", "materialized") not in SOURCE_MODES:
+                add("INVALID_SOURCE_MODE", name, f"数据源绑定模式不合法：{binding.get('mode')}")
+            if binding.get("mode", "materialized") != "action_created" and not binding.get("primary_key"):
+                add("SOURCE_BINDING_WITHOUT_KEY", name,
+                    f"对象数据源 {binding.get('source_id')} 未定义稳定主键")
+            unknown_props = set((binding.get("property_mappings") or {}).values()) - attrs
+            if unknown_props:
+                add("UNKNOWN_BOUND_PROPERTY", name,
+                    f"数据源映射了未定义属性：{', '.join(sorted(unknown_props))}")
+        for interface in obj.get("interfaces") or []:
+            if interface not in interfaces:
+                add("UNKNOWN_INTERFACE", name, f"对象引用了未定义接口：{interface}")
+        for attr in obj.get("attributes") or []:
+            if attr.get("sensitivity", "internal") not in SENSITIVITY_LEVELS:
+                add("INVALID_PROPERTY_SENSITIVITY", f"{name}.{attr.get('name')}",
+                    f"属性敏感级别不合法：{attr.get('sensitivity')}")
+
+    for name, rel in relations.items():
+        sources = rel.get("source_types") or ["*"]
+        targets = rel.get("target_types") or ["*"]
+        for endpoint in sources + targets:
+            if endpoint != "*" and endpoint not in entities:
+                add("UNKNOWN_RELATION_ENDPOINT", name, f"关系 {name} 引用了不存在的对象类型：{endpoint}")
+        inverse = rel.get("inverse_of")
+        if inverse:
+            inverse_def = relations.get(inverse)
+            if not inverse_def:
+                add("UNKNOWN_INVERSE_RELATION", name, f"反向关系 {inverse} 不存在")
+            elif name not in (inverse_def.get("inverse_of"), ""):
+                add("NON_RECIPROCAL_INVERSE", name, f"关系 {name} 与 {inverse} 的反向定义不一致")
+    for name, interface in interfaces.items():
+        if not name:
+            add("EMPTY_INTERFACE_NAME", name, "接口名称不能为空")
+        for prop in interface.get("properties") or []:
+            if not any(prop in {a.get("name") for a in obj.get("attributes") or []}
+                       for obj in entities.values()):
+                add("UNIMPLEMENTED_INTERFACE_PROPERTY", name,
+                    f"接口属性 {prop} 未被任何业务对象实现")
+    return issues
