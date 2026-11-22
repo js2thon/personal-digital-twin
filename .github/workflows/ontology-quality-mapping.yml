@@ -30,6 +30,13 @@ on:
       - "backend/tests/test_database_connector.py"
       - "backend/tests/test_database_connector_integration.py"
       - "backend/pyproject.toml"
+      - "backend/app/auth.py"
+      - "backend/app/modules/semantic_runtime/context.py"
+      - "backend/tests/test_security_audit_ac01.py"
+      - "backend/tests/test_identity_context_security.py"
+      - "backend/tests/test_policy_abac.py"
+      - "docker-compose.yml"
+      - ".env.example"
 
 jobs:
   database-integration:
