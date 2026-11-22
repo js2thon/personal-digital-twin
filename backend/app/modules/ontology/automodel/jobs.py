@@ -65,6 +65,11 @@ def _slim(job: dict) -> dict:
     mat = job.get("materialized") or {}
     return {
         "profiles": job.get("profiles"), "draft": job.get("draft"),
+        "business_object_discovery": job.get("business_object_discovery"),
+        "standards_report": job.get("standards_report"),
+        "standards_review_acknowledged": job.get("standards_review_acknowledged", False),
+        "release_gate": job.get("release_gate"),
+        "publish_error": job.get("publish_error"),
         "contract": job.get("contract"), "issues": job.get("issues"),
         "stages": job.get("stages"), "metrics": job.get("metrics"),
         "materialized": {"stats": mat.get("stats"), "errors": (mat.get("errors") or [])[:50],
