@@ -524,6 +524,11 @@ def _source_evidence(contract: dict | None, schema: dict, plan: dict | None,
             classes.add(plan["cls"])
         classes.update(x for x in (plan.get("classes") or []) if x)
     if isinstance(result, dict):
+        result_class = result.get("class")
+        if result_class:
+            for class_id, meta in schema.get("entity_types", {}).items():
+                if result_class in (class_id, meta.get("label"), *(meta.get("aliases") or [])):
+                    classes.add(class_id)
         for row in result.get("rows") or []:
             if row.get("_id"):
                 refs.append({"instance_id": str(row["_id"])})
@@ -658,7 +663,8 @@ def _metric_ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
     if plan["op"] == "metric":
         m = metric_set["metrics"][plan["metric"]]
         out["metric"] = {"id": m["id"], "label": m["label"], "kind": m["kind"],
-                         "expr": m.get("expr"), "deps": m.get("deps")}
+                         "expr": m.get("expr"), "deps": m.get("deps"),
+                         "cls": m.get("cls"), "frame": m.get("frame")}
         if contract and not plan.get("filters"):
             try:
                 out["sql"] = mx.to_sql(plan["metric"], metric_set["metrics"], schema, contract, plan.get("dim"))
