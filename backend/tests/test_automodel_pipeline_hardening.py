@@ -62,6 +62,8 @@ def test_release_gate_can_require_cq_acceptance():
     assert release_gate.evaluate(job, require_cq=True)["ready"]
     job["cq_results"] = {"accuracy": 0.80, "failed": 2}
     assert not release_gate.evaluate(job, require_cq=True)["ready"]
+    job["cq_results"] = {"accuracy": 0.90, "items": [{"pass": True}, {"pass": False}]}
+    assert not release_gate.evaluate(job, require_cq=True)["ready"]
 
 
 def test_review_rejects_unknown_actions_and_records_audit():
