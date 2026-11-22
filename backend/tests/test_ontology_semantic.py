@@ -419,3 +419,94 @@ class TestViolationsAPI:
         d = client.get("/api/v1/ontology/semantic/violations").json()
         assert d["constraint_mode"] == "application_enforced"
         assert "checked" in d and "violations" in d and "violation_count" in d
+
+
+
+class TestBusinessObjectModeling:
+    def test_business_object_supports_multi_source_identity_and_interface(self):
+        from app.modules.ontology.semantic.schema_def import (
+            AttributeDef, EntityTypeDef, InterfaceDef, ObjectIdentityRule,
+            ObjectSourceBinding, SemanticSchema, validate_business_model,
+        )
+
+        schema = SemanticSchema(
+            entity_types=[
+                EntityTypeDef(
+                    name="Employee", label="员工", object_kind="entity",
+                    title_property="full_name",
+                    attributes=[
+                        AttributeDef(name="employee_no", identifier=True, semantic_type="employee_identifier"),
+                        AttributeDef(name="full_name", title=True, required=True),
+                    ],
+                    identity_rules=[
+                        ObjectIdentityRule(source_system="hr", key_properties=["employee_no"])
+                    ],
+                    backing_sources=[
+                        ObjectSourceBinding(
+                            source_id="hr", dataset="hr_core", table="employees",
+                            primary_key=["emp_id"],
+                            property_mappings={"emp_id": "employee_no", "name": "full_name"},
+                        ),
+                        ObjectSourceBinding(
+                            source_id="iam", dataset="iam", table="accounts",
+                            primary_key=["account_id"],
+                            property_mappings={"login_name": "employee_no"},
+                            mode="federated",
+                        ),
+                    ],
+                    interfaces=["Identifiable"],
+                )
+            ],
+            interfaces=[InterfaceDef(name="Identifiable", properties=["employee_no"])],
+        )
+        assert validate_business_model(schema) == []
+        dumped = schema.model_dump()
+        assert len(dumped["entity_types"][0]["backing_sources"]) == 2
+
+    def test_business_model_rejects_invalid_identity_source_and_inverse(self):
+        from app.modules.ontology.semantic.schema_def import validate_business_model
+
+        schema = {
+            "entity_types": {
+                "Employee": {
+                    "name": "Employee", "object_kind": "entity",
+                    "attributes": [{"name": "employee_no"}],
+                    "identity_rules": [{"key_properties": ["missing_key"]}],
+                    "backing_sources": [{
+                        "source_id": "hr", "mode": "materialized",
+                        "primary_key": [], "property_mappings": {"emp_name": "missing_property"},
+                    }],
+                    "interfaces": ["UnknownInterface"],
+                }
+            },
+            "relation_types": {
+                "reports_to": {
+                    "source_types": ["Employee"], "target_types": ["MissingObject"],
+                    "inverse_of": "managed_by",
+                },
+                "managed_by": {
+                    "source_types": ["Employee"], "target_types": ["Employee"],
+                    "inverse_of": "wrong_inverse",
+                },
+            },
+            "interfaces": {},
+        }
+        codes = {x["code"] for x in validate_business_model(schema)}
+        assert {
+            "UNKNOWN_IDENTITY_PROPERTY", "SOURCE_BINDING_WITHOUT_KEY",
+            "UNKNOWN_BOUND_PROPERTY", "UNKNOWN_INTERFACE",
+            "UNKNOWN_RELATION_ENDPOINT", "NON_RECIPROCAL_INVERSE",
+        } <= codes
+
+    def test_action_created_object_does_not_require_source_primary_key(self):
+        from app.modules.ontology.semantic.schema_def import (
+            EntityTypeDef, ObjectSourceBinding, SemanticSchema, validate_business_model,
+        )
+
+        schema = SemanticSchema(entity_types=[
+            EntityTypeDef(
+                name="ApprovalTask", object_kind="event",
+                backing_sources=[ObjectSourceBinding(source_id="approval-action", mode="action_created")],
+            )
+        ])
+        assert validate_business_model(schema) == []
