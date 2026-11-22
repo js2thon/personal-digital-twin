@@ -140,11 +140,7 @@ def _datatype(ov: dict) -> str:
 
 
 class PgWriter:
-    """写入 ontology.entities / knowledge.facts。按 external_id 幂等 upsert。
-
-    依赖：ontology.entities 上需有 (properties->'external_ids') 的 GIN 索引（jobs.ensure_schema 会建），
-    以及 knowledge.facts 写入后由触发器发 Outbox 事件（现有链路）。
-    """
+    """已禁用的旧 Automodel writer；生产摄取统一走 ontology.mapping_execution。"""
 
     def __init__(self, db):
         self.db = db
