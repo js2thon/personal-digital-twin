@@ -48,7 +48,10 @@ def evaluate(job: dict, *, require_cq: bool = False) -> dict[str, Any]:
     if require_cq and cq is None:
         add("CQ_NOT_EXECUTED", "发布策略要求 CQ 验收，但尚未执行")
     elif cq is not None:
-        failed = cq.get("failed", cq.get("failed_count", 0)) or 0
+        failed = cq.get("failed", cq.get("failed_count"))
+        if failed is None and isinstance(cq.get("items"), list):
+            failed = sum(1 for item in cq["items"] if not item.get("pass", False))
+        failed = failed or 0
         accuracy = cq.get("accuracy")
         if failed:
             add("CQ_FAILED", "存在未通过的本体能力问题（CQ）", count=int(failed))
