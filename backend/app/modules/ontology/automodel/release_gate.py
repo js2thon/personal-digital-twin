@@ -28,7 +28,7 @@ def evaluate(job: dict, *, require_cq: bool = False) -> dict[str, Any]:
     errors = [x for x in all_issues if str(x.get("level", "")).lower() == "error"]
     warnings = [x for x in all_issues if str(x.get("level", "")).lower() == "warning"]
     if errors:
-        add("PIPELINE_ERRORS", "Pipeline 存在阻断性错误", count=len(errors))
+        add("MAPPING_CONTRACT_ERRORS", "映射契约或本体校验仍存在阻断错误", count=len(errors))
     if warnings and not job.get("standards_review_acknowledged"):
         add("STANDARDS_REVIEW_PENDING", "存在尚未由审核人确认的规范警告", severity="error",
             count=len(warnings))
@@ -75,7 +75,7 @@ def evaluate(job: dict, *, require_cq: bool = False) -> dict[str, Any]:
                 count=len(standards_warnings))
     blockers = [x for x in findings if x["severity"] == "error"]
     warnings_out = [x for x in findings if x["severity"] != "error"]
-    state = "BLOCKED" if any(x["code"] in {"PIPELINE_ERRORS", "MODELING_STANDARDS_ERRORS"} for x in blockers) else (
+    state = "BLOCKED" if any(x["code"] in {"MAPPING_CONTRACT_ERRORS", "MODELING_STANDARDS_ERRORS"} for x in blockers) else (
         "REVIEW_REQUIRED" if blockers else "READY")
     return {
         "ready": not blockers,
