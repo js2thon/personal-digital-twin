@@ -75,3 +75,29 @@ def test_discovery_only_suggests_native_count_and_numeric_sum():
     assert any(x["metric_id"] == "count_Employee" for x in result["items"])
     assert any(x["aggregation"] == "sum" and x["field"] == "salary" for x in result["items"])
     assert not any(x.get("field") == "name" and x["aggregation"] == "sum" for x in result["items"])
+
+
+def test_semantic_store_adapter_flattens_properties_and_keeps_entity_types():
+    rows = [
+        {"id": "1", "type_name": "Employee", "canonical_name": "Alice",
+         "properties": {"employee_no": "E001", "salary": 100}},
+        {"id": "2", "type_name": "Employee", "canonical_name": "Bob",
+         "properties": {"employee_no": "E002", "salary": 200}},
+        {"id": "3", "type_name": "Department", "canonical_name": "Sales",
+         "properties": {"code": "D01"}},
+    ]
+    data = ME.semantic_instances_to_data(rows)
+    assert len(data["entities"]["Employee"]) == 2
+    assert data["entities"]["Employee"][0]["salary"] == 100
+    assert data["entities"]["Employee"][0]["id"] == "1"
+    assert data["entities"]["Employee"][0]["_canonical_name"] == "Alice"
+    assert data["entities"]["Department"][0]["code"] == "D01"
+
+
+def test_semantic_store_adapter_ignores_malformed_records():
+    data = ME.semantic_instances_to_data([
+        {"id": "1", "type_name": "", "properties": {"x": 1}},
+        {"id": "2", "type_name": "Employee", "properties": "not-json"},
+        None,
+    ])
+    assert data == {"entities": {}}
