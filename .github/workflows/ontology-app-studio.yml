@@ -1,0 +1,25 @@
+name: ontology-app-studio
+on:
+  push:
+    branches: [feat/ontology-app-workbench-v1]
+    paths:
+      - "web/ontology-app-studio/**"
+      - "web/ontology-design/index.html"
+      - "docs/ontology-app-studio.md"
+      - ".github/workflows/ontology-app-studio.yml"
+  pull_request:
+    paths:
+      - "web/ontology-app-studio/**"
+      - "web/ontology-design/index.html"
+      - "docs/ontology-app-studio.md"
+      - ".github/workflows/ontology-app-studio.yml"
+jobs:
+  static-ui-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Validate workbench JavaScript and DOM bindings
+        run: node web/ontology-app-studio/validate.mjs
