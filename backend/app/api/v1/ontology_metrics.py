@@ -156,6 +156,21 @@ def approve(metric_id: str, request: Request):
 def publish(metric_id: str, request: Request):
     ensure_schema()
     tenant, actor = _tenant(request)
+    latest = db.fetch_all(
+        "SELECT DISTINCT ON (metric_id) metric_id, status, definition "
+        "FROM ontology.metric_definitions WHERE tenant_id=:t "
+        "ORDER BY metric_id, version DESC", {"t": tenant})
+    latest_by_id = {x["metric_id"]: x for x in latest}
+    candidate = latest_by_id.get(metric_id)
+    if not candidate or candidate.get("status") != "approved":
+        raise HTTPException(404, "只有已审批的最新指标版本可以发布")
+    definition = candidate.get("definition") or {}
+    if isinstance(definition, str):
+        definition = json.loads(definition)
+    missing = [dep for dep in (definition.get("dependencies") or [])
+               if not latest_by_id.get(dep) or latest_by_id[dep].get("status") != "published"]
+    if missing:
+        raise HTTPException(409, {"message": "依赖指标必须先发布", "dependencies": missing})
     row = db.fetch_one(
         "UPDATE ontology.metric_definitions SET status='published',published_at=now() "
         "WHERE tenant_id=:t AND metric_id=:m AND status='approved' "
