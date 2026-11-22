@@ -32,6 +32,7 @@ This change consolidates the first enterprise-hardening pass for the Automodel /
 - Sample-level uniqueness is evidence, not a substitute for a database uniqueness constraint or full-source validation.
 
 ### 5. Bounded, resumable ingestion orchestration
+- Added authenticated endpoint `POST /api/v1/ontology/modelling/dataset/execute-stream` for approved mapping-set execution from uploaded tabular snapshots. The endpoint retains the current 10 MiB encoded upload cap and parses the upload before batching.
 - Added `ontology.ingestion_batches.execute_approved_dataset_stream`.
 - It executes an iterable of trusted row dictionaries in bounded batches (maximum 500 rows), using the existing approved mapping executor for each atomic batch.
 - A snapshot ID and deterministic batch digest prevent silently reusing a snapshot ID for changed content.
@@ -40,7 +41,7 @@ This change consolidates the first enterprise-hardening pass for the Automodel /
 
 ## Explicit operational boundaries
 
-- The new batch orchestrator accepts a trusted iterable of rows. It does **not** itself create a production database connector, store database credentials, or perform SQL keyset pagination/watermark extraction. The existing Automodel database connector remains a discovery/profiling sampler.
+- The new endpoint currently accepts uploaded CSV/XLSX snapshots (10 MiB encoded cap) and the batch orchestrator accepts a trusted iterable of rows. It does **not** itself create a production database connector, store database credentials, or perform SQL keyset pagination/watermark extraction. The existing Automodel database connector remains a discovery/profiling sampler.
 - Reconciliation is a **soft tombstone ledger** only: it sets `dataset_source_records.source_active=false`. It does not physically delete ontology instances or facts. A downstream retention/deletion policy and audited delete executor are still required.
 - Checkpoints are per batch. A caller must replay the same immutable source snapshot with the same snapshot ID to resume. The connector that produces the iterable must guarantee snapshot consistency.
 - Each batch is atomic, but the entire multi-batch snapshot is not one global transaction. A failed later batch leaves earlier successful batches committed and resumable.
