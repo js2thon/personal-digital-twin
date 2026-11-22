@@ -259,6 +259,26 @@ def provenance(job: dict, entity: str, predicate: str | None = None, limit: int 
             "note": "仅返回事实中实际持久化的 source_ref；未存储的源字段坐标不会推断。"}
 
 
+def source_provenance(job: dict, table: str, column: str, limit: int = 200) -> dict:
+    """Reverse lookup: source table/column to ontology facts and instances."""
+    entities = {e["external_id"]: e for e in (job.get("materialized") or {}).get("entities", [])}
+    rows = []
+    for fact in (job.get("materialized") or {}).get("facts", []):
+        ref = fact.get("source_ref") or {}
+        if ref.get("table") != table or ref.get("column") != column:
+            continue
+        entity = entities.get(fact.get("subject_external_id"), {})
+        rows.append({"entity_id": fact.get("subject_external_id"),
+                     "entity_name": entity.get("canonical_name"),
+                     "entity_type": entity.get("entity_type"),
+                     "predicate": fact.get("predicate"),
+                     "value": _f(fact.get("object_value", {}).get("value")),
+                     "target_entity": fact.get("object_value", {}).get("external_id"),
+                     "source_ref": ref, "trust_tier": fact.get("trust_tier")})
+    return {"source": {"table": table, "column": column}, "items": rows[:max(1, min(limit, 500))],
+            "total": len(rows), "note": "反向追踪仅匹配事实中已持久化的 source_ref.table 与 source_ref.column。"}
+
+
 def governance(job: dict, principal: dict | None = None) -> dict:
     """Read-only governance snapshot; authorization remains enforced by the API layer."""
     q = quality(job)
