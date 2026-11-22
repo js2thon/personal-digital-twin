@@ -61,7 +61,7 @@ def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
     job["issues"] = issues
     has_blocking = any(i["level"] == "error" for i in issues)
     has_warnings = any(i["level"] == "warning" for i in issues)
-    if has_blocking or has_warnings or stop_after in ("map", "validate"):
+    if has_blocking or stop_after in ("map", "validate"):
         job["status"] = "needs_review" if (issues or draft.get("review")) else "validated"
         job["release_gate"] = release_gate.evaluate(job)
         return _done(job, keep_status=True)
@@ -291,13 +291,13 @@ def rebuild(job: dict, ts: TableSet) -> dict:
         "code": item["code"], "table": item.get("ref"),
         "msg": item["message"], "recommendation": item["recommendation"],
     } for item in job["standards_report"]["findings"])
-    if any(i["level"] in ("error", "warning") for i in job["issues"]):
+    if any(i["level"] == "error" for i in job["issues"]):
         job["status"] = "needs_review"
         job["release_gate"] = release_gate.evaluate(job)
         return job
     job["materialized"] = materializer.materialize(ts, job["contract"])
     job["metrics"] = mx.generate(job["draft"]["schema"])
-    job["status"] = "needs_review" if job["draft"]["review"] else "ready_to_publish"
+    job["status"] = "needs_review" if (job["draft"]["review"] or any(i["level"] == "warning" for i in job["issues"])) else "ready_to_publish"
     job["release_gate"] = release_gate.evaluate(job)
     return job
 
