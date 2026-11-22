@@ -158,5 +158,5 @@ jobs:
         working-directory: .
         run: |
           cp .env.example .env
-          docker compose config --quiet
+          API_KEY=ci-test-placeholder docker compose config --quiet
           rm -f .env
