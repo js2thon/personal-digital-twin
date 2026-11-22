@@ -70,6 +70,7 @@ def _slim(job: dict) -> dict:
         "standards_review_acknowledged": job.get("standards_review_acknowledged", False),
         "release_gate": job.get("release_gate"),
         "publish_error": job.get("publish_error"),
+        "publish_steps": job.get("publish_steps"),
         "contract": job.get("contract"), "issues": job.get("issues"),
         "stages": job.get("stages"), "metrics": job.get("metrics"),
         "materialized": {"stats": mat.get("stats"), "errors": (mat.get("errors") or [])[:50],
