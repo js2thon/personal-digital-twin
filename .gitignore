@@ -40,3 +40,27 @@ docs/samples/employee-attributes.json
 # 评估基准集：golden_v1.json 含实库主体名与 fact id（运行时数据，不入仓）
 # 仓库内保留结构一致的 golden_v1.example.json；真实集由 backend/scripts/build_golden.py 生成
 backend/app/modules/evaluation/golden_v1.json
+
+# ===== 本体工作台：本地备份、测试与运行产物（不入仓）=====
+# 同步脚本内含敏感词扫描名单（真实姓名/企业名），只留本地
+sync-github.bat
+sync-github.log
+.sync-scan-words.txt
+.sync-allow.txt
+.automodel_backup/
+.runtime-uvicorn.log
+*.err.log
+.pytest_cache/
+.coverage
+htmlcov/
+# 上传的原始数据 / 评测报告 / 导出（可能含企业与个人信息）
+*.xlsx
+*.xls
+*.csv
+!backend/tests/fixtures/**/*.csv
+*.parquet
+ontology_*.json
+ontology_*.owl
+ontology_*.svg
+ontology_*.png
+ontology_design_*.json

@@ -2079,6 +2079,9 @@
   <button class="tab" data-v="modelling" style="--ic:var(--ax-info)" title="本体建模（工作流画布 · 5 段建模流程 · 函数三色 · 收尾区完整验证与发布门禁）">
     <span class="ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9" width="5" height="6" rx="1"/><rect x="17" y="3" width="5" height="5" rx="1"/><rect x="17" y="16" width="5" height="5" rx="1"/><path d="M7 12h4M11 12V5.5h6M11 12v6.5h6"/></svg></span>
     <span class="lbl">本体建模</span><span class="tab-badge on" style="background:#b0403a" title="新增独立菜单">新</span></button>
+  <button class="tab" data-v="studio" style="--ic:var(--ax-info)" title="本体工作台（上传数据 → 自动建模 → Schema/实例图谱 → 关系分析 → 质量检测 → Action → 指标 → 基于本体的智能问答 → JSON/OWL 导出）">
+    <span class="ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M11 7 6 16"/><path d="m13 7 5 9"/><path d="M7.2 18h9.6"/></svg></span>
+    <span class="lbl">本体工作台</span><span class="tab-badge on" style="background:#0077b6" title="Ontology Studio V2">V2</span></button>
   <div class="nav-group">认知与记忆</div>
   <button class="tab" data-v="cognition" style="--ic:var(--ax-info)" title="认知">
     <span class="ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1.2 2.1h4.6c.2-.9.6-1.6 1.2-2.1A6 6 0 0 0 12 3Z"/></svg></span>
@@ -2730,6 +2733,12 @@
         </div>
       </div>
     </div>
+  </section>
+
+  <!-- 03.4.6 本体工作台（Ontology Studio V2，独立页面内嵌） -->
+  <section class="view" id="v-studio" style="padding:0">
+    <iframe id="studioFrame" title="本体工作台" data-src="/console/automodel.html"
+            style="width:100%;height:calc(100vh - 24px);border:1px solid var(--ax-border);border-radius:var(--radius-container);background:var(--ax-bg);display:block"></iframe>
   </section>
 
   <!-- 04 认知中心 -->
@@ -19005,7 +19014,11 @@ function loadView(v) {
   if (v === "twin") loadLineage();
   if (v === "knowledge") loadKnowledge();
   if (v === "ontology") loadOntology();
-  if (v === "modelling") { modInit(); modSyncDesignObjects(); }   // 本体建模：初始化本地草稿，并自动从「本体设计」带出对象
+  if (v === "modelling") { modInit(); modSyncDesignObjects(); }
+  if (v === "studio") {                       // 本体工作台：首次进入才加载 iframe，避免拖慢控制台首屏
+    const f = document.getElementById("studioFrame");
+    if (f && !f.src) f.src = f.dataset.src + location.search.replace(/^\?/, "?_=1&");
+  }   // 本体建模：初始化本地草稿，并自动从「本体设计」带出对象
   if (v === "cognition") loadCognition();
   if (v === "decision") { loadApprovals(); loadDecisions(); }
   if (v === "messages") loadMessages();

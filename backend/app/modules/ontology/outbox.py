@@ -51,23 +51,30 @@ STATUSES = (PENDING, PROCESSING, PROCESSED, FAILED, DEAD)
 
 # 消费参数：批大小、轮询间隔、最大重试次数（均可 env 覆盖）
 MAX_ATTEMPTS = 5
+LEASE_SECONDS = 300          # processing 租约：超过即视为消费者已崩溃
 BATCH = 100
 INTERVAL = 1.0
 
 _BATCH_SQL = """
 WITH picked AS (
     SELECT id FROM ingest.outbox_events
-     WHERE status IN ('pending', 'failed')
-       AND attempts < :max_attempts
+     WHERE ((status IN ('pending', 'failed') AND attempts < :max_attempts)
+            -- #13：消费者崩溃遗留的 processing 超时回收（attempts 已 +1，超限进 dead）
+            OR (status = 'processing' AND claimed_at < NOW() - make_interval(secs => :lease)))
      ORDER BY occurred_at
      LIMIT :n
      FOR UPDATE SKIP LOCKED
 )
 UPDATE ingest.outbox_events o
-   SET status = 'processing', attempts = o.attempts + 1
+   SET status = CASE WHEN o.status = 'processing' AND o.attempts >= :max_attempts
+                     THEN 'dead' ELSE 'processing' END,
+       attempts = o.attempts + 1, claimed_at = NOW(),
+       last_error = CASE WHEN o.status = 'processing'
+                         THEN COALESCE(o.last_error, '') || ' [lease expired, reclaimed]'
+                         ELSE o.last_error END
   FROM picked p
  WHERE o.id = p.id
-RETURNING o.id::text AS id, o.event_type, o.aggregate_id::text AS aggregate_id,
+RETURNING o.id::text AS id, o.status, o.event_type, o.aggregate_id::text AS aggregate_id,
           o.aggregate_type, o.tenant_id, o.trace_id, o.payload, o.attempts,
           o.occurred_at
 """
@@ -122,7 +129,11 @@ def _schema_sql() -> list[tuple[str, str]]:
          " ADD COLUMN IF NOT EXISTS processed_at TIMESTAMPTZ,"
          " ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0,"
          " ADD COLUMN IF NOT EXISTS last_error TEXT,"
-         " ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'pending'"),
+         " ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'pending',"
+         " ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ"),
+        ("idx_processing",
+         "CREATE INDEX IF NOT EXISTS idx_outbox_processing ON ingest.outbox_events (claimed_at) "
+         "WHERE status = 'processing'"),
         ("event_type_enum",
          "DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint "
          "WHERE conname = 'outbox_event_type_enum' "
@@ -260,8 +271,9 @@ def recent(limit: int = 20, status: str | None = None) -> list[dict]:
 def claim(limit: int = BATCH, max_attempts: int = MAX_ATTEMPTS) -> list[dict]:
     """取一批待处理事件并标记为 processing（SKIP LOCKED 支持多消费者）。"""
     with db.transaction():
-        return db.fetch_all(_BATCH_SQL, {"n": max(1, min(limit, 500)),
-                                         "max_attempts": max_attempts})
+        rows = db.fetch_all(_BATCH_SQL, {"n": max(1, min(limit, 500)),
+                                         "max_attempts": max_attempts, "lease": LEASE_SECONDS})
+        return [r for r in rows if r.get("status", "processing") != "dead"]
 
 
 def finish(event_id: str, ok: bool, error: str | None = None,
@@ -326,21 +338,24 @@ def replay(statuses: tuple[str, ...] = (FAILED, DEAD),
     只重置计数，不改 payload —— 重放的含义是「同一条事件再试一次」，
     不是「伪造一条新事件」。
     """
-    entries = ",".join(f"'{s}'" for s in statuses)
+    statuses = tuple(s for s in statuses if s in STATUSES)      # 白名单 + 参数绑定
+    if not statuses:
+        return {"dry_run": dry_run, "statuses": [], "would_replay": 0, "replayed": 0}
+    sts = "{" + ",".join(statuses) + "}"
     picked = db.fetch_one(
         "SELECT count(*) AS n FROM ("
-        f"  SELECT 1 FROM ingest.outbox_events WHERE status IN ({entries}) "
-        "   ORDER BY occurred_at LIMIT :l) t", {"l": int(limit)})
+        "  SELECT 1 FROM ingest.outbox_events WHERE status = ANY(CAST(:sts AS text[])) "
+        "   ORDER BY occurred_at LIMIT :l) t", {"l": int(limit), "sts": sts})
     n = int((picked or {}).get("n") or 0)
     if dry_run or not n:
         return {"dry_run": dry_run, "statuses": list(statuses), "would_replay": n,
                 "replayed": 0}
     row = db.fetch_one(
-        f"WITH picked AS (SELECT id FROM ingest.outbox_events WHERE status IN ({entries}) "
+        "WITH picked AS (SELECT id FROM ingest.outbox_events WHERE status = ANY(CAST(:sts AS text[])) "
         "ORDER BY occurred_at LIMIT :l), "
         "u AS (UPDATE ingest.outbox_events o SET status = 'pending', attempts = 0, "
         "       last_error = NULL FROM picked p WHERE o.id = p.id RETURNING 1) "
-        "SELECT count(*) AS n FROM u", {"l": int(limit)})
+        "SELECT count(*) AS n FROM u", {"l": int(limit), "sts": sts})
     replayed = int((row or {}).get("n") or 0)
     log.info("outbox replay: %d events -> pending", replayed)
     return {"dry_run": False, "statuses": list(statuses), "would_replay": n,

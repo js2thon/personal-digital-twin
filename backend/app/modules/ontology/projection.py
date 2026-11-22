@@ -272,7 +272,8 @@ def project_facts(facts: list[dict], entities: list[dict]) -> dict:
         if not _type_ok(rtype, target):
             stats["type_mismatch"] += 1
             skipped.append({"fact": str(f.get("id")), "predicate": pred,
-                            "value": text[:60], "target": target.get("canonical_name"),
+                            "value": (pick_object_text(f.get("object_value")) or "")[:60],
+                            "target": target.get("canonical_name"),
                             "reason": f"目标类型 {target.get('entity_type')} 不满足 {rtype} 约束"})
             continue
         key = (subj["id"], rtype, target["id"])

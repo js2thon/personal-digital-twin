@@ -11,10 +11,10 @@ services:
     container_name: twin-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-twin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-twin_secret}
       POSTGRES_DB: ${POSTGRES_DB:-personal_twin}
     ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
@@ -30,7 +30,7 @@ services:
     container_name: twin-redis
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     networks: [data_net]
@@ -40,11 +40,11 @@ services:
     container_name: twin-minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set a strong MINIO_ROOT_PASSWORD in .env}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-twinadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-twinadmin_secret}
     ports:
-      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
-      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio_data:/data
     networks: [data_net]
@@ -61,7 +61,7 @@ services:
     environment:
       NVIDIA_VISIBLE_DEVICES: all
     ports:
-      - "127.0.0.1:${VLLM_PORT:-8001}:8000"
+      - "${VLLM_PORT:-8001}:8000"
     volumes:
       - ${HF_CACHE:-~/.cache/huggingface}:/root/.cache/huggingface
     deploy:
@@ -83,12 +83,11 @@ services:
       context: ./backend
     container_name: twin-api
     environment: &app_env
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-twin}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-personal_twin}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-twin}:${POSTGRES_PASSWORD:-twin_secret}@postgres:5432/${POSTGRES_DB:-personal_twin}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Set a strong MINIO_ROOT_PASSWORD in .env}
-      API_KEY: ${API_KEY:?Set a strong API_KEY in .env}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-twinadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-twinadmin_secret}
       LLM_BASE_URL: ${LLM_BASE_URL:-http://vllm:8000/v1}
       LLM_API_KEY: ${LLM_API_KEY:-empty}
       LLM_MODEL: ${VLLM_SERVED_MODEL:-qwen}
@@ -136,6 +135,6 @@ volumes:
 
 networks:
   data_net:
-    internal: false   # 数据服务仅绑定宿主机回环端口；容器间通过私有网络访问
+    internal: false   # 生产环境建议 internal: true，仅经认证网关访问
   ai_net:
   app_net:

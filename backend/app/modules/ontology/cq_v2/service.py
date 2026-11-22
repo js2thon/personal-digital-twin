@@ -858,8 +858,8 @@ class CQEngine:
         cq = self.get_cq(cq_id)
         if not cq:
             raise LookupError("CQ 不存在")
-        snap = snapshot or demo_snapshot()
-        ctx = permission_ctx or {"tenant_id": "t1", "scopes": [], "actor": "demo",
+        snap = snapshot or self.default_snapshot(permission_ctx)
+        ctx = permission_ctx or {"tenant_id": "default", "scopes": [], "actor": "system",
                                  "model_version": "local-rule-engine"}
         plan = self.build_plan(cq_id, ctx.get("scopes"))
         check = pl.validate_plan(plan, self.registry, ctx)
@@ -888,10 +888,25 @@ class CQEngine:
         })
         return result
 
+    def default_snapshot(self, permission_ctx: dict | None = None) -> dict:
+        """#20：默认用真实数据快照；仅当无库（单测/离线，或 CQ_V2_SNAPSHOT=demo）时回落演示数据。"""
+        import os
+        if os.getenv("CQ_V2_SNAPSHOT", "live").lower() == "demo":
+            return demo_snapshot()
+        try:
+            from app.modules.ontology.live_snapshot import build
+            ctx = permission_ctx or {}
+            return build(tenant_id=str(ctx.get("tenant_id") or "default"),
+                         principal=ctx.get("principal"), registry=self.registry)
+        except Exception as exc:  # noqa: BLE001
+            snap = demo_snapshot()
+            snap["fallback_reason"] = f"live snapshot unavailable: {type(exc).__name__}"
+            return snap
+
     def coverage_run(self, only_admitted: bool = True, snapshot: dict | None = None,
                      permission_ctx: dict | None = None) -> dict:
         cqs = [c for c in self.cqs() if (not only_admitted or q.admitted(c))]
-        snap = snapshot or demo_snapshot()
+        snap = snapshot or self.default_snapshot(permission_ctx)
         items, gaps = [], []
         for cq in cqs:
             r = self.run(cq["id"], snap, permission_ctx)

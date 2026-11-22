@@ -242,6 +242,19 @@ def bootstrap_schema():
         pass
     try:
         # SIL-EC-01～EC-05：Outbox 账本结构升级 + 投影分发线程。
+        # #1：relations 部分唯一索引（去重后建），必须早于任何投影写入；失败不阻断账本启动
+        import logging
+        try:
+            from app.modules.ontology import sync as _sync
+            _sync.ensure_unique_index()
+        except Exception as _exc:  # noqa: BLE001
+            logging.getLogger("twin").warning("relations unique index skipped: %s", _exc)
+        # #21：graph.RELATION_TYPES 由 Registry 派生（单一类型来源；Registry 缺的类型先并入再派生）
+        try:
+            from app.modules.ontology import cq_v2 as _cq, type_registry as _tr
+            _tr.install(_cq.get_engine().registry)
+        except Exception as _exc:  # noqa: BLE001  Registry 不可用时保留代码内置目录
+            logging.getLogger("twin").warning("type registry install skipped: %s", _exc)
         # 必须早于 fact_events.start()：后者建的触发器会往账本里写事件。
         from app.modules.ontology import outbox
 
@@ -359,6 +372,14 @@ app.include_router(ontology_modelling.router, prefix=API, tags=["ontology-modell
 app.include_router(ontology_metrics.router, prefix=API, tags=["ontology-metrics"])
 # 本体驱动知识图谱：导入本体/数据 → 自动生成设计模型 → 只读 SPARQL → 语义问答
 app.include_router(kg.router, prefix=API, tags=["kg"])
+# automodel 依赖 pandas 等可选包：缺依赖时只禁用该模块，不能拖垮整个服务
+try:
+    from app.api.v1 import automodel as automodel_api
+    app.include_router(automodel_api.router, prefix=API, tags=["automodel"])
+except Exception as _automodel_exc:  # noqa: BLE001
+    import logging as _logging
+    _logging.getLogger("twin").warning(
+        "automodel API disabled (pip install pandas pyyaml openpyxl sqlalchemy): %s", _automodel_exc)
 
 
 @app.get("/healthz")

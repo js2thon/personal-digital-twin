@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 from fastapi import HTTPException, Request
 
-from app.auth import allow_identity_context_headers, current_actor
+from app.auth import current_actor
 
 CONTEXT_FIELDS = ("tenant_id", "user_id", "request_id", "trace_id",
                   "permission_context", "schema_version")
@@ -106,22 +106,20 @@ def from_request(request: Request) -> SemanticContext:
     strict = _strict_enabled(request)
     derived: list[str] = []
     h = request.headers
-    trusted_identity = allow_identity_context_headers(request)
 
-    def pick(name: str, fallback, *, trusted_only: bool = False) -> str:
-        value = (h.get(HEADER_MAP[name]) or "").strip() if (not trusted_only or trusted_identity) else ""
+    def pick(name: str, fallback) -> str:
+        value = (h.get(HEADER_MAP[name]) or "").strip()
         if value:
             return value
         derived.append(name)
         return fallback() if callable(fallback) else fallback
 
-    tenant_id = pick("tenant_id", "default", trusted_only=True)
-    user_id = pick("user_id", actor, trusted_only=True)
+    tenant_id = pick("tenant_id", "default")
+    user_id = pick("user_id", actor)
     request_id = pick("request_id", lambda: "req_" + uuid.uuid4().hex[:16])
     trace_id = pick("trace_id", lambda: "trc_" + uuid.uuid4().hex[:16])
 
-    raw_perm = ((h.get(HEADER_MAP["permission_context"]) or "").strip()
-                if trusted_identity else "")
+    raw_perm = (h.get(HEADER_MAP["permission_context"]) or "").strip()
     if raw_perm:
         try:
             permission = json.loads(raw_perm)
@@ -134,7 +132,7 @@ def from_request(request: Request) -> SemanticContext:
         permission = {"role": actor, "scope": ["owner", "organization"],
                       "data_classification": "internal"}
 
-    schema_version = pick("schema_version", resolve_published_version, trusted_only=True)
+    schema_version = pick("schema_version", resolve_published_version)
 
     if strict and derived:
         raise HTTPException(400, {

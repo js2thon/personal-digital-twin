@@ -34,6 +34,11 @@ MERGE_WINDOW = 0.08          # 同批事务（如批量撤销）合并成一个�
 IDLE_SELECT = 0.5            # 空闲时 select 的最长等待
 RETRY_WAIT = 3.0             # 断线重连间隔
 _UUID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
+CATCHUP_MIN_INTERVAL = 600
+
+
+class _SkipCatchup(Exception):
+    pass
 
 _stop = threading.Event()
 _thread: threading.Thread | None = None
@@ -165,16 +170,18 @@ def _drain(q: Queue) -> set[str]:
 
 
 def _process(ids: set[str]) -> None:
+    """#14：投影只走 Outbox 一条路。NOTIFY 只用来唤醒 Dispatcher 立即 drain，
+    不再在这里直接 resync_fact——否则同一事实被投影两次，两线程还会争 SYNC_LOCK。
+    Outbox 事件由触发器同事务写入，drain 按聚合合并，延迟仍是亚秒级。"""
+    from app.modules.ontology import outbox
     ok = fail = 0
-    for fid in ids:
-        if not fid or not _UUID_RE.match(fid):
-            continue
-        try:
-            graph_sync.resync_fact(fid)
-            ok += 1
-        except Exception as exc:                # noqa: BLE001 单条失败不拖垮整批
-            fail += 1
-            log.warning("resync_fact(%s) failed: %s", fid, exc)
+    valid = [f for f in ids if f and _UUID_RE.match(f)]
+    try:
+        r = outbox.drain()
+        ok, fail = int(r.get("processed") or 0), int(r.get("failed") or 0)
+    except Exception as exc:                    # noqa: BLE001 Dispatcher 线程 1s 后兜底
+        fail = len(valid)
+        log.warning("outbox drain on notify failed: %s", exc)
     now = time.time()
     _stats.update({"batches": _stats["batches"] + 1,
                    "events": _stats["events"] + len(ids),
@@ -200,11 +207,17 @@ def _listen_loop() -> None:
             _stats["listener_error"] = None
             log.info("LISTEN %s ready", CHANNEL)
 
-            # 先 LISTEN 再补偿：两者之间没有丢事件的空窗
+            # 先 LISTEN 再补偿：两者之间没有丢事件的空窗。
+            # 重连风暴保护：两次全量补偿至少间隔 CATCHUP_MIN_INTERVAL 秒（Outbox 账本本身不丢事件）。
             try:
+                if time.time() - _stats.get("catchup_at", 0) < CATCHUP_MIN_INTERVAL:
+                    raise _SkipCatchup()
+                _stats["catchup_at"] = time.time()
                 r = graph_sync.catchup_relations()
                 _stats["catchup"] = r
                 log.info("startup fact catchup: %s", r)
+            except _SkipCatchup:
+                pass
             except Exception as exc:            # noqa: BLE001 补偿失败不阻断监听
                 log.warning("startup fact catchup failed: %s", exc)
 

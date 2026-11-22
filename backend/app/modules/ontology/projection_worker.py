@@ -93,13 +93,14 @@ class VectorProjectionWorker(ProjectionWorker):
             return self._probe
         try:
             ext = db.fetch_one(
-                "SELECT count(*) AS n FROM pg_available_extensions WHERE name = 'vector'")
+                # #19：可安装 ≠ 已启用；必须查 pg_extension
+                "SELECT count(*) AS n FROM pg_extension WHERE extname = 'vector'")
             chunks = db.fetch_one(
                 "SELECT count(*) AS total, count(embedding_vec) AS embedded "
                 "FROM knowledge.semantic_chunks")
             available = int((ext or {}).get("n") or 0) > 0
             reason = None if available else (
-                "pgvector 扩展不可用（pg_available_extensions 无 vector），"
+                "pgvector 扩展未启用（pg_extension 无 vector），"
                 "向量层为 TEXT 降级实现；对应 P0-1 未落地")
             probe = {"at": __import__("time").time(), "available": available,
                      "unavailable_reason": reason,
@@ -123,8 +124,8 @@ class VectorProjectionWorker(ProjectionWorker):
     def handle(self, event: dict) -> dict:
         if not self.available:
             return {"applied": False, "reason": "unavailable"}
-        # 预留：P0-1 落地后在此实现切片重嵌入 + 索引更新
-        return {"applied": False, "reason": "not_implemented"}
+        # 未实现不得报成功（否则事件被标 processed 后永久丢失）：抛错进入重试/死信，可 replay
+        raise NotImplementedError("vector projection not implemented (P0-1)")
 
     def status(self) -> dict:
         probe = self._detect()

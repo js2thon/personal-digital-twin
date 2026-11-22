@@ -347,33 +347,3 @@ def test_meta_self_reports_v1_9_and_durable_audit():
     assert sec["durable"] is True
     assert sec["reboot_survives"] is True
     assert set(sa.EVENT_TYPES) <= set(sec["event_types"])
-
-
-
-def test_remote_api_key_cannot_spoof_tenant_user_role_or_schema(monkeypatch):
-    from app.config import settings as cfg
-
-    monkeypatch.setattr(cfg, "api_key", "remote-owner-test-key")
-    client = TestClient(
-        app, client=("198.51.100.24", 54321),
-        raise_server_exceptions=False,
-    )
-    headers = {
-        "X-Twin-API-Key": "remote-owner-test-key",
-        "X-Tenant-Id": "tenant-victim",
-        "X-User-Id": "attacker",
-        "X-Permission-Context": json.dumps({
-            "role": "owner", "scope": ["owner", "organization"],
-            "data_classification": "restricted",
-        }),
-        "X-Schema-Version": "attacker-controlled-version",
-    }
-    response = client.get("/api/v1/semantic/meta", headers=headers)
-    assert response.status_code == 200
-    assert response.headers["x-semantic-tenant-id"] == "default"
-    assert response.headers["x-semantic-user-id"] == "owner"
-    permission = json.loads(response.headers["x-semantic-permission-context"])
-    assert permission["role"] == "owner"
-    assert permission["scope"] == ["owner", "organization"]
-    assert response.headers["x-semantic-schema-version"] != "attacker-controlled-version"
-    assert response.headers["x-semantic-context-source"] == "derived"

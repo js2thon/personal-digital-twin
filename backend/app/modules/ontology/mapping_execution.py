@@ -32,7 +32,6 @@ def ensure_schema() -> None:
         rows_inserted INTEGER NOT NULL DEFAULT 0,
         rows_skipped INTEGER NOT NULL DEFAULT 0,
         instances_inserted INTEGER NOT NULL DEFAULT 0,
-        records_tombstoned INTEGER NOT NULL DEFAULT 0,
         error JSONB NOT NULL DEFAULT '{}'::jsonb,
         created_by VARCHAR(160) NOT NULL,
         started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -60,25 +59,16 @@ def ensure_schema() -> None:
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id VARCHAR(120) NOT NULL,
         mapping_name VARCHAR(200) NOT NULL,
-        source_namespace VARCHAR(64) NOT NULL DEFAULT 'legacy',
         source_record_id VARCHAR(500) NOT NULL,
         entity_type VARCHAR(200) NOT NULL,
         instance_id UUID,
         row_hash VARCHAR(64) NOT NULL,
         mapping_checksum VARCHAR(64) NOT NULL,
-        last_seen_run_id UUID,
         last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        tombstoned_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        UNIQUE (tenant_id, source_namespace, mapping_name, source_record_id, entity_type)
+        UNIQUE (tenant_id, mapping_name, source_record_id, entity_type)
     )
     """)
-    db.execute("ALTER TABLE ontology.dataset_source_records ADD COLUMN IF NOT EXISTS source_namespace VARCHAR(64) NOT NULL DEFAULT 'legacy'")
-    db.execute("ALTER TABLE ontology.dataset_source_records DROP CONSTRAINT IF EXISTS dataset_source_records_tenant_id_mapping_name_source_record_id_entity_type_key")
-    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_dataset_source_records_namespace_key ON ontology.dataset_source_records (tenant_id, source_namespace, mapping_name, source_record_id, entity_type)")
-    db.execute("ALTER TABLE ontology.dataset_source_records ADD COLUMN IF NOT EXISTS last_seen_run_id UUID")
-    db.execute("ALTER TABLE ontology.dataset_source_records ADD COLUMN IF NOT EXISTS tombstoned_at TIMESTAMPTZ")
-    db.execute("ALTER TABLE ontology.dataset_ingestion_runs ADD COLUMN IF NOT EXISTS records_tombstoned INTEGER NOT NULL DEFAULT 0")
     db.execute("""
     CREATE INDEX IF NOT EXISTS idx_dataset_source_records_instance
     ON ontology.dataset_source_records (tenant_id, instance_id)
@@ -165,8 +155,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                               source_sha256: str, actor: str,
                               max_rows: int = MAX_EXECUTION_ROWS,
                               sync_mode: str = "append",
-                              source_id_column: str | None = None,
-                              full_snapshot: bool = False) -> dict:
+                              source_id_column: str | None = None) -> dict:
     """Atomically instantiate rows using a tenant-owned approved mapping set.
 
     Append mode uses source file hash + row number. Upsert mode requires a stable
@@ -181,8 +170,6 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
         raise ValueError(f"本次数据行数 {len(rows)} 超过执行上限 {cap}；请分批执行")
     if sync_mode not in {"append", "upsert"}:
         raise ValueError("sync_mode 仅支持 append 或 upsert")
-    if full_snapshot and sync_mode != "upsert":
-        raise ValueError("full_snapshot 只能与 upsert 模式同时使用")
     if sync_mode == "upsert":
         stable_source_ids = _validated_source_ids(rows, source_id_column)
     else:
@@ -206,10 +193,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
         f"{source_sha256}:{mapping_set_id}".encode("utf-8")).hexdigest()
     run_id = None
     inserted_records, skipped_records, inserted_instances, updated_instances = 0, 0, 0, 0
-    records_tombstoned = 0
     mapping_checksum = str(mapping_set.get("checksum") or _digest(definition))
-    source_namespace = hashlib.sha256(
-        f"{mapping_set_id}:{source_name}".encode("utf-8")).hexdigest()
     try:
         with db.transaction():
             run = _create_run(
@@ -243,22 +227,22 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                         source_state = db.fetch_one(
                             "SELECT id::text AS id, instance_id::text AS instance_id, "
                             "row_hash, mapping_checksum FROM ontology.dataset_source_records "
-                            "WHERE tenant_id=:t AND source_namespace=:ns AND mapping_name=:mn AND source_record_id=:sid "
+                            "WHERE tenant_id=:t AND mapping_name=:mn AND source_record_id=:sid "
                             "AND entity_type=:et FOR UPDATE",
-                            {"t": tenant_id, "ns": source_namespace, "mn": str(mapping_set.get("name") or ""),
+                            {"t": tenant_id, "mn": str(mapping_set.get("name") or ""),
                              "sid": stable_source_id, "et": entity},
                         )
                         if not source_state:
                             created_state = db.fetch_one(
                                 "INSERT INTO ontology.dataset_source_records "
-                                "(tenant_id, mapping_name, source_namespace, source_record_id, entity_type, "
-                                " instance_id, row_hash, mapping_checksum, last_seen_run_id) "
-                                "VALUES (:t, :mn, :ns, :sid, :et, NULL, :rh, :mc, CAST(:run AS uuid)) "
-                                "ON CONFLICT (tenant_id, source_namespace, mapping_name, source_record_id, entity_type) "
+                                "(tenant_id, mapping_name, source_record_id, entity_type, "
+                                " instance_id, row_hash, mapping_checksum) "
+                                "VALUES (:t, :mn, :sid, :et, NULL, :rh, :mc) "
+                                "ON CONFLICT (tenant_id, mapping_name, source_record_id, entity_type) "
                                 "DO NOTHING RETURNING id::text AS id",
-                                {"t": tenant_id, "mn": str(mapping_set.get("name") or ""), "ns": source_namespace,
+                                {"t": tenant_id, "mn": str(mapping_set.get("name") or ""),
                                  "sid": stable_source_id, "et": entity,
-                                 "rh": row_hash, "mc": mapping_checksum, "run": run_id},
+                                 "rh": row_hash, "mc": mapping_checksum},
                             )
                             if created_state:
                                 source_state = {"id": created_state["id"], "instance_id": None,
@@ -270,19 +254,11 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                                     "row_hash, mapping_checksum FROM ontology.dataset_source_records "
                                     "WHERE tenant_id=:t AND mapping_name=:mn AND source_record_id=:sid "
                                     "AND entity_type=:et FOR UPDATE",
-                                    {"t": tenant_id, "mn": str(mapping_set.get("name") or ""), "ns": source_namespace,
+                                    {"t": tenant_id, "mn": str(mapping_set.get("name") or ""),
                                      "sid": stable_source_id, "et": entity},
                                 )
                         if not source_state:
                             raise RuntimeError("无法锁定稳定源记录，事务已中止")
-                        # Mark the business key as present before the file-level idempotency
-                        # reservation. A retry can hit the reservation conflict below; that
-                        # must not make an existing source row look absent in this snapshot.
-                        db.execute(
-                            "UPDATE ontology.dataset_source_records SET last_seen_run_id=CAST(:run AS uuid), "
-                            "last_seen_at=now(), tombstoned_at=NULL WHERE id=CAST(:sid AS uuid)",
-                            {"run": run_id, "sid": source_state["id"]},
-                        )
 
                     # A file-level reservation preserves retry idempotency for both modes.
                     reservation = db.fetch_one(
@@ -306,11 +282,6 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                             and source_state.get("mapping_checksum") == mapping_checksum):
                         iid = source_state["instance_id"]
                         db.execute(
-                            "UPDATE ontology.dataset_source_records SET last_seen_run_id=CAST(:run AS uuid), "
-                            "last_seen_at=now(), tombstoned_at=NULL WHERE id=CAST(:sid AS uuid)",
-                            {"run": run_id, "sid": source_state["id"]},
-                        )
-                        db.execute(
                             "UPDATE ontology.dataset_ingestion_records SET instance_id=CAST(:iid AS uuid) "
                             "WHERE id=CAST(:id AS uuid)",
                             {"iid": iid, "id": reservation["id"]},
@@ -330,11 +301,10 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                     if source_state:
                         db.execute(
                             "UPDATE ontology.dataset_source_records SET instance_id=CAST(:iid AS uuid), "
-                            "row_hash=:rh, mapping_checksum=:mc, last_seen_run_id=CAST(:run AS uuid), "
-                            "last_seen_at=now(), tombstoned_at=NULL "
+                            "row_hash=:rh, mapping_checksum=:mc, last_seen_at=now() "
                             "WHERE id=CAST(:id AS uuid)",
                             {"iid": iid, "rh": row_hash, "mc": mapping_checksum,
-                             "run": run_id, "id": source_state["id"]},
+                             "id": source_state["id"]},
                         )
                         if source_state.get("instance_id"):
                             updated_instances += 1
@@ -366,27 +336,12 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                              "ov": mapping_set.get("ontology_version"),
                              "sv": mapping_set.get("schema_version")},
                         )
-            if full_snapshot:
-                # Explicit full-snapshot mode only creates tombstones; it never deletes
-                # ontology instances. A separate reviewed workflow may act on these later.
-                entity_types = sorted({str(item["entity_type"]) for item in mappings})
-                for entity_type in entity_types:
-                    missing = db.fetch_all(
-                        "UPDATE ontology.dataset_source_records SET tombstoned_at=now() "
-                        "WHERE tenant_id=:t AND source_namespace=:ns AND mapping_name=:mn AND entity_type=:et "
-                        "AND last_seen_run_id IS DISTINCT FROM CAST(:run AS uuid) "
-                        "AND tombstoned_at IS NULL RETURNING source_record_id",
-                        {"t": tenant_id, "ns": source_namespace, "mn": str(mapping_set.get("name") or ""),
-                         "et": entity_type, "run": run_id},
-                    )
-                    records_tombstoned += len(missing)
             db.execute(
                 "UPDATE ontology.dataset_ingestion_runs SET status='succeeded', "
-                " rows_inserted=:ri, rows_skipped=:rs, instances_inserted=:ii, "
-                " records_tombstoned=:td, finished_at=now() "
+                " rows_inserted=:ri, rows_skipped=:rs, instances_inserted=:ii, finished_at=now() "
                 "WHERE id=CAST(:id AS uuid)",
                 {"ri": inserted_records, "rs": skipped_records,
-                 "ii": inserted_instances, "td": records_tombstoned, "id": run_id},
+                 "ii": inserted_instances, "id": run_id},
             )
     except Exception as exc:
         # The execution transaction has rolled back; preserve a separate failure record.
@@ -406,10 +361,8 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
         "records_skipped_idempotent": skipped_records,
         "instances_inserted": inserted_instances,
         "instances_updated": updated_instances,
-        "records_tombstoned": records_tombstoned,
         "sync_mode": sync_mode,
         "source_id_column": source_id_column,
-        "full_snapshot": full_snapshot,
         "mapping_set_id": mapping_set_id,
         "mapping_version": mapping_set.get("version"),
         "ontology_version": mapping_set.get("ontology_version"),
@@ -424,7 +377,7 @@ def get_run(run_id: str, *, tenant_id: str) -> dict | None:
     row = db.fetch_one(
         "SELECT id::text AS id, mapping_set_id::text AS mapping_set_id, source_name, "
         " source_sha256, status, rows_received, rows_inserted, rows_skipped, "
-        " instances_inserted, records_tombstoned, error, created_by, started_at, finished_at "
+        " instances_inserted, error, created_by, started_at, finished_at "
         "FROM ontology.dataset_ingestion_runs WHERE id=CAST(:id AS uuid) AND tenant_id=:t",
         {"id": run_id, "t": tenant_id})
     if not row:

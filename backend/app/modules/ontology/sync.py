@@ -30,6 +30,31 @@ import threading
 from app.db import session as db
 from app.modules.ontology import projection as proj
 
+# #1：库层唯一约束才是防重复的真正保障（进程锁只在单进程内有效，多 worker / 多实例挡不住）。
+# 已有重复边时建索引会失败：先把重复的 active 边软停用（保留最早一条），再建部分唯一索引。
+_UNIQUE_DDL = (
+    "WITH d AS (SELECT id, row_number() OVER (PARTITION BY source_entity_id, relation_type, "
+    " target_entity_id ORDER BY id) AS rn FROM ontology.relations WHERE status = 'active') "
+    "UPDATE ontology.relations r SET status = 'removed', properties = COALESCE(r.properties, "
+    " '{}'::jsonb) || '{\"removed_by\": \"dedupe_unique_index\"}'::jsonb FROM d "
+    "WHERE r.id = d.id AND d.rn > 1",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_relations_active_triple ON ontology.relations "
+    "(source_entity_id, relation_type, target_entity_id) WHERE status = 'active'",
+)
+_unique_ready = False
+
+
+def ensure_unique_index() -> bool:
+    """幂等：启动时调用一次（main.py startup，早于 outbox/fact_events）。"""
+    global _unique_ready
+    if _unique_ready:
+        return True
+    for ddl in _UNIQUE_DDL:
+        db.execute(ddl)
+    _unique_ready = True
+    return True
+
+
 # 所有「事实 → 边」的写入口共用一把可重入锁：API 即时钩子、事件监听线程、
 # 手动/启动对账可能同时落库，relations 上没有唯一约束，并发会插出重复边。
 # 用 RLock 是因为 sync_fact 内部还会调用同模块的 upsert/remove。
@@ -62,6 +87,35 @@ def _active_entities() -> list[dict]:
         "WHERE status = 'active' LIMIT 20000")
 
 
+def _candidate_entities(fact: dict) -> list[dict]:
+    """单条事实只需要「主体 + 可能的客体」，不必每次读全表（审查 #5）。
+
+    客体候选：object_value 里的 entity_id / external_id 精确命中；名字精确 / 别名命中；
+    以及名字包含匹配（交给 projection.match_entity 判歧义）——用 ILIKE 先在库里缩小范围。
+    """
+    ov = fact.get("object_value") or {}
+    if isinstance(ov, str):
+        try:
+            ov = json.loads(ov)
+        except ValueError:
+            ov = {"name": ov}
+    oid = proj.pick_object_entity_id(ov)
+    ext = proj.pick_object_external_id(ov)
+    text = proj.pick_object_text(ov) or ""
+    return db.fetch_all(
+        "SELECT id, canonical_name, entity_type, aliases, "
+        "       COALESCE(properties->'external_ids', '[]'::jsonb) AS external_ids "
+        "FROM ontology.entities WHERE status = 'active' AND ("
+        "  id = CAST(:sid AS uuid) OR id::text = :oid "
+        "  OR (properties->'external_ids') @> CAST(:ext AS jsonb) "
+        "  OR canonical_name = :txt OR aliases @> CAST(:alias AS jsonb) "
+        "  OR (length(canonical_name) >= 3 AND :txt <> '' AND position(canonical_name in :txt) > 0) "
+        "  OR (length(:txt) >= 4 AND canonical_name LIKE '%' || :txt || '%')) LIMIT 200",
+        {"sid": str(fact.get("subject_id")), "oid": oid or "",
+         "ext": json.dumps([ext] if ext else ["__none__"]),
+         "txt": text, "alias": json.dumps([text] if text else ["__none__"])})
+
+
 def _soft_remove(sql_where: str, binds: dict, reason: str) -> int:
     """把命中的边软停用，并写下谁停的、为什么。"""
     row = db.fetch_one(
@@ -86,7 +140,7 @@ def _upsert_fact_edge_unlocked(fact_id: str) -> dict:
         return {"created": False, "reason": "fact_not_active"}
     if (fact.get("status") or "") != "active":
         return {"created": False, "reason": "fact_status_" + str(fact.get("status"))}
-    res = proj.project_facts([fact], _active_entities())
+    res = proj.project_facts([fact], _candidate_entities(fact))
     if not res["edges"]:
         return {"created": False, "reason": "not_projectable", "stats": res["stats"]}
     e = res["edges"][0]
@@ -105,17 +159,20 @@ def _upsert_fact_edge_unlocked(fact_id: str) -> dict:
              "p": _json({"fact_id": e["fact_id"], "relation_type": e["relation_type"]})})
         return {"created": False, "reason": "already_exists",
                 "relation_id": str(exists["id"])}
-    rid = db.insert_returning_id(
-        "ontology.relations",
-        {"source_entity_id": e["source_entity_id"],
-         "relation_type": e["relation_type"],
-         "target_entity_id": e["target_entity_id"],
-         "evidence_claim_id": e.get("evidence_claim_id"),
-         "status": "active",
-         "properties": _json({"origin": "fact_projection",
-                              "predicate": e["predicate"],
-                              "fact_id": e["fact_id"]})},
-    )
+    # #1：ON CONFLICT 兜底并发插入（另一进程刚插入同一三元组时不报错、不重复）
+    row = db.fetch_one(
+        "INSERT INTO ontology.relations (source_entity_id, relation_type, target_entity_id, "
+        " evidence_claim_id, status, properties) VALUES (CAST(:s AS uuid), :rt, CAST(:t AS uuid), "
+        " CAST(:ev AS uuid), 'active', CAST(:p AS jsonb)) "
+        "ON CONFLICT (source_entity_id, relation_type, target_entity_id) WHERE status = 'active' "
+        "DO NOTHING RETURNING id",
+        {"s": e["source_entity_id"], "rt": e["relation_type"], "t": e["target_entity_id"],
+         "ev": e.get("evidence_claim_id"),
+         "p": _json({"origin": "fact_projection", "predicate": e["predicate"],
+                     "fact_id": e["fact_id"]})})
+    if not row:
+        return {"created": False, "reason": "already_exists_concurrent"}
+    rid = row["id"]
     return {"created": True, "relation_id": str(rid), "source": e["source_name"],
             "relation": e["relation_type"], "target": e["target_name"]}
 

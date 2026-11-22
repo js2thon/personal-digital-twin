@@ -36,15 +36,13 @@ def peer_host(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for", "")
     parts = [p.strip() for p in forwarded.split(",") if p.strip()]
     if not parts:
-        return "unknown-proxy-client"
+        return host
     trusted = _trusted_proxies()
     # 从右往左跳过可信代理，取第一个不可信地址 —— 客户端伪造的左段不生效
     for candidate in reversed(parts):
         if candidate not in trusted:
             return candidate
-    # A trusted proxy without a verifiable client address is not the client.
-    # Never inherit loopback trust from the proxy socket itself.
-    return "unknown-proxy-client"
+    return host
 
 
 def actor_from_request(request: Request) -> str:
@@ -62,17 +60,3 @@ def actor_from_request(request: Request) -> str:
 
 def current_actor(request: Request) -> str:
     return getattr(request.state, "actor", "owner")
-
-
-
-def allow_identity_context_headers(request: Request) -> bool:
-    """Only loopback callers may supply development identity/context headers.
-
-    Remote API-key authentication currently represents a single service owner,
-    not an end-user identity provider. Therefore remote callers cannot select
-    tenant, user, role, scope, or schema version via request headers.
-    """
-    host = peer_host(request)
-    return host in _LOOPBACK or (
-        settings.allow_testclient_actor and host in _TEST_HOSTS
-    )

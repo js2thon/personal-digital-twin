@@ -202,7 +202,7 @@ def list_metrics(request: Request, metric_id: str | None = None, limit: int = 10
     rows = db.fetch_all(
         "SELECT metric_id, name, version, status, definition, checksum, ontology_version, "
         "created_by, approved_by, published_at, created_at FROM ontology.metric_definitions "
-        "WHERE tenant_id=:t AND (:m IS NULL OR metric_id=:m) "
+        "WHERE tenant_id=:t AND (CAST(:m AS text) IS NULL OR metric_id=CAST(:m AS text)) "
         "ORDER BY metric_id, version DESC LIMIT :n",
         {"t": tenant, "m": metric_id, "n": max(1, min(limit, 500))})
     for row in rows:

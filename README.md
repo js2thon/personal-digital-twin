@@ -14,7 +14,7 @@
 ## 快速启动
 
 ```bash
-cp .env.example .env          # 必须替换 PostgreSQL / MinIO / API_KEY 三个随机密钥
+cp .env.example .env          # 修改密码等配置
 make up                       # 启动 PostgreSQL(pgvector)/Redis/MinIO/API/Worker/Web
 # 需要 GPU 时：make up-ai     # 追加 vLLM 本地推理
 make seed                     # 写入示例数据（演示审批闭环）
@@ -22,7 +22,6 @@ make test                     # 后端冒烟测试
 ```
 
 - Web 控制台：http://localhost:8200 （八个工作区：数字分身/知识生产/知识库/本体/认知/决策/消息/链路观测）
-- Docker 编排中的 PostgreSQL、Redis、MinIO 与 vLLM 管理端口默认只绑定 `127.0.0.1`；远程访问 API 必须配置强随机 `API_KEY`。不要将 `.env` 提交到版本库。
 - **本体应用工作台**：http://localhost:8200/ontology-app-studio/ （AI 本体构建、RDF 导入、实例接入、自动仪表板与图表）
 - API 文档：http://localhost:8100/docs
 - **注意**：以上是 Docker 编排形态；当前本机实跑的是下一节的「本地无 Docker」形态（8101 + 内嵌 PostgreSQL 5434 + eager 后台线程 + 原文内联 DB，无 Redis/Celery Worker/MinIO/vLLM）。`LLM_BASE_URL` 实际指向企业 OneAPI 网关，并非完全本地推理。

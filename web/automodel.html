@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>Ontology Studio · 本体工作台</title>
+<style>
+/* 与数字分身控制台（/console/）同一套 Astryx Foundations 令牌：light-dark 自动明暗、相同字阶/间距/圆角/组件 */
+:root{color-scheme:light dark;
+--ax-text-primary:light-dark(#000000,#ffffff);--ax-text-secondary:light-dark(#474747,#c6c6c6);--ax-text-disabled:light-dark(#919191,#9e9e9e);
+--ax-accent:light-dark(#1b1b1b,#f1f1f1);--ax-on-accent:light-dark(#ffffff,#111111);--ax-bg:light-dark(#f7f7f8,#171718);
+--ax-surface:light-dark(#ffffff,#222223);--ax-surface-subtle:light-dark(#f0f0f1,#2b2b2c);--ax-border:light-dark(#00000014,#ffffff1A);
+--ax-border-emphasized:light-dark(#d4d4d4,#525252);--ax-info:light-dark(#0067ce,#a1caff);--ax-success:light-dark(#2f7d33,#90ca90);
+--ax-warning:light-dark(#836700,#eec448);--ax-error:light-dark(#c0262c,#ffaea7);--ax-success-bg:light-dark(#bce0bb,#2f7d3330);
+--ax-warning-bg:light-dark(#fae19e,#83670030);--ax-error-bg:light-dark(#ffd4d1,#c0262c30);
+--spacing-1:.25rem;--spacing-2:.5rem;--spacing-3:.75rem;--spacing-4:1rem;--spacing-5:1.25rem;--spacing-6:1.5rem;--spacing-8:2rem;
+--radius-inner:4px;--radius-element:8px;--radius-container:12px;--radius-full:9999px;
+--font-size-sm:.75rem;--font-size-base:.875rem;--font-size-lg:1.0625rem;--font-size-xl:1.25rem;--font-size-2xl:1.5rem;
+--font-family-body:Figtree,-apple-system,"PingFang SC","Microsoft YaHei","Segoe UI",Roboto,sans-serif;
+--focus-ring:0 0 0 2px var(--ax-surface),0 0 0 4px var(--ax-info);
+--shadow-low:0 2px 4px light-dark(oklch(0 0 0 / 5%),oklch(0 0 0 / 25%)),0 4px 8px light-dark(oklch(0 0 0 / 10%),oklch(0 0 0 / 40%));
+/* 图谱配色（与本体设计页的类型色保持同一色相族，明暗模式均可读） */
+--g-bg:light-dark(#fafafb,#1b1b1c);--g-edge:light-dark(#9aa3af,#6b7280);--g-label:light-dark(#3f3f46,#d4d4d8);--g-halo:var(--g-bg);--g-prop:light-dark(#2f7d33,#90ca90)}
+:root[data-theme="light"]{color-scheme:light}:root[data-theme="dark"]{color-scheme:dark}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:var(--font-family-body);font-size:var(--font-size-base);line-height:1.4286;background:var(--ax-bg);color:var(--ax-text-primary);-webkit-font-smoothing:antialiased}
+header{background:var(--ax-surface);border-bottom:1px solid var(--ax-border);padding:var(--spacing-4) var(--spacing-8);display:flex;align-items:center;gap:var(--spacing-3);flex-wrap:wrap;position:sticky;top:0;z-index:10}
+header h1{font-size:var(--font-size-xl);font-weight:600;letter-spacing:-.01em;flex:1;min-width:240px}
+header h1 .sub{color:var(--ax-text-secondary);font-size:var(--font-size-sm);font-weight:400;margin-left:8px}
+header input{flex:0 0 auto}
+.conn{position:relative}.conn summary{list-style:none;cursor:pointer;font-size:var(--font-size-sm);color:var(--ax-text-secondary);padding:4px 10px;border:1px solid var(--ax-border-emphasized);border-radius:var(--radius-element);background:var(--ax-surface-subtle)}
+.conn-pop{position:absolute;right:0;top:calc(100% + 6px);width:300px;background:var(--ax-surface);border:1px solid var(--ax-border);border-radius:var(--radius-element);box-shadow:var(--shadow-low);padding:var(--spacing-3);z-index:20}
+.wrap{max-width:1400px;margin:0 auto;padding:var(--spacing-5) var(--spacing-6) var(--spacing-8)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:var(--spacing-4)}
+.cols>.card{margin-bottom:var(--spacing-4)}
+.jobbar{display:flex;align-items:center;gap:var(--spacing-3);padding:var(--spacing-2) var(--spacing-3);background:var(--ax-surface);border:1px solid var(--ax-border);border-radius:var(--radius-element);margin-bottom:var(--spacing-3)}
+.jobbar .t{flex:1;min-width:0}
+body.embedded header{padding:var(--spacing-3) var(--spacing-5)}
+body.embedded .wrap{padding:var(--spacing-4)}
+:focus-visible{outline:none;box-shadow:var(--focus-ring);border-radius:var(--radius-inner)}
+/* 左栏：与控制台 .sidebar 同宽同色 */
+aside{width:260px;flex:0 0 260px;background:var(--ax-surface);border-right:1px solid var(--ax-border);padding:var(--spacing-4) var(--spacing-3);overflow-y:auto;height:100vh;position:sticky;top:0}
+body.embedded aside{height:calc(100vh - 24px)}
+.side-brand{padding:0 10px var(--spacing-3);border-bottom:1px solid var(--ax-border);margin-bottom:var(--spacing-2)}
+.side-brand h1{font-size:var(--font-size-xl);font-weight:600;letter-spacing:-.01em;margin:0 0 4px}
+.side-brand .sub{color:var(--ax-text-secondary);font-size:var(--font-size-sm);line-height:1.4;display:block}
+.nav-group{margin:var(--spacing-4) 0 var(--spacing-2);padding-left:2px;font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--ax-text-disabled)}
+main{flex:1;min-width:0;margin:var(--spacing-4) var(--spacing-5) var(--spacing-6);overflow:auto;height:calc(100vh - var(--spacing-8))}
+h2{font-size:var(--font-size-lg);font-weight:600;margin-bottom:var(--spacing-3)}
+.card{background:var(--ax-surface);border:1px solid var(--ax-border);border-radius:var(--radius-container);padding:var(--spacing-5);margin-bottom:var(--spacing-4);box-shadow:var(--shadow-low);overflow-x:auto;min-width:0}
+.card h2 .hint{font-weight:400}
+.hint,.muted{font-size:var(--font-size-sm);color:var(--ax-text-secondary)}
+.row{display:flex;gap:var(--spacing-2);align-items:center;flex-wrap:wrap}.row>*{flex:1;min-width:0}.row>.auto{flex:0 0 auto}
+input,textarea,select{flex:1;width:100%;padding:var(--spacing-2) var(--spacing-3);border:1px solid var(--ax-border-emphasized);border-radius:var(--radius-element);font-size:var(--font-size-base);font-family:inherit;background:var(--ax-surface);color:var(--ax-text-primary);min-width:0}
+input[type=checkbox]{width:16px;height:16px;flex:0 0 auto;vertical-align:-3px}
+input::placeholder{color:var(--ax-text-disabled)}
+label.f{display:block;font-size:var(--font-size-sm);color:var(--ax-text-secondary);margin:var(--spacing-2) 0 var(--spacing-1)}
+button{font-family:inherit;transition:opacity .15s,transform .1s,background .15s;background:var(--ax-surface-subtle);border:1px solid var(--ax-border-emphasized);color:var(--ax-text-primary);padding:var(--spacing-1) var(--spacing-3);border-radius:var(--radius-element);cursor:pointer;font-size:var(--font-size-sm)}
+button:hover{background:var(--ax-border)}
+button:disabled{opacity:.55;cursor:not-allowed}button:not(:disabled):active{transform:translateY(1px)}
+button.primary{background:var(--ax-accent);color:var(--ax-on-accent);border:none;padding:var(--spacing-2) var(--spacing-5);font-size:var(--font-size-base);font-weight:600}
+button.primary:hover{opacity:.88;background:var(--ax-accent)}
+/* 页内标签：与「本体建模」.md-tabs 同款下划线标签 */
+.tabs{display:flex;gap:4px;margin:0 0 var(--spacing-4);border-bottom:1px solid var(--ax-border);flex-wrap:wrap}
+.tabs button{flex:0 0 auto;background:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:8px 14px;margin-bottom:-1px;font-size:var(--font-size-base);font-weight:600;color:var(--ax-text-secondary)}
+.tabs button:hover{color:var(--ax-text-primary);background:none}
+.tabs button.on{color:var(--ax-info);border-bottom-color:var(--ax-info)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--spacing-3);margin-bottom:var(--spacing-4)}
+.kpi{text-align:center;padding:var(--spacing-3);background:var(--ax-surface-subtle);border-radius:var(--radius-element)}
+.kpi .n{font-size:var(--font-size-2xl);font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:var(--font-size-sm);color:var(--ax-text-secondary);margin-top:var(--spacing-1)}
+table{width:100%;border-collapse:collapse;font-size:var(--font-size-sm)}
+th,td{text-align:left;padding:6px var(--spacing-2);border-bottom:1px solid var(--ax-border);vertical-align:middle}
+th{color:var(--ax-text-secondary);font-weight:500;white-space:nowrap;position:sticky;top:0;background:var(--ax-surface)}
+td{word-break:break-word}tbody tr:hover,tr:hover td{background:var(--ax-surface-subtle)}td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.scroll{overflow:auto;max-height:460px}
+.tag{display:inline-block;padding:2px var(--spacing-2);border-radius:var(--radius-inner);font-size:var(--font-size-sm);font-weight:500;background:var(--ax-surface-subtle);color:var(--ax-text-secondary)}
+.tag.ok{background:var(--ax-success-bg);color:var(--ax-success)}.tag.warn{background:var(--ax-warning-bg);color:var(--ax-warning)}.tag.bad{background:var(--ax-error-bg);color:var(--ax-error)}
+pre{background:var(--ax-surface-subtle);border:1px solid var(--ax-border);border-radius:var(--radius-element);padding:var(--spacing-3);overflow:auto;font-size:12px;max-height:380px;font-family:ui-monospace,Consolas,monospace}
+details summary{cursor:pointer;color:var(--ax-text-secondary);font-size:var(--font-size-sm)}
+code{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--ax-surface-subtle);padding:0 4px;border-radius:var(--radius-inner)}
+#msg{display:none;padding:var(--spacing-2) var(--spacing-3);border-radius:var(--radius-element);background:var(--ax-surface-subtle);border:1px solid var(--ax-border);margin-bottom:var(--spacing-3);white-space:pre-wrap;font-size:var(--font-size-sm)}
+#msg.err{background:var(--ax-error-bg);color:var(--ax-error);border-color:transparent}
+.drop{border:1.5px dashed var(--ax-border-emphasized);border-radius:var(--radius-element);padding:var(--spacing-4);text-align:center;color:var(--ax-text-secondary);font-size:var(--font-size-sm)}
+.drop.over{border-color:var(--ax-info);color:var(--ax-info);background:var(--ax-surface-subtle)}
+.drop label{color:var(--ax-info);cursor:pointer}
+.graph{width:100%;height:600px;background:var(--g-bg);border:1px solid var(--ax-border);border-radius:var(--radius-element);position:relative;overflow:hidden}
+.graph svg{width:100%;height:100%;cursor:grab}.graph svg:active{cursor:grabbing}
+.legend{display:flex;gap:var(--spacing-3);flex-wrap:wrap;font-size:var(--font-size-sm);color:var(--ax-text-secondary);margin:var(--spacing-2) 0 0}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.tip{position:fixed;pointer-events:none;background:var(--ax-surface);color:var(--ax-text-primary);border:1px solid var(--ax-border-emphasized);box-shadow:var(--shadow-low);padding:6px 9px;border-radius:var(--radius-element);font-size:12px;max-width:360px;display:none;z-index:30}
+/* 问答：与控制台「智能问答」.chat-box / .msg 同款 */
+.chat{display:flex;flex-direction:column;gap:var(--spacing-2);height:420px;overflow-y:auto;padding:var(--spacing-3);background:var(--ax-surface-subtle);border-radius:var(--radius-element);margin-top:var(--spacing-3)}
+.q,.a{max-width:80%;width:fit-content;padding:var(--spacing-2) var(--spacing-3);border-radius:var(--radius-container);white-space:pre-wrap;line-height:1.5}
+.q{align-self:flex-end;background:var(--ax-accent);color:var(--ax-on-accent)}
+.a{align-self:flex-start;background:var(--ax-surface);border:1px solid var(--ax-border);max-width:92%}
+.chips{display:flex;flex-wrap:wrap;gap:var(--spacing-2);margin-top:var(--spacing-3)}
+.chips button{background:var(--ax-surface-subtle);border:1px solid var(--ax-border-emphasized);border-radius:var(--radius-full);padding:var(--spacing-1) var(--spacing-3);font-size:var(--font-size-sm)}
+.hidden{display:none!important}
+.joblist div{padding:8px 12px;border-bottom:1px solid var(--ax-border);border-radius:var(--radius-element);cursor:pointer;font-size:var(--font-size-sm)}
+.joblist div:hover{background:var(--ax-surface-subtle)}
+.joblist div.on{background:color-mix(in oklch,var(--ax-info) 12%,transparent);color:var(--ax-text-primary)}
+.joblist div.on b{color:var(--ax-info)}
+.bar{height:8px;border-radius:4px;background:var(--ax-info)}
+.bar.dim{background:var(--ax-border-emphasized)}
+.big-num{font-size:40px;font-weight:700;font-variant-numeric:tabular-nums}
+.ok-text{color:var(--ax-success)}.warn-text{color:var(--ax-warning)}
+a{color:var(--ax-info)}
+.page-head{display:flex;align-items:flex-end;gap:var(--spacing-3);flex-wrap:wrap}
+.page-head .t{flex:1;min-width:0}
+.stage3d{height:380px;margin-top:10px;border:1px solid var(--border,rgba(0,0,0,.12));border-radius:10px;overflow:hidden;background:radial-gradient(ellipse at 50% 30%,var(--surface-raised,rgba(127,127,127,.06)),transparent 70%)}
+.stage3d.tall{height:560px}.seg{display:inline-flex;gap:0;border:1px solid var(--border,rgba(0,0,0,.15));border-radius:8px;overflow:hidden}
+.seg{flex:0 0 auto;flex-wrap:nowrap}.seg button{white-space:nowrap;flex:0 0 auto;border:0;border-radius:0;background:transparent;padding:5px 12px;cursor:pointer;color:inherit}.seg button.on{background:var(--accent,#0067ce);color:#fff}
+.edit{margin-top:12px;padding:12px;border:1px solid var(--ax-border,rgba(0,0,0,.12));border-radius:10px}
+.edit .row>div{min-width:160px}
+tr.dirty td:first-child{box-shadow:inset 3px 0 var(--ax-warning,#c2410c)}
+tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
+#profile input,#profile select{min-width:0;padding:3px 6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>本体工作台 <span class="sub">自动建模 · 映射 · 图谱 · 指标 · 问答</span></h1>
+  <label class="hint" style="margin:0"><input type="checkbox" id="useLlm" checked> 使用 LLM（润色标签 / 规划问答 / 依据作答）</label>
+  <details id="connBox" class="conn"><summary>连接设置</summary>
+    <div class="conn-pop">
+      <label class="f">API 地址（默认同源 /api/v1）</label><input id="apiBase">
+      <label class="f">X-Twin-API-Key（远程访问时）</label><input id="apiKey" type="password">
+      <div style="margin-top:8px"><a href="/console/" target="_top" class="hint">← 返回控制台</a></div>
+    </div></details>
+</header>
+<div class="wrap">
+<div id="msg"></div>
+<div id="work" class="jobbar hidden">
+  <div class="t"><b id="jobTitle">—</b> <span class="hint" id="jobMeta" style="margin:0"></span></div>
+</div>
+<nav class="tabs" id="tabs">
+  <button data-t="src" class="on">1 数据源</button>
+  <button data-t="model">2 本体与审核</button>
+  <button data-t="map">3 映射与发布</button>
+  <button data-t="inst">4 实例与关系</button>
+  <button data-t="metrics">5 指标</button>
+  <button data-t="ask">6 问答</button>
+  <button data-t="eval">7 评测</button>
+  <button data-t="ver">8 版本</button>
+  <button data-t="jobs">任务</button>
+</nav>
+<div id="empty" class="card hidden"><h2>还没有打开建模任务</h2><span class="hint">请先在「1 数据源」上传文件或连接数据库，或在「任务」中打开已有任务。</span></div>
+
+<!-- 1 数据源 -->
+<section id="t-src">
+  <div class="cols">
+    <div class="card">
+      <h2>上传文件 <span class="hint">CSV / Excel / JSON / Parquet，多文件 = 多张表</span></h2>
+      <div class="drop" id="drop">拖入文件，或 <label><input id="files" type="file" multiple class="hidden" accept=".csv,.tsv,.txt,.xlsx,.xls,.json,.parquet">选择文件</label>
+        <div id="fileList" style="margin-top:6px"></div></div>
+      <div class="row" style="margin-top:10px">
+        <input id="srcId" value="upload" title="数据源标识" style="flex:0 0 160px">
+        <button class="primary auto" id="btnUpload">生成本体</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>连接数据库 <span class="hint">只读账号；连接串不落库</span></h2>
+      <input id="dbUrl" type="password" placeholder="postgresql+[REDACTED_CONN_STRING]://host:5432/db">
+      <div class="row" style="margin-top:8px">
+        <input id="dbSchema" placeholder="schema（可选）" style="flex:0 0 150px">
+        <input id="dbTables" placeholder="表名，逗号分隔（可选）">
+        <label class="hint auto" style="margin:0" title="默认只保存脱敏来源描述"><input type="checkbox" id="dbStore"> 数据落库</label>
+        <button class="primary auto" id="btnDb">读取并建模</button>
+      </div>
+    </div>
+  </div>
+  <div class="card"><h2>数据集库 <span class="hint">上传的数据已压缩落库（按内容去重），服务重启后自动恢复；可直接复用建新任务</span>
+      <button class="ghost" id="btnDsReload" style="float:right">刷新</button></h2><div class="scroll" id="dsList" style="max-height:320px"><span class="hint">加载中…</span></div></div>
+  <div class="card needjob"><h2>元数据 <span class="hint">Recharts 可视化 · 点击柱子或在表格中编辑列的中文名 / 描述 / 角色；保存后同步到本体并生成新版本</span></h2>
+    <div id="metaViz"></div>
+    <div id="metaEdit" class="edit hidden"></div>
+    <div class="row" style="margin:10px 0 6px"><input id="metaQ" placeholder="筛选列（列名 / 中文名 / 角色）" style="flex:0 0 260px"><label class="hint auto" style="margin:0"><input type="checkbox" id="metaHideEmpty"> 隐藏全空列</label>
+      <span class="hint" id="metaDirty"></span><button class="primary auto" id="btnMetaSave" disabled>保存元数据修改</button></div>
+    <div class="scroll" id="profile" style="max-height:560px"></div></div>
+</section>
+
+<!-- 2 本体与审核 -->
+<section id="t-model" class="hidden needjob">
+  <div class="kpis" id="ovKpis"></div>
+  <div class="card"><h2>建模流水线 <span class="hint">React Flow · 各阶段状态、耗时与产物；点击阶段跳转到对应标签</span></h2><div id="pipeFlow" style="height:300px"></div></div>
+  <div class="card"><h2>本体设计图 <span class="hint">React Flow · 拖连接点新增关系 · 点击编辑 · Delete 删除 · 查找高亮 · 导出 PNG / SVG / JSON</span></h2><div id="designFlow" style="height:680px"></div></div>
+  <div class="card"><h2>本体图 <span class="hint">类 · 属性 · 对象属性；拖动节点、滚轮缩放、悬停查看</span>
+      <span style="float:right;display:flex;gap:10px;align-items:center"><label class="hint" style="margin:0"><input type="checkbox" id="sgProps" checked> 显示属性节点</label>
+      <span class="seg" id="sgMode"><button data-v="2d" class="on">2D</button><button data-v="3d">3D</button></span></span></h2>
+    <div class="graph" id="sg"></div><div class="legend" id="sgLegend"></div>
+    <div id="edBox" class="edit hidden"></div></div>
+  <div class="card"><h2>审核队列 <span class="hint" id="reviewHint"></span></h2><div class="scroll" id="review"></div>
+    <div class="row" style="margin-top:10px"><button class="primary auto" id="btnReview">提交审核</button></div></div>
+  <div class="cols">
+    <div class="card"><h2>主键配置 <span class="hint">已自动推断，可修改</span></h2><div id="pkBox" class="row"></div></div>
+    <div class="card"><h2>手动关系 <span class="hint">可选</span></h2><div id="mlBox"></div>
+      <div class="row" style="margin-top:8px"><button class="ghost auto" id="btnAddML">+ 添加关系</button><button class="primary auto" id="btnRegen">按配置重新生成本体</button></div></div>
+  </div>
+  <div class="card"><h2>本体摘要</h2><div id="ovSummary"></div></div>
+  <div class="card"><h2>关系定义</h2><div class="scroll" id="ovLinks"></div></div>
+</section>
+
+<!-- 3 映射与发布 -->
+<section id="t-map" class="hidden needjob">
+  <div class="cols">
+    <div class="card"><h2>映射契约 <span class="hint">物化的唯一依据（YAML）</span></h2><pre id="contract">—</pre></div>
+    <div class="card"><h2>发布与写入</h2>
+      <div class="kpis" id="qKpis"></div>
+      <div class="row"><button class="primary auto" id="btnPublish">发布本体 + 指标草稿</button><button class="ghost auto" id="btnWrite">写入实体 / 事实</button></div>
+      <div class="hint">发布：本体进入 Registry 新版本，指标以草稿入库；写入：实体与事实落库并触发图投影。</div>
+      <h2 style="margin-top:16px">导出</h2>
+      <div class="row"><button class="ghost auto" id="btnJson">下载 JSON</button><button class="ghost auto" id="btnOwl">下载 OWL</button><button class="ghost auto" id="btnYaml">下载映射契约 YAML</button></div>
+    </div>
+  </div>
+  <div id="qOut"></div>
+</section>
+
+<!-- 4 实例与关系 -->
+<section id="t-inst" class="hidden needjob">
+  <div class="card">
+    <h2>实例图谱</h2>
+    <div class="row"><div style="flex:2"><label class="f">实体类型</label><div id="igTypes" class="row"></div></div>
+      <div><label class="f">最大节点数</label><input id="igMax" type="number" value="300" min="10" max="3000"></div></div>
+    <div class="row"><div style="flex:2"><label class="f">实体搜索</label><input id="igQ" placeholder="主键或属性关键词"></div>
+      <div style="flex:2"><label class="f">焦点实体（展开邻居）</label><select id="igFocus"></select></div>
+      <div><label class="f">邻居层数</label><select id="igHops"><option>1</option><option>2</option><option>3</option></select></div>
+      <div class="auto" style="padding-top:22px"><button class="primary" id="btnIg">刷新图谱</button></div></div>
+    <div class="kpis" style="margin-top:12px" id="igKpis"></div>
+    <div class="row" style="margin:6px 0"><span class="seg auto" id="igMode"><button data-v="2d" class="on">2D</button><button data-v="3d">3D</button></span></div>
+    <div class="graph" id="ig"></div><div class="legend" id="igLegend"></div>
+  </div>
+  <div class="cols">
+    <div class="card"><h2>关联路径</h2>
+      <div class="row"><select id="pSrc"></select><select id="pDst"></select></div>
+      <div class="row" style="margin-top:8px"><label class="hint auto" style="margin:0"><input type="checkbox" id="pDir"> 仅有向</label><button class="primary auto" id="btnPath">查询最短路径</button></div>
+      <div id="pathOut" style="margin-top:10px"></div></div>
+    <div class="card"><h2>一跳邻居</h2><div class="row"><select id="nSel"></select><button class="ghost auto" id="btnNb">查询</button></div><div id="nbOut" style="margin-top:10px"></div></div>
+  </div>
+  <div class="card"><h2>实体对象</h2><div class="row" style="margin-bottom:8px"><select id="ovCls" style="flex:0 0 220px"></select><input id="ovQ" placeholder="搜索对象（主键 / 属性关键词）"></div>
+    <div class="scroll" id="ovTable"></div><div class="hint" id="ovMore"></div></div>
+  <div class="cols">
+    <div class="card"><h2>对象 Action <span class="hint">修改后需「写入」才落库</span></h2>
+      <div class="row"><select id="acKind" style="flex:0 0 120px"><option value="update">更新对象</option><option value="create">新建对象</option><option value="delete">删除对象</option></select>
+        <select id="acCls" style="flex:0 0 160px"></select><select id="acObj"></select></div>
+      <div id="acForm" style="margin-top:10px"></div>
+      <div class="row" style="margin-top:10px"><button class="primary auto" id="btnAction">执行</button></div></div>
+    <div class="card"><h2>Action 日志</h2><pre id="acLog">—</pre></div>
+  </div>
+</section>
+
+<!-- 5 指标 -->
+<section id="t-metrics" class="hidden needjob">
+  <div class="kpis" id="mKpis"></div>
+  <div class="cols">
+    <div class="card"><h2>指标清单</h2><div class="row" style="margin-bottom:8px"><select id="mKind" style="flex:0 0 140px"><option value="">全部类型</option><option value="atomic">原子</option><option value="derived">派生</option><option value="composite">复合</option></select></div>
+      <div class="scroll" id="mList" style="max-height:520px"></div></div>
+    <div class="card"><h2 id="mTitle">指标值</h2><div class="row"><select id="mDim" style="flex:0 0 auto"></select>
+      <div class="auto seg" id="mView"><button data-v="2d" class="on">2D</button><button data-v="3d">3D 柱</button></div></div>
+      <div id="mChart" style="margin-top:10px"></div><div id="m3d" class="stage3d hidden"></div><div class="hint" id="mMeta"></div></div>
+  </div>
+  <div class="card"><h2>三维可视化 <span class="hint">拖拽旋转 · Shift/右键平移 · 滚轮缩放 · 双击开关自转</span></h2>
+    <div class="row"><div class="seg" id="mBig"><button data-v="lineage" class="on">指标血缘 DAG</button><button data-v="matrix">多指标 × 维度矩阵</button></div>
+      <select id="mMxDim" class="hidden" style="flex:0 0 auto"></select><span class="hint auto" id="mBigHint"></span></div>
+    <div id="mBig3d" class="stage3d tall"></div></div>
+</section>
+
+<!-- 6 问答 -->
+<section id="t-ask" class="hidden needjob">
+  <div class="card"><h2>基于本体的问答 <span class="hint">先在本体图检索相关实体、属性、关系，再以检索结果为唯一依据作答</span></h2>
+    <div class="chat" id="chat"></div><div class="chips" id="sugg"></div>
+    <div class="row" style="margin-top:10px"><input id="question" placeholder="例如：员工 1001 属于哪个部门？ / 各学历人数 / 数据合规组有多少人"><button class="primary auto" id="btnAsk">提问</button></div></div>
+</section>
+
+<!-- 7 评测 -->
+<section id="t-eval" class="hidden needjob">
+  <div class="card"><h2>本体评测 <span class="hint">由本体与实例自动出题；标准答案直接从实例统计得出，不经问答引擎</span></h2>
+    <div class="row"><div style="flex:0 0 160px"><label class="f">每类题数</label><input id="evN" type="number" value="3" min="1" max="10"></div>
+      <div style="flex:0 0 160px"><label class="f">随机种子</label><input id="evSeed" type="number" value="7"></div>
+      <label class="hint auto" style="margin:22px 0 0"><input type="checkbox" id="evLlm"> 用 LLM 作答（更慢）</label>
+      <div class="auto" style="padding-top:22px"><button class="ghost" id="btnEvGen">生成问题集</button> <button class="primary" id="btnEvRun">运行评测</button></div></div>
+  </div>
+  <div class="kpis" id="evKpis"></div>
+  <div class="card"><h2>分题型准确率</h2><div id="evKinds"></div></div>
+  <div class="card"><h2>逐题结果 <label class="hint" style="float:right;margin:0"><input type="checkbox" id="evFail"> 只看失败</label></h2><div class="scroll" id="evItems" style="max-height:640px"></div></div>
+</section>
+
+<!-- 8 版本 -->
+<section id="t-ver" class="hidden needjob">
+  <div class="cols">
+    <div class="card"><h2>版本历史 <span class="hint">上传、审核、配置、编辑、发布、回滚都会自动生成快照（内容不变不重复记）</span></h2>
+      <div class="row"><input id="vLabel" placeholder="版本名（可选）" style="flex:0 0 200px"><input id="vNote" placeholder="说明（可选）"><button class="primary auto" id="btnVSave">保存当前为新版本</button></div>
+      <div class="scroll" id="vList" style="max-height:560px;margin-top:10px"></div></div>
+    <div class="card"><h2>版本对比 <span class="hint">勾选两个版本</span></h2><div class="row"><button class="ghost auto" id="btnVDiff">对比所选</button></div>
+      <div id="vDiff" style="margin-top:10px"><span class="muted">—</span></div>
+      <h2 style="margin-top:16px">版本演进（3D）</h2><div id="v3d" class="stage3d"></div></div>
+  </div>
+</section>
+
+<!-- 任务 -->
+<section id="t-jobs" class="hidden">
+  <div class="card"><h2>建模任务 <button class="ghost" id="btnReload" style="float:right">刷新</button></h2><div class="joblist" id="jobList"><span class="hint">加载中…</span></div></div>
+</section>
+</div>
+<div class="tip" id="tip"></div>
+
+<script src="/console/charts-recharts.js"></script>
+<script src="/console/flow-designer.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=v=>v==null||isNaN(v)?'—':Number(v).toLocaleString('zh-CN',{maximumFractionDigits:2});
+const DARK=matchMedia('(prefers-color-scheme: dark)').matches&&document.documentElement.dataset.theme!=='light'||document.documentElement.dataset.theme==='dark';
+const COLORS=DARK?["#a1caff","#ffaea7","#90ca90","#eec448","#c4b5fd","#f9a8d4","#7dd3fc","#fdba74"]:["#0067ce","#c0262c","#2f7d33","#836700","#6d28d9","#be185d","#0369a1","#c2410c"];
+const CSSV=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const store={get(k){try{return window.localStorage.getItem(k)}catch(e){return null}},set(k,v){try{window.localStorage.setItem(k,v)}catch(e){}}};
+try{if(window.top!==window){document.body.classList.add('embedded');const th=window.top.document.documentElement.dataset.theme;if(th)document.documentElement.dataset.theme=th;
+ const c=document.getElementById('connBox');if(c)c.classList.add('hidden')}}catch(e){}
+let REL_INIT=false;let JOB=null, OV=null, METRICS=null, FILES=[], ML=[];
+window.addEventListener('error',e=>note('页面脚本错误：'+(e.message||e.error),true));
+window.addEventListener('unhandledrejection',e=>{e.preventDefault();note('请求失败：'+((e.reason&&e.reason.message)||e.reason),true)});
+['apiBase','apiKey'].forEach(k=>{$(k).value=store.get('os_'+k)||'';$(k).onchange=()=>store.set('os_'+k,$(k).value)});
+function base(){const c=$('apiBase').value.trim();if(c)return c.replace(/\/$/,'');if(location.protocol==='file:'||location.origin==='null')return 'http://127.0.0.1:8101/api/v1';return location.origin+'/api/v1'}
+function hdr(json){const h={};if(json)h['Content-Type']='application/json';const k=$('apiKey').value.trim();if(k)h['X-Twin-API-Key']=k;return h}
+async function api(p,o={}){const r=await fetch(base()+p,Object.assign({headers:hdr(!(o.body instanceof FormData))},o));const t=await r.text();let d;try{d=JSON.parse(t)}catch(e){d=t}
+ if(!r.ok)throw new Error((d&&d.detail?(typeof d.detail==='string'?d.detail:JSON.stringify(d.detail)):String(t)).slice(0,400));return d}
+const post=(p,b)=>api(p,{method:'POST',body:JSON.stringify(b||{})});
+function note(t,err){const m=$('msg');m.textContent=t||'';m.className=err?'err':'';m.style.display=t?'block':'none'}
+async function busy(btn,fn){btn.disabled=true;const o=btn.textContent;btn.textContent='处理中…';try{note('');await fn()}catch(e){note(e.message||String(e),true)}finally{btn.disabled=false;btn.textContent=o}}
+const tag=(t,k)=>`<span class="tag ${k||''}">${esc(t)}</span>`;
+const J=()=>`/automodel/jobs/${JOB.id}`;
+
+// ---------------- 上传 / 任务
+const drop=$('drop');['dragover','dragenter'].forEach(e=>drop.addEventListener(e,v=>{v.preventDefault();drop.classList.add('over')}));
+['dragleave','drop'].forEach(e=>drop.addEventListener(e,v=>{v.preventDefault();drop.classList.remove('over')}));
+drop.addEventListener('drop',v=>{FILES=[...v.dataTransfer.files];listFiles()});$('files').onchange=e=>{FILES=[...e.target.files];listFiles()};
+function listFiles(){$('fileList').innerHTML=FILES.map(f=>esc(f.name)+' · '+Math.ceil(f.size/1024)+'KB').join('<br>')}
+$('btnUpload').onclick=function(){busy(this,async()=>{if(!FILES.length)throw new Error('请先选择文件');const fd=new FormData();FILES.forEach(f=>fd.append('files',f));
+ const s=await api(`/automodel/upload?source_id=${encodeURIComponent($('srcId').value||'upload')}&use_llm=${$('useLlm').checked}`,{method:'POST',body:fd});await openJob(s.id);loadJobs();loadDatasets();show('model');note('本体生成成功：'+s.stats.classes+' 个类、'+s.stats.relations+' 种关系、'+s.stats.attributes+' 个属性')})};
+$('btnDb').onclick=function(){busy(this,async()=>{const b={url:$('dbUrl').value.trim(),schema:$('dbSchema').value.trim()||null,source_id:$('srcId').value||'db',
+ include:$('dbTables').value.trim()?$('dbTables').value.split(',').map(s=>s.trim()).filter(Boolean):null,use_llm:$('useLlm').checked,store_data:$('dbStore').checked};if(!b.url)throw new Error('请填写连接串');
+ const s=await post('/automodel/database',b);$('dbUrl').value='';await openJob(s.id);loadJobs();show('model')})};
+$('btnReload').onclick=loadJobs;
+async function loadJobs(){try{const r=await api('/automodel/jobs');$('jobList').innerHTML=(r.items||[]).map(j=>`<div data-id="${esc(j.id)}" class="${JOB&&JOB.id===j.id?'on':''}"><b>${esc(j.source_id||j.source)}</b> ${tag(j.status,j.status==='written'?'ok':j.status==='needs_review'?'warn':'')}<div class="muted">${esc(String(j.created_at||'').slice(0,16).replace('T',' '))} · ${esc(String(j.id).slice(0,8))}</div></div>`).join('')||'<span class="muted">暂无任务</span>';
+ $('jobList').querySelectorAll('div[data-id]').forEach(d=>d.onclick=()=>openJob(d.dataset.id).then(()=>show('model')).catch(e=>note(e.message,true)))}catch(e){$('jobList').innerHTML='<span class="muted">'+esc(e.message)+'</span>'}}
+async function openJob(id){JOB=await api(`/automodel/jobs/${id}?full=true`);METRICS=null;OV=null;ML=[];EVQ=null;EVR=null;$('work').classList.remove('hidden');$('empty').classList.add('hidden');REL_INIT=false;
+ $('jobTitle').textContent=(JOB.source||'')+' · '+String(JOB.id).slice(0,8);
+ const st=JOB.draft&&JOB.draft.stats||{};$('jobMeta').innerHTML=`${tag(JOB.status,JOB.status==='written'?'ok':JOB.status==='needs_review'?'warn':'')} 类 ${st.classes} · 关系 ${st.relations} · 属性 ${st.attributes} · 待审核 ${st.needs_review} · 版本 ${esc(JOB.schema_version||'未发布')}`;
+ $('btnPublish').disabled=!!(JOB.draft.review||[]).length||['published','written'].includes(JOB.status);$('btnWrite').disabled=JOB.status!=='published';
+ document.querySelectorAll('#jobList div[data-id]').forEach(d=>d.classList.toggle('on',d.dataset.id===JOB.id));
+ try{OV=await api(J()+'/studio/overview')}catch(e){note(e.message,true)}renderConfig();renderOverview();}
+$('btnPublish').onclick=function(){busy(this,async()=>{const r=await post(J()+'/publish',{});note('已发布本体版本 '+r.schema_version+'；指标草稿 '+((r.metrics||{}).saved||0)+' 条');await openJob(JOB.id);loadJobs()})};
+$('btnWrite').onclick=function(){if(!confirm('将当前任务的实体与事实写入数据库（触发图投影）？'))return;busy(this,async()=>{const r=await post(J()+'/write?visibility=owner',{});note(`已写入：实体 ${r.entities_upserted}，事实 ${r.facts_inserted}`);await openJob(JOB.id);loadJobs()})};
+
+// ---------------- tabs
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
+const TABS=['src','model','map','inst','metrics','ask','eval','ver','jobs'];
+function show(t){document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+ const need=!JOB&&!['src','jobs'].includes(t);$('empty').classList.toggle('hidden',!need);
+ TABS.forEach(x=>$('t-'+x).classList.toggle('hidden',x!==t||need));
+ document.querySelectorAll('#t-src .needjob').forEach(e=>e.classList.toggle('hidden',!JOB));
+ if(t==='jobs')loadJobs();if(!JOB)return;
+ ({model:()=>{loadSchema();loadFlows()},map:()=>{loadContract();loadQuality()},inst:()=>{initInst();initRel();initAction()},metrics:loadMetrics,ver:loadVersions,ask:loadSuggest,eval:()=>{if(EVR)renderEvR();else if(EVQ)renderEvQ()}})[t]?.()}
+async function loadContract(){try{const r=await fetch(base()+J()+'/contract.yaml',{headers:hdr()});$('contract').textContent=await r.text()}catch(e){}}
+
+// ---------------- 建模配置
+function renderConfig(){const P=JOB.profiles||{};
+ $('pkBox').innerHTML=Object.values(P).map(p=>`<div style="min-width:180px"><label class="f">${esc(p.name)} 主键</label><select data-t="${esc(p.name)}">${Object.keys(p.columns).map(c=>`<option ${((p.primary_key||[])[0]===c)?'selected':''}>${esc(c)}</option>`).join('')}</select></div>`).join('');
+ renderML();
+ const rv=JOB.draft.review||[];$('reviewHint').textContent=rv.length?`${rv.length} 项待审核（置信度 < 0.8）`:'无待审核项';
+ $('review').innerHTML=rv.length?`<table><tr><th>类型</th><th>对象</th><th class="num">置信度</th><th>依据</th><th>决定</th><th>新名称</th><th>中文标签</th></tr>${rv.map((r,i)=>`<tr data-i="${i}"><td>${tag(r.kind)}</td><td>${esc(r.ref)}</td><td class="num">${r.confidence}</td><td class="muted">${esc(r.reason)}</td><td><select class="act"><option value="accept">接受</option><option value="reject">拒绝</option><option value="rename">改名</option></select></td><td><input class="nn"></td><td><input class="lb"></td></tr>`).join('')}</table>`:'<span class="muted">—</span>';
+  renderMeta()}
+// ---------------- 元数据可视化与编辑（Recharts）
+let META_EDITS={},META_TABLES={},META_SEL=null;
+const ROLE_OPTS=['identifier','name','enum','measure','temporal','text','boolean'],ROLE_CN={identifier:'标识',name:'名称',enum:'枚举',measure:'度量',temporal:'时间',text:'文本',boolean:'布尔'};
+function attrOf(t,c){const cls=(JOB.draft.class_map||{})[t];return Object.values(JOB.draft.schema.attributes||{}).find(a=>a.owner===cls&&a.column===c)}
+function metaRO(){return ['published','written'].includes(JOB.status)}
+async function renderMeta(){if(!JOB)return;const P=JOB.profiles||{};
+ try{await RC.meta($('metaViz'),P,{onPick:(t,c)=>openMetaEdit(t,c),selected:META_SEL})}catch(e){$('metaViz').innerHTML=tag('Recharts 不可用：'+e.message,'bad')}
+ renderMetaTable()}
+function renderMetaTable(){const P=JOB.profiles||{},q=($('metaQ').value||'').trim().toLowerCase(),hide=$('metaHideEmpty').checked,ro=metaRO();
+ $('profile').innerHTML=Object.values(P).map(p=>{const cols=Object.values(p.columns).filter(c=>{const a=attrOf(p.name,c.name)||{};const e=META_EDITS[p.name+'.'+c.name]||{};
+   if(hide&&c.null_ratio>=1)return false;return !q||[c.name,e.label??a.label??'',ROLE_CN[c.role]||c.role].join(' ').toLowerCase().includes(q)});
+  return `<div style="margin-bottom:12px"><b>${esc(p.name)}</b> <span class="muted">${p.rows} 行 × ${Object.keys(p.columns).length} 列 · 主键 ${esc((p.primary_key||[]).join(',')||'无')}${p.pk_inferred?'（推断）':''}${p.is_junction?' · 关联表':''}</span>
+  <div class="row" style="margin:4px 0"><input class="mtc" data-t="${esc(p.name)}" placeholder="表描述" value="${esc((META_TABLES[p.name]??p.comment)||'')}" ${ro?'disabled':''}></div>
+  <table><tr><th>列</th><th>中文名</th><th>描述</th><th>角色</th><th>类型</th><th class="num">空值率</th><th class="num">去重</th><th>样例</th></tr>${cols.map(c=>{const a=attrOf(p.name,c.name)||{};const k=p.name+'.'+c.name,e=META_EDITS[k]||{};const role=e.role??c.role;
+   return `<tr data-k="${esc(k)}" class="${META_SEL&&META_SEL.table===p.name&&META_SEL.column===c.name?'on':''}${Object.keys(e).length?' dirty':''}"><td><b>${esc(c.name)}</b>${(p.primary_key||[]).includes(c.name)?' 🔑':''}</td>
+   <td><input class="ml" value="${esc(e.label??a.label??'')}" ${ro?'disabled':''}></td><td><input class="mc" value="${esc(e.comment??c.comment??a.description??'')}" ${ro?'disabled':''}></td>
+   <td><select class="mr" ${ro?'disabled':''}>${ROLE_OPTS.map(r=>`<option value="${r}" ${r===role?'selected':''}>${ROLE_CN[r]}</option>`).join('')}</select></td>
+   <td class="muted">${c.dtype}</td><td class="num">${(c.null_ratio*100).toFixed(0)}%</td><td class="num">${c.distinct}</td><td class="muted">${esc((c.samples||[]).slice(0,3).join(' / '))}</td></tr>`}).join('')}</table></div>`}).join('');
+ $('profile').querySelectorAll('tr[data-k]').forEach(tr=>{const k=tr.dataset.k;const set=(f,v)=>{META_EDITS[k]=Object.assign(META_EDITS[k]||{},{[f]:v});tr.classList.add('dirty');metaDirty()};
+  tr.querySelector('.ml').oninput=e=>set('label',e.target.value);tr.querySelector('.mc').oninput=e=>set('comment',e.target.value);tr.querySelector('.mr').onchange=e=>set('role',e.target.value)});
+ $('profile').querySelectorAll('.mtc').forEach(i=>i.oninput=()=>{META_TABLES[i.dataset.t]=i.value;metaDirty()});
+ metaDirty()}
+function metaDirty(){const n=Object.keys(META_EDITS).length+Object.keys(META_TABLES).length;$('btnMetaSave').disabled=!n||metaRO();
+ $('metaDirty').textContent=metaRO()?'已发布任务的元数据只读（可在数据集库复用建模后编辑）':(n?`${n} 处未保存修改`:'')}
+function openMetaEdit(t,c){META_SEL={table:t,column:c};const col=JOB.profiles[t].columns[c];const a=attrOf(t,c)||{};const k=t+'.'+c,e=META_EDITS[k]||{};const ro=metaRO();
+ $('metaEdit').classList.remove('hidden');
+ $('metaEdit').innerHTML=`<b>${esc(t)}.${esc(c)}</b> <span class="muted">${col.dtype} · 空值率 ${(col.null_ratio*100).toFixed(0)}% · 去重 ${col.distinct} · 样例 ${esc((col.samples||[]).slice(0,5).join(' / '))}</span>
+  <div class="row" style="margin-top:8px"><div><label class="f">中文名</label><input id="meL" value="${esc(e.label??a.label??'')}" ${ro?'disabled':''}></div>
+  <div style="flex:2"><label class="f">描述</label><input id="meC" value="${esc(e.comment??col.comment??'')}" ${ro?'disabled':''}></div>
+  <div><label class="f">角色</label><select id="meR" ${ro?'disabled':''}>${ROLE_OPTS.map(r=>`<option value="${r}" ${r===(e.role??col.role)?'selected':''}>${ROLE_CN[r]}</option>`).join('')}</select></div>
+  <div class="auto" style="padding-top:22px"><button class="primary" id="meOk" ${ro?'disabled':''}>暂存</button> <button class="ghost" id="meX">关闭</button></div></div>
+  <div class="hint">角色决定指标生成：度量 → 合计/平均/最高；时间 → 按月/年、同比环比；枚举/名称 → 分组维度</div>`;
+ $('meX').onclick=()=>{$('metaEdit').classList.add('hidden');META_SEL=null;renderMeta()};
+ $('meOk').onclick=()=>{META_EDITS[k]={label:$('meL').value,comment:$('meC').value,role:$('meR').value};metaDirty();renderMeta();note('已暂存，点击「保存元数据修改」提交')};
+ renderMeta()}
+function renderML(){const tables=Object.keys(JOB.profiles||{});const cols=t=>Object.keys((JOB.profiles[t]||{}).columns||{});
+ $('mlBox').innerHTML=ML.length?ML.map((m,i)=>`<div class="row" style="margin-bottom:6px" data-i="${i}"><input class="nm" value="${esc(m.name)}" placeholder="关系名（英文）"><select class="src">${tables.map(t=>`<option ${t===m.source?'selected':''}>${esc(t)}</option>`).join('')}</select><select class="col">${cols(m.source).map(c=>`<option ${c===m.source_col?'selected':''}>${esc(c)}</option>`).join('')}</select><span class="auto muted">→</span><select class="tgt">${tables.map(t=>`<option ${t===m.target?'selected':''}>${esc(t)}</option>`).join('')}</select><input class="ds" value="${esc(m.description||'')}" placeholder="中文描述"><button class="ghost auto del">删除</button></div>`).join(''):'<span class="muted">未配置手动关系</span>';
+ $('mlBox').querySelectorAll('div[data-i]').forEach(d=>{const m=ML[+d.dataset.i];d.querySelector('.nm').onchange=e=>m.name=e.target.value;d.querySelector('.src').onchange=e=>{m.source=e.target.value;m.source_col=cols(m.source)[0];renderML()};
+  d.querySelector('.col').onchange=e=>m.source_col=e.target.value;d.querySelector('.tgt').onchange=e=>m.target=e.target.value;d.querySelector('.ds').onchange=e=>m.description=e.target.value;d.querySelector('.del').onclick=()=>{ML.splice(+d.dataset.i,1);renderML()}})}
+$('btnAddML').onclick=()=>{const t=Object.keys(JOB.profiles||{});ML.push({name:`manual_relation_${ML.length+1}`,source:t[0],source_col:Object.keys(JOB.profiles[t[0]].columns)[0],target:t[1]||t[0],description:'手动指定'});renderML()};
+$('btnRegen').onclick=function(){busy(this,async()=>{const pk={};$('pkBox').querySelectorAll('select').forEach(s=>pk[s.dataset.t]=s.value);
+ const s=await post(J()+'/configure',{primary_keys:pk,manual_links:ML});note('本体已按配置重新生成：'+s.stats.classes+' 类 / '+s.stats.relations+' 关系');await openJob(JOB.id);show('model')})};
+$('btnReview').onclick=function(){busy(this,async()=>{const rv=JOB.draft.review||[];const ds=[...document.querySelectorAll('#review tr[data-i]')].map(tr=>{const r=rv[+tr.dataset.i],d={kind:r.kind,ref:r.ref,action:tr.querySelector('.act').value};
+ const nn=tr.querySelector('.nn').value.trim(),lb=tr.querySelector('.lb').value.trim();if(nn)d.new_name=nn;if(lb)d.label=lb;return d});await post(J()+'/review',{decisions:ds});await openJob(JOB.id);note('审核已提交')})};
+
+// ---------------- 概览
+function renderOverview(){if(!OV)return;
+ $('ovKpis').innerHTML=[['实体类型',OV.object_types.length],['实体实例',OV.nodes],['关系类型',OV.link_types.length],['关系实例',OV.edges],['Action 次数',OV.actions]].map(([l,n])=>`<div class="kpi"><div class="n">${fmt(n)}</div><div class="l">${l}</div></div>`).join('');
+ $('ovSummary').innerHTML='<ul style="margin:0;padding-left:18px">'+OV.object_types.map(o=>`<li><code>${esc(o.label)}</code>（${esc(o.name)}）：<b>${o.count}</b> 个对象；主键 <code>${esc(o.primary_key||'—')}</code>；属性数 ${o.properties.length}</li>`).join('')+`<li>Link Types：${OV.link_types.map(l=>esc(l.label)).join('、')||'—'}</li></ul>`;
+ $('ovCls').innerHTML=OV.object_types.map(o=>`<option value="${esc(o.name)}">${esc(o.label)}（${o.count}）</option>`).join('');$('ovCls').onchange=loadObjects;$('ovQ').oninput=debounce(loadObjects,300);loadObjects();
+ $('ovLinks').innerHTML=`<table><tr><th>关系</th><th>中文名</th><th>源</th><th>目标</th><th>基数</th><th>依据列</th><th class="num">实例数</th></tr>${OV.link_types.map(l=>`<tr><td>${esc(l.name)}</td><td>${esc(l.label)}</td><td>${esc(l.source)}</td><td>${esc(l.target)}</td><td>${esc(l.cardinality)}</td><td class="muted">${esc(l.via||'')}</td><td class="num">${l.count}</td></tr>`).join('')}</table>`}
+function debounce(f,ms){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>f(...a),ms)}}
+async function loadObjects(){const r=await api(J()+`/studio/objects?cls=${encodeURIComponent($('ovCls').value)}&q=${encodeURIComponent($('ovQ').value)}&limit=200`);
+ $('ovTable').innerHTML=`<table><tr><th>名称</th>${r.columns.map(c=>`<th title="${esc(c.key)}">${esc(c.label)}</th>`).join('')}</tr>${r.rows.map(x=>`<tr><td><b>${esc(x._name)}</b></td>${r.columns.map(c=>`<td>${esc(x[c.key]??'')}</td>`).join('')}</tr>`).join('')}</table>`;
+ $('ovMore').textContent=r.total>r.rows.length?`共 ${r.total} 条，显示前 ${r.rows.length} 条`:`共 ${r.total} 条`}
+
+// ---------------- 力导向图（无外部依赖）
+function forceGraph(el,data,opt={}){const W=el.clientWidth||900,H=el.clientHeight||620;const groups=[...new Set(data.nodes.map(n=>n.group))];const col=g=>COLORS[groups.indexOf(g)%COLORS.length];
+ const N=data.nodes.map((n,i)=>({...n,x:W/2+Math.cos(i)*W/3*Math.random(),y:H/2+Math.sin(i)*H/3*Math.random(),vx:0,vy:0}));const idx=new Map(N.map((n,i)=>[n.id,i]));
+ const E=data.edges.map(e=>({...e,s:idx.get(e.from),t:idx.get(e.to)})).filter(e=>e.s!=null&&e.t!=null);
+ const NS='http://www.w3.org/2000/svg';el.innerHTML='';const svg=document.createElementNS(NS,'svg');el.appendChild(svg);
+ svg.innerHTML=`<defs><marker id="ar${el.id}" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="${CSSV('--ax-text-disabled')||'#9aa3af'}"/></marker></defs>`;
+ const g=document.createElementNS(NS,'g');svg.appendChild(g);let view={k:1,x:0,y:0};const apply=()=>g.setAttribute('transform',`translate(${view.x},${view.y}) scale(${view.k})`);
+ const big=N.length>400;
+ const lines=E.map(e=>{const p=document.createElementNS(NS,'path');p.setAttribute('fill','none');p.setAttribute('stroke',e.kind==='has_property'?CSSV('--ax-border-emphasized'):CSSV('--g-edge'));p.setAttribute('stroke-width',e.kind==='object_property'?2.5:1.2);
+  if(e.kind==='has_property')p.setAttribute('stroke-dasharray','4 3');if(e.kind!=='has_property')p.setAttribute('marker-end',`url(#ar${el.id})`);g.appendChild(p);return p});
+ const labs=E.map(e=>{if(big||!e.label||e.kind==='has_property')return null;const t=document.createElementNS(NS,'text');t.textContent=e.label;t.setAttribute('font-size','10');t.setAttribute('fill',e.kind==='object_property'?CSSV('--ax-info'):CSSV('--g-label'));t.setAttribute('text-anchor','middle');t.setAttribute('paint-order','stroke');t.setAttribute('stroke',CSSV('--g-halo'));t.setAttribute('stroke-width','3');g.appendChild(t);return t});
+ const tip=$('tip');
+ const nodes=N.map(n=>{const gg=document.createElementNS(NS,'g');gg.style.cursor='pointer';const r=n.kind==='class'?22:n.kind==='property'?7:(n.focus?11:8);
+  const sh=document.createElementNS(NS,n.kind==='class'?'rect':'circle');if(n.kind==='class'){sh.setAttribute('x',-46);sh.setAttribute('y',-15);sh.setAttribute('width',92);sh.setAttribute('height',30);sh.setAttribute('rx',6)}else sh.setAttribute('r',r);
+  sh.setAttribute('fill',n.kind==='property'?CSSV('--g-prop'):col(n.group));sh.setAttribute('stroke',n.focus?CSSV('--ax-warning'):CSSV('--ax-surface'));sh.setAttribute('stroke-width',n.focus?3:1.2);gg.appendChild(sh);
+  if(!big||n.kind){const t=document.createElementNS(NS,'text');t.textContent=String(n.label).slice(0,16);t.setAttribute('font-size',n.kind==='class'?12:10);t.setAttribute('fill',n.kind==='class'?CSSV('--ax-on-accent'):CSSV('--g-label'));t.setAttribute('font-weight',n.kind==='class'?600:400);t.setAttribute('text-anchor','middle');
+   t.setAttribute('dy',n.kind==='class'?4:r+11);if(n.kind!=='class'){t.setAttribute('paint-order','stroke');t.setAttribute('stroke',CSSV('--g-halo'));t.setAttribute('stroke-width','3')}gg.appendChild(t)}
+  gg.onmouseenter=ev=>{tip.style.display='block';tip.innerHTML=`<b>${esc(n.label)}</b><br>${esc(n.title||'')}`};gg.onmousemove=ev=>{tip.style.left=(ev.clientX+12)+'px';tip.style.top=(ev.clientY+12)+'px'};gg.onmouseleave=()=>tip.style.display='none';
+  gg.addEventListener('mousedown',ev=>{ev.stopPropagation();drag={n,ox:ev.clientX,oy:ev.clientY,x:n.x,y:n.y};n.fixed=true;heat=0.5;tick()});
+  if(opt.onClick)gg.addEventListener('dblclick',()=>opt.onClick(n));g.appendChild(gg);return gg});
+ let drag=null,pan=null,heat=1,raf=null;
+ svg.addEventListener('mousedown',ev=>{pan={x:ev.clientX,y:ev.clientY,vx:view.x,vy:view.y}});
+ window.addEventListener('mousemove',ev=>{if(drag){drag.n.x=drag.x+(ev.clientX-drag.ox)/view.k;drag.n.y=drag.y+(ev.clientY-drag.oy)/view.k;draw()}else if(pan){view.x=pan.vx+ev.clientX-pan.x;view.y=pan.vy+ev.clientY-pan.y;apply()}});
+ window.addEventListener('mouseup',()=>{drag=null;pan=null});
+ svg.addEventListener('wheel',ev=>{ev.preventDefault();const f=ev.deltaY<0?1.12:1/1.12;const rc=svg.getBoundingClientRect(),mx=ev.clientX-rc.left,my=ev.clientY-rc.top;view.x=mx-(mx-view.x)*f;view.y=my-(my-view.y)*f;view.k*=f;apply()},{passive:false});
+ function draw(){E.forEach((e,i)=>{const a=N[e.s],b=N[e.t];const dx=b.x-a.x,dy=b.y-a.y,L=Math.hypot(dx,dy)||1;const rb=b.kind==='class'?30:b.kind==='property'?8:10;
+   const ex=b.x-dx/L*rb,ey=b.y-dy/L*rb,mx=(a.x+ex)/2-dy/L*14,my=(a.y+ey)/2+dx/L*14;lines[i].setAttribute('d',`M${a.x},${a.y} Q${mx},${my} ${ex},${ey}`);if(labs[i]){labs[i].setAttribute('x',mx);labs[i].setAttribute('y',my)}});
+  N.forEach((n,i)=>nodes[i].setAttribute('transform',`translate(${n.x},${n.y})`))}
+ function step(){const k=Math.sqrt(W*H/Math.max(N.length,1))*(opt.spread||0.9);for(let i=0;i<N.length;i++){const a=N[i];for(let j=i+1;j<N.length;j++){const b=N[j];let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy+0.01;if(d2>k*k*16)continue;const f=k*k/d2*0.6;a.vx+=dx*f*0.02;a.vy+=dy*f*0.02;b.vx-=dx*f*0.02;b.vy-=dy*f*0.02}}
+  E.forEach(e=>{const a=N[e.s],b=N[e.t],dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1,want=e.kind==='has_property'?k*0.55:k*1.1,f=(d-want)/d*0.06;a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f});
+  N.forEach(n=>{n.vx+=(W/2-n.x)*0.002;n.vy+=(H/2-n.y)*0.002;if(!n.fixed){n.x+=Math.max(-20,Math.min(20,n.vx*heat));n.y+=Math.max(-20,Math.min(20,n.vy*heat))}n.vx*=0.6;n.vy*=0.6})}
+ function tick(){if(raf)return;const run=()=>{for(let s=0;s<(N.length>600?1:3);s++)step();draw();heat*=0.985;raf=heat>0.02?requestAnimationFrame(run):null};raf=requestAnimationFrame(run)}
+ draw();tick();apply();return {groups,col}}
+function legend(el,groups,col,extra=''){el.innerHTML=groups.map(g=>`<span><i style="background:${col(g)}"></i>${esc(g)}</span>`).join('')+extra}
+
+// ---------------- Schema 图谱
+async function loadSchema(){const d=await api(J()+`/studio/schema-graph?props=${$('sgProps').checked}`);let L;if(SGM==='3d'){L=await draw3d('sg',$('sg'),d,{onClick:openEditor});if(L){legend($('sgLegend'),L.groups,L.col,'<span>单击节点 = 编辑 · 拖拽旋转 · 滚轮缩放 · Shift 拖动平移</span>');return}SGM='2d'}useMode('sg',$('sg'),'2d');L=forceGraph($('sg'),d,{spread:1.1,onClick:openEditor});legend($('sgLegend'),L.groups,L.col,'<span><i style="background:var(--g-prop)"></i>属性 Property</span><span style="color:var(--ax-info)">━ Object Property</span><span>┄ hasProperty</span>')}
+$('sgProps').onchange=loadSchema;
+
+// ---------------- 实例图谱
+function initInst(){if(!OV)return;$('igTypes').innerHTML=OV.object_types.map(o=>`<label class="muted auto"><input type="checkbox" value="${esc(o.name)}" checked style="width:auto"> ${esc(o.label)}</label>`).join('');fillEntitySelect($('igFocus'),true);loadInst()}
+async function fillEntitySelect(sel,allowNone){const opts=[];for(const o of OV.object_types){const r=await api(J()+`/studio/objects?cls=${encodeURIComponent(o.name)}&limit=500`);r.rows.forEach(x=>opts.push([x._id,`${o.label}：${x._name}`]))}
+ sel.innerHTML=(allowNone?'<option value="">不指定焦点</option>':'')+opts.map(([v,l])=>`<option value="${esc(v)}">${esc(l)}</option>`).join('');return opts}
+$('btnIg').onclick=loadInst;
+async function loadInst(){const types=[...$('igTypes').querySelectorAll('input:checked')].map(i=>i.value);if(!types.length){note('请至少选择一种实体类型',true);return}
+ const d=await post(J()+'/studio/instance-graph',{types,q:$('igQ').value,focus:$('igFocus').value||null,hops:+$('igHops').value,max_nodes:+$('igMax').value||300});
+ $('igKpis').innerHTML=[['当前显示节点',d.nodes.length],['当前显示关系',d.edges.length],['全量节点',d.total_nodes],['全量关系',d.total_edges]].map(([l,n])=>`<div class="kpi"><div class="n">${fmt(n)}</div><div class="l">${l}</div></div>`).join('');
+ if(d.truncated)note('当前图谱节点超过显示上限，已截断部分节点。可提高最大节点数或缩小筛选范围。');
+ const fo=n=>{$('igFocus').value=n.id;loadInst()};if(IGM==='3d'){const L=await draw3d('ig',$('ig'),d,{onDblClick:fo});if(L){legend($('igLegend'),L.groups,L.col,'<span>单击 = 高亮邻居 · 双击 = 以其为焦点展开</span>');return}}useMode('ig',$('ig'),'2d');const L=forceGraph($('ig'),d,{onClick:fo});legend($('igLegend'),L.groups,L.col,'<span>双击节点 = 以其为焦点展开邻居</span>')}
+
+// ---------------- 关系分析
+async function initRel(){if(REL_INIT)return;REL_INIT=true;const o=await fillEntitySelect($('pSrc'));$('pDst').innerHTML=$('pSrc').innerHTML;if(o[1])$('pDst').value=o[1][0];$('nSel').innerHTML=$('pSrc').innerHTML}
+$('btnPath').onclick=function(){busy(this,async()=>{const r=await api(J()+`/studio/path?source=${encodeURIComponent($('pSrc').value)}&target=${encodeURIComponent($('pDst').value)}&directed=${$('pDir').checked}`);
+ $('pathOut').innerHTML=r.found?`<div class="ok-text">找到路径，共 ${r.hops} 条关系边</div><pre>${esc([r.steps[0]?.from||''].concat(r.steps.map(s=>`${s.direction==='→'?'—'+s.relation+'→':'←'+s.relation+'—'} ${s.to}`)).join('  '))}</pre><table style="margin-top:8px"><tr><th>起点</th><th>关系</th><th>终点</th></tr>${r.steps.map(s=>`<tr><td>${esc(s.from)}</td><td>${esc(s.relation)} ${s.direction}</td><td>${esc(s.to)}</td></tr>`).join('')}</table>`:'<span class="warn-text">两个实体之间没有找到关系路径。</span>'})};
+$('btnNb').onclick=function(){busy(this,async()=>{const r=await api(J()+`/studio/neighbors?entity=${encodeURIComponent($('nSel').value)}`);$('nbOut').innerHTML=`<div class="muted">直接关联实体：${r.count} 个</div><table><tr><th>实体</th><th>类型</th><th>关系</th><th>方向</th></tr>${r.items.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.type)}</td><td>${esc(x.relation)}</td><td>${esc(x.direction)}</td></tr>`).join('')}</table>`})};
+
+// ---------------- 质量
+async function loadQuality(){const q=await api(J()+'/studio/quality');$('qKpis').innerHTML=[['实体节点',q.node_count],['关系边',q.edge_count],['孤立节点',q.isolated_nodes.length],['悬空引用',q.dangling_references.length],['重复关系',q.duplicate_edges.length],['待审核推断',q.review_pending.length]].map(([l,n])=>`<div class="kpi"><div class="n">${fmt(n)}</div><div class="l">${l}</div></div>`).join('');
+ const sec=(t,ok,body)=>`<div class="card"><h2>${t} ${ok?tag('通过','ok'):tag('需关注','warn')}</h2>${body||''}</div>`;
+ $('qOut').innerHTML=sec('悬空引用（源对象引用的目标主键不存在）',!q.dangling_references.length,q.dangling_references.length?`<div class="scroll"><table><tr><th>关系</th><th>源</th><th>目标值</th></tr>${q.dangling_references.map(d=>`<tr><td>${esc(d.relation)}</td><td>${esc(d.source)}</td><td>${esc(d.target_value)}</td></tr>`).join('')}</table></div>`:'')+
+  sec('孤立节点',!q.isolated_nodes.length,q.isolated_nodes.length?`<details><summary>查看 ${q.isolated_nodes.length} 个</summary><pre>${esc(q.isolated_nodes.join('\n'))}</pre></details>`:'')+
+  sec('无效关系定义 / 自环 / 重复',!(q.invalid_relation_types.length||q.self_loops.length||q.duplicate_edges.length),`<div class="muted">无效关系 ${q.invalid_relation_types.length} · 自环 ${q.self_loops.length} · 重复 ${q.duplicate_edges.length}</div>`)+
+  sec('映射契约校验',!q.contract_issues.length,q.contract_issues.map(i=>tag(i.level,i.level==='error'?'bad':'warn')+' '+esc(i.table+'：'+i.msg)).join('<br>'))+
+  `<div class="muted">说明：质量检测基于已导入数据与关系定义；完整 OWL 推理与 SHACL 约束验证由平台本体中心提供。</div>`}
+
+// ---------------- Action
+let AC_OBJS={};function initAction(){if(!OV)return;$('acCls').innerHTML=OV.object_types.map(o=>`<option value="${esc(o.name)}">${esc(o.label)}</option>`).join('');$('acCls').onchange=acLoad;$('acKind').onchange=acLoad;$('acObj').onchange=acForm;acLoad();acLogLoad()}
+async function acLoad(){const r=await api(J()+`/studio/objects?cls=${encodeURIComponent($('acCls').value)}&limit=500`);AC_OBJS={cols:r.columns,rows:Object.fromEntries(r.rows.map(x=>[x._id,x]))};
+ $('acObj').classList.toggle('hidden',$('acKind').value==='create');$('acObj').innerHTML=r.rows.map(x=>`<option value="${esc(x._id)}">${esc(x._name)}（${esc(x._id)}）</option>`).join('');acForm()}
+function acForm(){const k=$('acKind').value,cur=AC_OBJS.rows[$('acObj').value]||{};const pk=(OV.object_types.find(o=>o.name===$('acCls').value)||{}).primary_key;
+ if(k==='delete'){$('acForm').innerHTML=`<div class="warn-text">删除对象会同时删除图谱中与该对象关联的边。</div><pre>${esc(JSON.stringify(cur,null,2))}</pre>`;return}
+ $('acForm').innerHTML=`<div class="row">${AC_OBJS.cols.map(c=>`<div style="min-width:200px"><label class="f">${esc(c.label)} <span class="muted">${esc(c.key)}${c.key===pk?' · 主键':''}</span></label><input data-k="${esc(c.key)}" value="${k==='update'?esc(cur[c.key]??''):''}" ${k==='update'&&c.key===pk?'disabled':''}></div>`).join('')}</div>`}
+$('btnAction').onclick=function(){const k=$('acKind').value;if(k==='delete'&&!confirm('确认删除该对象？'))return;busy(this,async()=>{const data={};const cur=AC_OBJS.rows[$('acObj').value]||{};
+ $('acForm').querySelectorAll('input[data-k]').forEach(i=>{if(i.disabled)return;if(k==='create'?i.value!=='':String(cur[i.dataset.k]??'')!==i.value)data[i.dataset.k]=i.value});
+ if(k==='update'&&!Object.keys(data).length)throw new Error('没有修改任何字段');
+ const r=await post(J()+'/studio/action',{action:k,cls:$('acCls').value,entity:k==='create'?null:$('acObj').value,data});note(({create:'创建成功：',update:'更新成功：',delete:'对象已删除：'})[k]+r.entity+'（未落库，需「写入数据库」）');
+ OV=await api(J()+'/studio/overview');renderOverview();acLoad();acLogLoad();JOB.status=r.status;$('btnWrite').disabled=JOB.status!=='published'})};
+async function acLogLoad(){const r=await api(J()+'/studio/actions');$('acLog').textContent=r.items.length?JSON.stringify(r.items.slice(-10),null,2):'—'}
+
+// ---------------- 指标
+const KIND={atomic:'原子',derived:'派生',composite:'复合'};let CURM=null;
+async function loadMetrics(){if(!METRICS)METRICS=await api(J()+'/metrics');const s=METRICS.stats;$('mKpis').innerHTML=[['原子指标',s.atomic],['派生指标',s.derived],['复合指标',s.composite]].map(([l,n])=>`<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');renderMList();
+ const f=Object.values(METRICS.metrics).find(m=>m.kind==='composite')||Object.values(METRICS.metrics)[0];if(f)pickMetric(f.id).then(()=>{if(!ST2)renderBig()});else renderBig()}
+$('mKind').onchange=renderMList;
+function renderMList(){const k=$('mKind').value,ms=Object.values(METRICS.metrics).filter(m=>!k||m.kind===k);$('mList').innerHTML=`<table><tr><th>指标</th><th>类型</th><th>口径</th><th class="num">维度</th></tr>${ms.map(m=>`<tr style="cursor:pointer" data-id="${esc(m.id)}"><td><b>${esc(m.label)}</b><div class="muted">${esc(m.id)}</div></td><td>${tag(KIND[m.kind])}</td><td class="muted">${esc(m.expr||(m.agg?m.agg+'('+(m.measure||m.relation||m.cls)+')':(m.grain?m.base+' 按'+m.grain:(m.transform||'')+' '+(m.base||''))))}</td><td class="num">${(m.dims_allowed||[]).length}</td></tr>`).join('')}</table>`;
+ $('mList').querySelectorAll('tr[data-id]').forEach(tr=>tr.onclick=()=>pickMetric(tr.dataset.id))}
+async function pickMetric(id,dim){CURM=METRICS.metrics[id];$('mTitle').innerHTML=`${esc(CURM.label)} <span class="muted">${KIND[CURM.kind]} · ${esc(CURM.reason||'')}</span>`;
+ const dims=CURM.kind==='derived'?[]:(CURM.dims_allowed||[]);$('mDim').innerHTML='<option value="">总量</option>'+dims.map(d=>`<option value="${esc(d)}" ${d===dim?'selected':''}>按 ${esc(d.replace(/__/g,' → '))}</option>`).join('');$('mDim').onchange=()=>pickMetric(id,$('mDim').value||undefined);
+ const r=(await post(J()+'/metrics/evaluate',{metric_ids:[id],dim:dim||null})).items[id];$('mMeta').textContent=CURM.expr?'公式：'+CURM.expr:'';
+ LAST=r;if(r.error){$('mChart').innerHTML=tag(r.error,'bad');showSmall();return}if(r.value!==undefined){$('mChart').innerHTML=`<div class="big-num">${fmt(r.value)}</div>`;showSmall();return}rcMetric(r);showSmall();if(ST2&&ST2.highlight)ST2.highlight(id)}
+
+// ---------------- 2D/3D 切换（本体图 / 实例图）
+let SGM='2d',IGM='2d',G3={};
+function useMode(id,el,mode){if(G3[id]){G3[id].dispose();G3[id]=null}if(mode==='2d')el.innerHTML=''}
+async function draw3d(id,el,d,opt){useMode(id,el,'3d');try{const M=await m3();const gs=[...new Set(d.nodes.map(n=>n.group))];G3[id]=await M.graph3d(el,d,{...opt,colors:g=>COLORS[gs.indexOf(g)%COLORS.length]});return G3[id]}
+ catch(e){note('3D 不可用，已回落 2D：'+e.message,true);return null}}
+
+// ---------------- 本体元素编辑（点选本体图节点）
+function openEditor(n){if(!JOB)return;const sc=JOB.draft.schema;let kind,ref,obj;
+ if(String(n.id).startsWith('CLASS:')){kind='class';ref=n.id.slice(6);obj=sc.entity_types[ref]}
+ else if(String(n.id).startsWith('PROP:')){kind='attribute';ref=n.id.split(':').slice(2).join(':');obj=sc.attributes[ref]}
+ if(!obj)return;const ro=['published','written'].includes(JOB.status);
+ const types=['string','integer','float','boolean','date','datetime'];
+ $('edBox').classList.remove('hidden');
+ $('edBox').innerHTML=`<b>编辑${kind==='class'?'类':'属性'}：${esc(ref)}</b> ${ro?tag('已发布，只读；可在「8 版本」回滚或复用数据集新建任务后修改','warn'):''}
+  <div class="row" style="margin-top:8px"><div><label class="f">中文名</label><input id="edLabel" value="${esc(obj.label||'')}"></div>
+  <div style="flex:2"><label class="f">描述</label><input id="edDesc" value="${esc(obj.description||'')}"></div>
+  ${kind==='attribute'?`<div><label class="f">数据类型</label><select id="edType">${types.map(t=>`<option ${obj.range===t?'selected':''}>${t}</option>`).join('')}</select></div>`:''}
+  <div class="auto" style="padding-top:22px"><button class="primary" id="edSave" ${ro?'disabled':''}>保存</button> <button class="ghost" id="edClose">关闭</button></div></div>
+  ${kind==='class'?`<div class="hint">主键：${esc((obj.key||[]).join(',')||'—')}；改主键或关系请用下方「主键配置 / 手动关系」</div>`:`<div class="hint">所属类：${esc(obj.owner)} · 来源列：${esc(obj.column||'')} · 角色：${esc(obj.role||'')}</div>`}`;
+ $('edClose').onclick=()=>$('edBox').classList.add('hidden');
+ $('edSave').onclick=function(){busy(this,async()=>{const b={kind,ref,label:$('edLabel').value,description:$('edDesc').value};if(kind==='attribute')b.datatype=$('edType').value;
+  await post(J()+'/schema/edit',b);Object.assign(obj,{label:b.label,description:b.description},b.datatype?{range:b.datatype}:{});note('已保存，并生成新版本快照');loadSchema()})}}
+
+// ---------------- 数据集库
+async function loadDatasets(){try{const r=await api('/automodel/datasets');const it=r.items||[];
+ $('dsList').innerHTML=it.length?`<table><tr><th>数据集</th><th>表</th><th class="num">大小</th><th class="num">任务</th><th>时间</th><th></th></tr>${it.map(d=>`<tr><td><b>${esc(d.name)}</b><div class="muted">${esc(d.source_id)} · ${esc(String(d.id).slice(0,8))}</div></td>
+  <td class="muted">${(d.tables||[]).map(t=>esc(t.name)+' '+t.rows+'×'+t.cols).join('<br>')}</td><td class="num">${fmt((d.size_bytes||0)/1024)}KB</td><td class="num">${d.jobs??'—'}</td>
+  <td class="muted">${esc(String(d.created_at||'').slice(0,16).replace('T',' '))}</td><td style="white-space:nowrap"><button class="ghost" data-new="${esc(d.id)}">复用建模</button> <button class="ghost" data-del="${esc(d.id)}">删除</button></td></tr>`).join('')}</table>`:'<span class="muted">还没有落库的数据集。上传文件后会自动保存。</span>';
+ $('dsList').querySelectorAll('[data-new]').forEach(b=>b.onclick=function(){busy(this,async()=>{const s=await post(`/automodel/datasets/${b.dataset.new}/jobs`,{use_llm:$('useLlm').checked});await openJob(s.id);loadJobs();loadDatasets();show('model');note('已基于落库数据集新建任务')})});
+ $('dsList').querySelectorAll('[data-del]').forEach(b=>b.onclick=function(){if(!confirm('删除该数据集？关联任务在服务重启后将无法恢复数据'))return;busy(this,async()=>{await api(`/automodel/datasets/${b.dataset.del}`,{method:'DELETE'});loadDatasets()})})}
+ catch(e){$('dsList').innerHTML='<span class="muted">'+esc(e.message)+'</span>'}}
+
+// ---------------- 版本
+const TRG={upload:'创建',review:'审核',configure:'配置',edit:'编辑',publish:'发布',restore:'回滚',manual:'手动'};let VERS=[],V3=null;
+async function loadVersions(){const r=await api(J()+'/versions');VERS=r.items||[];
+ $('vList').innerHTML=VERS.length?`<table><tr><th></th><th>版本</th><th>来源</th><th class="num">类/关系/属性/指标</th><th>时间</th><th></th></tr>${VERS.map((v,i)=>{const s=v.summary||{};return `<tr><td><input type="checkbox" class="vck" value="${esc(v.id)}" style="width:auto" ${i<2?'checked':''}></td>
+  <td><b>v${v.version_no}</b> <span class="vlab" data-id="${esc(v.id)}" title="点击重命名" style="cursor:text">${esc(v.label)}</span>${v.note?`<div class="muted">${esc(v.note)}</div>`:''}${i===0?' '+tag('当前','ok'):''}</td>
+  <td>${tag(TRG[v.trigger]||v.trigger)}</td><td class="num">${s.classes??'—'} / ${s.relations??'—'} / ${s.attributes??'—'} / ${s.metrics??'—'}</td>
+  <td class="muted">${esc(String(v.created_at||'').slice(0,16).replace('T',' '))}</td><td>${i?`<button class="ghost" data-rs="${esc(v.id)}">回滚到此</button>`:''}</td></tr>`}).join('')}</table>`
+  :'<span class="muted">暂无版本（旧任务从下次审核/配置/编辑开始记录；也可手动保存）</span>';
+ $('vList').querySelectorAll('[data-rs]').forEach(b=>b.onclick=function(){if(!confirm('回滚到该版本？当前状态会先自动保存为一个版本'))return;busy(this,async()=>{await post(J()+'/versions',{label:'回滚前自动保存'});await post(J()+`/versions/${b.dataset.rs}/restore`,{});await openJob(JOB.id);loadVersions();note('已回滚')})});
+ $('vList').querySelectorAll('.vlab').forEach(el=>el.onclick=async()=>{const l=prompt('版本名',el.textContent);if(l==null)return;await api(`/automodel/versions/${el.dataset.id}`,{method:'PATCH',body:JSON.stringify({label:l})});loadVersions()});
+ renderV3()}
+async function renderV3(){V3&&V3.dispose();V3=null;if(!VERS.length){$('v3d').innerHTML='';return}
+ try{const M=await m3();const vs=[...VERS].reverse();V3=await M.bars($('v3d'),{title:'各版本属性数',categories:vs.map(v=>'v'+v.version_no+' '+(TRG[v.trigger]||'')),values:vs.map(v=>(v.summary||{}).attributes||0),series:true})}catch(e){$('v3d').innerHTML=tag('3D 不可用：'+e.message,'bad')}}
+
+function bindMeta(){$('metaQ').oninput=renderMetaTable;$('metaHideEmpty').onchange=renderMetaTable;
+ $('btnMetaSave').onclick=function(){busy(this,async()=>{const columns=Object.entries(META_EDITS).map(([k,v])=>{const i=k.indexOf('.');return {table:k.slice(0,i),column:k.slice(i+1),...v}});
+  const r=await post(J()+'/metadata',{tables:META_TABLES,columns});META_EDITS={};META_TABLES={};await openJob(JOB.id);METRICS=null;
+  note(`元数据已保存${r.role_changed?'；角色有变化，指标已重新生成（原子 '+(r.metrics||{}).atomic+'，复合 '+(r.metrics||{}).composite+'）':''}，已记录新版本`)})}}
+
+// ---------------- React Flow：流水线 + 本体设计图
+async function loadFlows(){if(!JOB)return;
+ try{const d=await api(J()+'/pipeline');await RF.pipeline($('pipeFlow'),d,{onOpen:t=>show(t)})}catch(e){$('pipeFlow').innerHTML=tag('React Flow 不可用：'+e.message,'bad')}
+ try{const counts={};(OV&&OV.object_types||[]).forEach(o=>counts[o.name]=o.count);
+  const job={...JOB,counts,_base:base(),_hdr:hdr(true)};
+  await RF.designer($('designFlow'),job,{readOnly:['published','written'].includes(JOB.status),
+   api:ops=>post(J()+'/design/ops',{ops}),
+   onChanged:async()=>{await openJob(JOB.id);loadSchema();loadFlows()}})}
+ catch(e){$('designFlow').innerHTML=tag('React Flow 不可用：'+e.message,'bad')}}
+function bindExtra(){bindMeta();segBind('sgMode',v=>{SGM=v;loadSchema()});segBind('igMode',v=>{IGM=v;loadInst()});$('btnDsReload').onclick=loadDatasets;
+ $('btnVSave').onclick=function(){busy(this,async()=>{const v=await post(J()+'/versions',{label:$('vLabel').value,note:$('vNote').value});$('vLabel').value='';$('vNote').value='';note(v.unchanged?'内容未变化':'已保存版本 v'+v.version_no);loadVersions()})};
+ $('btnVDiff').onclick=function(){busy(this,async()=>{const ids=[...document.querySelectorAll('.vck:checked')].map(x=>x.value);if(ids.length!==2)throw new Error('请勾选两个版本');
+  const [b,a]=ids;const d=await api(`/automodel/versions/diff?a=${a}&b=${b}`);const L={classes:'类',attributes:'属性',relations:'关系',mappings:'映射',metrics:'指标'};
+  $('vDiff').innerHTML=`<div class="muted" style="margin-bottom:6px">共 ${d.total} 处差异（旧 → 新）</div><table><tr><th>对象</th><th>新增</th><th>删除</th><th>修改</th></tr>${Object.keys(L).map(k=>`<tr><td>${L[k]}</td>${['added','removed','changed'].map(x=>`<td>${(d[k][x]||[]).length?`<b>${d[k][x].length}</b> <span class="muted">${d[k][x].slice(0,6).map(esc).join('、')}${d[k][x].length>6?'…':''}</span>`:'<span class="muted">0</span>'}</td>`).join('')}</tr>`).join('')}</table>`})}}
+
+// ---- 三维（three.js，本地 vendor；WebGL 不可用时回落 2D）
+let M3=null,M3V='2d',ST1=null,ST2=null,BIG='lineage',LAST=null;
+async function m3(){if(!M3)M3=await import('/console/metrics-3d.js');return M3}
+function segBind(id,cb){$(id).querySelectorAll('button').forEach(b=>b.onclick=()=>{$(id).querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));cb(b.dataset.v)})}
+segBind('mView',v=>{M3V=v;showSmall()});segBind('mBig',v=>{BIG=v;renderBig()});
+async function showSmall(){const is3=M3V==='3d'&&LAST&&LAST.index;$('m3d').classList.toggle('hidden',!is3);$('mChart').classList.toggle('hidden',!!is3);ST1&&ST1.dispose();ST1=null;
+ if(!is3)return;try{const p=LAST.index.map((c,i)=>[c,LAST.values[i]]);const ser=/月|date|month|time|日期/i.test($('mDim').value||'')||/by_month/.test(CURM.id);
+  if(!ser)p.sort((a,b)=>b[1]-a[1]);const q=p.slice(0,24);ST1=await (await m3()).bars($('m3d'),{title:CURM.label,categories:q.map(x=>String(x[0])),values:q.map(x=>x[1]),series:ser})}
+ catch(e){$('m3d').innerHTML=tag('3D 不可用：'+e.message,'bad')}}
+async function renderBig(){ST2&&ST2.dispose();ST2=null;const el=$('mBig3d');$('mMxDim').classList.toggle('hidden',BIG!=='matrix');
+ try{const M=await m3();
+  if(BIG==='lineage'){$('mBigHint').textContent='类 → 度量 → 原子 → 派生 → 复合；点击指标高亮上下游并联动右上卡片';
+   ST2=await M.lineage(el,METRICS.lineage,{focus:CURM&&CURM.id,onPick:id=>{if(METRICS.metrics[id])pickMetric(id)}});return}
+  const ms=Object.values(METRICS.metrics).filter(m=>m.kind!=='derived');const cnt={};ms.forEach(m=>(m.dims_allowed||[]).forEach(d=>cnt[d]=(cnt[d]||0)+1));
+  const ds=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]);if(!ds.length){el.innerHTML='<div class="muted" style="padding:20px">没有可共享的维度</div>';return}
+  if(!$('mMxDim').options.length){$('mMxDim').innerHTML=ds.map(d=>`<option value="${esc(d)}">按 ${esc(d.replace(/__/g,' → '))}（${cnt[d]} 个指标）</option>`).join('');$('mMxDim').onchange=renderBig}
+  const dim=$('mMxDim').value,ids=ms.filter(m=>(m.dims_allowed||[]).includes(dim)).slice(0,10).map(m=>m.id);
+  el.innerHTML='<div class="muted" style="padding:20px">计算中…</div>';const r=(await post(J()+'/metrics/evaluate',{metric_ids:ids,dim})).items;
+  const ok=ids.filter(i=>r[i]&&r[i].index);const tot={};ok.forEach(i=>r[i].index.forEach((c,k)=>tot[c]=(tot[c]||0)+Math.abs(r[i].values[k]||0)));
+  const cols=Object.keys(tot).sort((a,b)=>tot[b]-tot[a]).slice(0,16);
+  $('mBigHint').textContent=`${ok.length} 个指标 × ${cols.length} 个取值（取值按合计排序，最多 16）`;
+  ST2=await M.matrix(el,{rows:ok.map(i=>METRICS.metrics[i].label),cols,values:ok.map(i=>cols.map(c=>{const k=r[i].index.indexOf(c);return k<0?null:r[i].values[k]}))})}
+ catch(e){el.innerHTML='<div style="padding:20px">'+tag('3D 不可用：'+e.message,'bad')+'</div>'}}
+async function rcMetric(r){const el=$('mChart');el.innerHTML='';const dim=$('mDim').value||'';
+ const series=/by_month|by_year/.test(CURM.id)||/月|date|month|year|time|日期/i.test(dim);
+ try{await RC.metric(el,{title:CURM.label,categories:r.index.map(x=>x==null?'空值':x),values:r.values,unit:CURM.unit||'',series,share:/share|占比/.test(CURM.id+CURM.label),count:CURM.agg==='count'||/count/.test(CURM.id)})}
+ catch(e){el.innerHTML=bars(r.index,r.values)}}
+function bars(cats,vals){if(!cats.length)return '<span class="muted">没有数据</span>';const p=cats.map((c,i)=>[c,vals[i]]).sort((a,b)=>b[1]-a[1]).slice(0,30),mx=Math.max(...p.map(x=>x[1]),1);
+ return `<table>${p.map(([c,v],i)=>`<tr><td style="width:180px">${esc(c)}</td><td><div class="bar ${i?'dim':''}" style="width:${Math.max(1,v/mx*100)}%"></div></td><td class="num" style="width:90px">${fmt(v)}</td></tr>`).join('')}</table>`}
+
+// ---------------- 问答
+async function loadSuggest(){try{const s=await api(J()+'/suggest');$('sugg').innerHTML=s.items.map(q=>`<button>${esc(q)}</button>`).join('');$('sugg').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('question').value=b.textContent;ask()})}catch(e){}}
+$('btnAsk').onclick=ask;$('question').addEventListener('keydown',e=>{if(e.key==='Enter')ask()});
+const ENG={ontology_graph:'本体图检索','ontology_graph+llm':'本体图检索 + LLM 依据作答',rule:'指标·规则解析','rule+llm':'指标·规则解析 + LLM 作答',llm:'指标·LLM 规划','llm+llm':'指标·LLM 规划 + LLM 作答',ontology_retrieval:'本体实例检索','ontology_retrieval+llm':'本体实例检索 + LLM 依据作答'};
+async function ask(){const q=$('question').value.trim();if(!q)return;$('question').value='';const c=$('chat');c.insertAdjacentHTML('beforeend',`<div class="q">${esc(q)}</div>`);
+ const box=document.createElement('div');box.className='a';box.textContent='正在查询本体并生成回答…';c.appendChild(box);c.scrollTop=c.scrollHeight;
+ try{const r=await post(J()+'/ask',{question:q,use_llm:$('useLlm').checked});if(!r.ok){box.innerHTML=esc(r.error)+(r.suggestions?'<div class="muted" style="margin-top:4px">可以试试：'+r.suggestions.slice(0,4).map(esc).join(' / ')+'</div>':'');return}
+  let h=`<div>${esc(r.answer)}</div>`;const rcid='qa'+Date.now();if(r.chart&&r.chart.categories)h+=`<div id="${rcid}" style="margin-top:8px"></div>`;
+  h+=`<details style="margin-top:6px"><summary>依据：${esc(ENG[r.engine]||r.engine)}${r.metric?' · 指标 '+esc(r.metric.label):''}</summary><pre>${esc(JSON.stringify(r.evidence||r.plan,null,2).slice(0,5000))}</pre>${r.sql?`<div class="muted">源库等价 SQL</div><pre>${esc(r.sql)}</pre>`:''}</details>`;box.innerHTML=h;if(r.chart&&r.chart.categories){const el=document.getElementById(rcid);RC.metric(el,{title:r.chart.title||'结果',categories:r.chart.categories,values:r.chart.data,height:280,count:true}).catch(()=>{el.innerHTML=bars(r.chart.categories,r.chart.data)})}}
+ catch(e){box.innerHTML=tag(e.message,'bad')}c.scrollTop=c.scrollHeight}
+
+// ---------------- 评测
+const KIND_ZH={count_all:'类计数',attr_lookup:'属性查询',relation:'关系查询',group_dist:'分组分布',filter_count:'过滤计数',filter_group:'过滤+分组',
+ avg:'平均值',max:'最大值',sum:'合计',filter_avg:'过滤+平均',neighbor_count:'关系聚合',negative:'本体外拒答'};
+let EVQ=null,EVR=null;
+function goldText(g){if(g.type==='refuse')return '应拒答';if(g.type==='groups')return Object.entries(g.value).map(([k,v])=>k+' '+v).join('；');return typeof g.value==='number'?fmt(g.value):String(g.value)}
+function renderEvQ(){ $('evItems').innerHTML=`<table><tr><th>编号</th><th>题型</th><th>问题</th><th>标准答案</th></tr>${EVQ.map(q=>`<tr><td>${q.id}</td><td>${tag(KIND_ZH[q.kind]||q.kind)}</td><td>${esc(q.question)}</td><td class="muted">${esc(goldText(q.gold))}</td></tr>`).join('')}</table>`;
+ $('evKpis').innerHTML=`<div class="kpi"><div class="n">${EVQ.length}</div><div class="l">题目数</div></div><div class="kpi"><div class="n">${new Set(EVQ.map(q=>q.kind)).size}</div><div class="l">题型数</div></div>`;$('evKinds').innerHTML='<span class="hint">运行评测后显示</span>'}
+$('btnEvGen').onclick=function(){busy(this,async()=>{const r=await post(J()+'/eval/questions',{n_per_type:+$('evN').value||3,seed:+$('evSeed').value||7});EVQ=r.items;EVR=null;renderEvQ();note(`已生成 ${r.total} 道评测题`)})};
+$('btnEvRun').onclick=function(){busy(this,async()=>{if(!EVQ){const g=await post(J()+'/eval/questions',{n_per_type:+$('evN').value||3,seed:+$('evSeed').value||7});EVQ=g.items}
+ EVR=await post(J()+'/eval/run',{questions:EVQ,use_llm:$('evLlm').checked});renderEvR();note(`评测完成：${EVR.passed}/${EVR.total}，准确率 ${(EVR.accuracy*100).toFixed(1)}%`)})};
+$('evFail').onchange=()=>EVR&&renderEvR();
+function renderEvR(){const R=EVR;$('evKpis').innerHTML=[['准确率',(R.accuracy*100).toFixed(1)+'%'],['通过',R.passed],['失败',R.total-R.passed],['题目数',R.total]].map(([l,n])=>`<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+ $('evKinds').innerHTML=`<table><tr><th>题型</th><th class="num">题数</th><th class="num">通过</th><th>准确率</th></tr>${Object.entries(R.by_kind).map(([k,b])=>`<tr><td>${esc(KIND_ZH[k]||k)}</td><td class="num">${b.total}</td><td class="num">${b.pass}</td><td><div class="row" style="flex-wrap:nowrap"><div style="flex:1"><div class="bar ${b.rate<1?'dim':''}" style="width:${Math.max(2,b.rate*100)}%"></div></div><span class="auto" style="width:52px;text-align:right">${(b.rate*100).toFixed(0)}%</span></div></td></tr>`).join('')}</table>`;
+ const its=R.items.filter(i=>!$('evFail').checked||!i.pass);
+ $('evItems').innerHTML=`<table><tr><th>编号</th><th>结果</th><th>题型</th><th>问题</th><th>标准答案</th><th>系统回答</th><th>判定</th></tr>${its.map(i=>`<tr><td>${i.id}</td><td>${i.pass?tag('通过','ok'):tag('失败','bad')}</td><td>${esc(KIND_ZH[i.kind]||i.kind)}</td><td>${esc(i.question)}</td><td class="muted">${esc(goldText(i.gold)).slice(0,160)}</td><td>${esc(i.answer).slice(0,200)}</td><td class="muted">${esc(i.reason)}</td></tr>`).join('')}</table>`}
+
+// ---------------- 导出
+async function dl(path,name){const r=await fetch(base()+path,{headers:hdr()});if(!r.ok)throw new Error((await r.text()).slice(0,300));const b=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();a.remove()}
+$('btnJson').onclick=function(){busy(this,()=>dl(J()+'/export.json',`ontology_${JOB.source}.json`))};
+$('btnOwl').onclick=function(){busy(this,()=>dl(J()+'/export.owl',`ontology_${JOB.source}.owl`))};
+$('btnYaml').onclick=function(){busy(this,()=>dl(J()+'/contract.yaml',`contract_${JOB.source}.yaml`))};
+
+bindExtra();show('src');loadJobs();loadDatasets();const qs=new URLSearchParams(location.search);if(qs.get('job'))openJob(qs.get('job')).then(()=>show('model')).catch(e=>note(e.message,true));
+</script>
+</body>
+</html>
