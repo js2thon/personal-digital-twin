@@ -71,15 +71,27 @@ def _slim(job: dict) -> dict:
 
 def save(job: dict, tenant: str = "default", actor: str = "owner",
          source_ref: dict | None = None) -> dict:
-    job["updated_at"] = time.time()
+    owner = str(tenant)
     with _LOCK:
-        _MEM[job["id"]] = job
-        _MEM_TENANTS[job["id"]] = str(tenant)
-    if not ensure_schema():
+        cached_owner = _MEM_TENANTS.get(job["id"])
+        if cached_owner is not None and cached_owner != owner:
+            raise PermissionError("Automodel job 不属于当前租户")
+    has_db = ensure_schema()
+    db = _db() if has_db else None
+    if db is not None:
+        existing = db.fetch_one(
+            "SELECT tenant_id FROM ontology.automodel_jobs WHERE id=:i",
+            {"i": job["id"]})
+        if existing and str(existing.get("tenant_id")) != owner:
+            raise PermissionError("Automodel job 不属于当前租户")
+    job["updated_at"] = time.time()
+    if db is None:
+        with _LOCK:
+            _MEM[job["id"]] = job
+            _MEM_TENANTS[job["id"]] = owner
         return job
-    db = _db()
     stage = next(reversed(job.get("stages") or {"created": 1}))
-    params = {"id": job["id"], "t": tenant, "s": job["source"], "k": job.get("source_kind", "file"),
+    params = {"id": job["id"], "t": owner, "s": job["source"], "k": job.get("source_kind", "file"),
               "ref": json.dumps(source_ref or job.get("source_ref") or {}, ensure_ascii=False),
               "st": job["status"], "stage": stage,
               "a": json.dumps(_slim(job), ensure_ascii=False, default=str),
@@ -95,8 +107,10 @@ def save(job: dict, tenant: str = "default", actor: str = "owner",
         " artifact=EXCLUDED.artifact, review=EXCLUDED.review, schema_version=EXCLUDED.schema_version, "
         " published_by=EXCLUDED.published_by, error=EXCLUDED.error, updated_at=now() "
         "WHERE ontology.automodel_jobs.tenant_id = EXCLUDED.tenant_id", params)
+    with _LOCK:
+        _MEM[job["id"]] = job
+        _MEM_TENANTS[job["id"]] = owner
     return job
-
 
 def get(job_id: str, tenant: str = "default") -> dict | None:
     # The in-process cache is shared by workers/tenants: never return it before checking ownership.
