@@ -1,8 +1,4 @@
-"""建模任务持久化：ontology.automodel_jobs（断点续跑、审核、发布留痕）。
-
-每个阶段的产物落 JSONB；DataFrame 不入库（只存画像与契约），重跑物化时按 source 重新读取。
-无 DB（单测/离线）时退回进程内字典，接口一致。
-"""
+"""建模任务持久化：ontology.automodel_jobs（断点续跑、审核、发布留痕）。"""
 from __future__ import annotations
 
 import json
@@ -10,6 +6,7 @@ import threading
 import time
 
 _MEM: dict[str, dict] = {}
+_MEM_TENANTS: dict[str, str] = {}
 _LOCK = threading.Lock()
 _ensured = False
 
@@ -20,10 +17,10 @@ DDL = [
         tenant_id VARCHAR(64) NOT NULL DEFAULT 'default',
         source_id VARCHAR(120) NOT NULL,
         source_kind VARCHAR(20) NOT NULL,
-        source_ref JSONB NOT NULL DEFAULT '{}',          -- 文件路径 / 加密后的连接串引用，不存明文
+        source_ref JSONB NOT NULL DEFAULT '{}',
         status VARCHAR(30) NOT NULL,
         stage VARCHAR(30) NOT NULL,
-        artifact JSONB NOT NULL DEFAULT '{}',            -- profiles / draft / contract / issues / stats / metrics
+        artifact JSONB NOT NULL DEFAULT '{}',
         review JSONB NOT NULL DEFAULT '[]',
         schema_version VARCHAR(120),
         published_by VARCHAR(120),
@@ -32,9 +29,7 @@ DDL = [
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
     "CREATE INDEX IF NOT EXISTS idx_automodel_jobs_tenant ON ontology.automodel_jobs (tenant_id, created_at DESC)",
-    # PgWriter 按 external_id 幂等 upsert 依赖此索引
-    "CREATE INDEX IF NOT EXISTS idx_entities_external_ids ON ontology.entities "
-    "USING gin ((properties->'external_ids'))",
+    "CREATE INDEX IF NOT EXISTS idx_entities_external_ids ON ontology.entities USING gin ((properties->'external_ids'))",
 ]
 
 
@@ -59,7 +54,6 @@ def ensure_schema() -> bool:
 
 
 def _slim(job: dict) -> dict:
-    """artifact 只存可序列化、可复核的部分（物化明细不入库，只留统计与样本）。"""
     mat = job.get("materialized") or {}
     return {
         "profiles": job.get("profiles"), "draft": job.get("draft"),
@@ -67,9 +61,11 @@ def _slim(job: dict) -> dict:
         "stages": job.get("stages"), "metrics": job.get("metrics"),
         "materialized": {"stats": mat.get("stats"), "errors": (mat.get("errors") or [])[:50],
                          "dangling": (mat.get("dangling") or [])[:50]},
-        "written": job.get("written"),
-        "config": job.get("config"), "actions_log": (job.get("actions_log") or [])[-500:],
+        "written": job.get("written"), "config": job.get("config"),
+        "actions_log": (job.get("actions_log") or [])[-500:],
         "dataset_id": job.get("dataset_id"), "design_layout": job.get("design_layout"),
+        "change_set": (job.get("change_set") or [])[-500:],
+        "cq_results": job.get("cq_results"),
     }
 
 
@@ -78,6 +74,7 @@ def save(job: dict, tenant: str = "default", actor: str = "owner",
     job["updated_at"] = time.time()
     with _LOCK:
         _MEM[job["id"]] = job
+        _MEM_TENANTS[job["id"]] = str(tenant)
     if not ensure_schema():
         return job
     db = _db()
@@ -96,18 +93,23 @@ def save(job: dict, tenant: str = "default", actor: str = "owner",
         " :v, :pb, :e, :cb) "
         "ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, stage=EXCLUDED.stage, "
         " artifact=EXCLUDED.artifact, review=EXCLUDED.review, schema_version=EXCLUDED.schema_version, "
-        " published_by=EXCLUDED.published_by, error=EXCLUDED.error, updated_at=now()", params)
+        " published_by=EXCLUDED.published_by, error=EXCLUDED.error, updated_at=now() "
+        "WHERE ontology.automodel_jobs.tenant_id = EXCLUDED.tenant_id", params)
     return job
 
 
 def get(job_id: str, tenant: str = "default") -> dict | None:
+    # The in-process cache is shared by workers/tenants: never return it before checking ownership.
     with _LOCK:
-        if job_id in _MEM:
-            return _MEM[job_id]
+        cached = _MEM.get(job_id)
+        owner = _MEM_TENANTS.get(job_id)
+        if cached is not None:
+            return cached if owner == str(tenant) else None
     if not ensure_schema():
         return None
     row = _db().fetch_one(
-        "SELECT * FROM ontology.automodel_jobs WHERE id=:i AND tenant_id=:t", {"i": job_id, "t": tenant})
+        "SELECT * FROM ontology.automodel_jobs WHERE id=:i AND tenant_id=:t",
+        {"i": job_id, "t": tenant})
     if not row:
         return None
     art = row["artifact"] if isinstance(row["artifact"], dict) else json.loads(row["artifact"] or "{}")
@@ -117,6 +119,7 @@ def get(job_id: str, tenant: str = "default") -> dict | None:
            "published_by": row.get("published_by"), "error": row.get("error"), **art}
     with _LOCK:
         _MEM[job_id] = job
+        _MEM_TENANTS[job_id] = str(tenant)
     return job
 
 
@@ -124,8 +127,10 @@ def listing(tenant: str = "default", limit: int = 50) -> list[dict]:
     if not ensure_schema():
         with _LOCK:
             return [{"id": j["id"], "source": j["source"], "status": j["status"]}
-                    for j in list(_MEM.values())[-limit:]]
+                    for jid, j in list(_MEM.items())[-limit:]
+                    if _MEM_TENANTS.get(jid) == str(tenant)]
     return _db().fetch_all(
         "SELECT id, source_id, source_kind, status, stage, schema_version, created_at, updated_at, "
         " jsonb_array_length(review) AS needs_review FROM ontology.automodel_jobs "
-        "WHERE tenant_id=:t ORDER BY created_at DESC LIMIT :n", {"t": tenant, "n": max(1, min(limit, 200))})
+        "WHERE tenant_id=:t ORDER BY created_at DESC LIMIT :n",
+        {"t": tenant, "n": max(1, min(limit, 200))})
