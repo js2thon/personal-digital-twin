@@ -326,3 +326,8 @@ def test_studio_governance_and_bidirectional_provenance(ctx):
     assert governance["access"]["tenant_scoped_lookup"] is True
     assert governance["access"]["client_write_enabled"] is False
     assert "release_gate" in governance
+
+
+def test_generator_level_suffix_label():
+    from app.modules.ontology.automodel.generator import _guess_label
+    assert _guess_label("dept_name_lv5") == "5级部门"
