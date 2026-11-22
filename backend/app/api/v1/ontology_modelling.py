@@ -139,6 +139,12 @@ class MappingSetCreateIn(BaseModel):
     ontology_schema: dict | None = None
 
 
+class DatasetExecuteIn(DatasetInspectIn):
+    """仅允许已批准映射版本执行，写入本体实例库。"""
+    mapping_set_id: str
+    max_rows: int = 500
+
+
 
 def _mapping_schema(schema: dict | None) -> dict:
     if schema:
@@ -264,6 +270,62 @@ def mapping_set_get(mapping_id: str, request: Request):
     if not result:
         raise HTTPException(404, "映射版本不存在")
     return result
+
+
+@router.post("/ontology/modelling/dataset/execute")
+def dataset_execute(payload: DatasetExecuteIn, request: Request):
+    """以已批准映射版本原子化写入本体实例，并持久化字段级血缘。"""
+    import base64
+    import hashlib
+    from app.modules.ontology import mapping_execution as ME
+    principal = _principal(request)
+    tenant_id = str(principal.get("tenant_id") or "default")
+    actor = str(principal.get("user_id") or "anonymous")
+    if payload.max_rows < 1 or payload.max_rows > ME.MAX_EXECUTION_ROWS:
+        raise HTTPException(400, f"max_rows 必须在 1-{ME.MAX_EXECUTION_ROWS} 之间")
+    try:
+        raw = base64.b64decode(payload.content_base64, validate=True)
+        dataset = ME  # keep execution module import explicit for API instrumentation
+        from app.modules.ontology import mapping_pipeline as MP
+        parsed = MP.read_tabular_file(payload.file_name, raw, payload.sheet_name)
+    except (ValueError, UnicodeError) as exc:
+        raise HTTPException(400, f"数据集解析失败：{exc}") from exc
+    try:
+        result = ME.execute_approved_dataset(
+            tenant_id=tenant_id, mapping_set_id=payload.mapping_set_id,
+            rows=parsed["rows"], source_name=payload.file_name,
+            source_sha256=hashlib.sha256(raw).hexdigest(), actor=actor,
+            max_rows=payload.max_rows)
+        result["dataset"] = {k: v for k, v in parsed.items() if k != "rows"}
+        return result
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(422, f"数据实例化失败，事务已回滚：{exc}") from exc
+
+
+@router.get("/ontology/modelling/ingestion-runs/{run_id}")
+def ingestion_run_get(run_id: str, request: Request):
+    """查询当前租户的数据接入批次状态。"""
+    from app.modules.ontology import mapping_execution as ME
+    tenant_id = str(_principal(request).get("tenant_id") or "default")
+    result = ME.get_run(run_id, tenant_id=tenant_id)
+    if not result:
+        raise HTTPException(404, "接入批次不存在")
+    return result
+
+
+@router.get("/ontology/modelling/instances/{instance_id}/lineage")
+def instance_lineage_get(instance_id: str, request: Request):
+    """查询本体实例逐属性来源血缘。"""
+    from app.modules.ontology import mapping_execution as ME
+    tenant_id = str(_principal(request).get("tenant_id") or "default")
+    return {"instance_id": instance_id,
+            "items": ME.get_instance_lineage(instance_id, tenant_id=tenant_id)}
 
 
 def _principal(request: Request) -> dict:
