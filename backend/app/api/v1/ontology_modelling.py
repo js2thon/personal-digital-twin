@@ -145,6 +145,7 @@ class DatasetExecuteIn(DatasetInspectIn):
     max_rows: int = 500
     sync_mode: str = "append"
     source_id_column: str | None = None
+    full_snapshot: bool = False
 
 class DatabaseInspectIn(BaseModel):
     """通过服务端白名单连接配置发现数据库元数据；不接收连接串或 SQL。"""
@@ -306,7 +307,8 @@ def dataset_execute(payload: DatasetExecuteIn, request: Request):
             rows=parsed["rows"], source_name=payload.file_name,
             source_sha256=hashlib.sha256(raw).hexdigest(), actor=actor,
             max_rows=payload.max_rows, sync_mode=payload.sync_mode,
-            source_id_column=payload.source_id_column)
+            source_id_column=payload.source_id_column,
+            full_snapshot=payload.full_snapshot)
         result["dataset"] = {k: v for k, v in parsed.items() if k != "rows"}
         return result
     except LookupError as exc:
