@@ -78,6 +78,8 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
     """
     ensure_schema()
     size = max(1, min(int(batch_size), MAX_EXECUTION_ROWS))
+    if reconcile_missing and (sync_mode != "upsert" or not source_id_column):
+        raise ValueError("缺失记录对账仅支持提供稳定源记录 ID 的 upsert 模式")
     mapping_set = mapping_registry.get(mapping_set_id, tenant_id=tenant_id)
     if not mapping_set or mapping_set.get("status") != "approved":
         raise PermissionError("只有当前租户已审核的映射版本可以执行")
