@@ -146,6 +146,12 @@ def rebuild(job: dict, ts: TableSet) -> dict:
     job["profiles"] = {k: v.to_dict() for k, v in profiles.items()}
     job["contract"] = mapper.build_contract(ts.source_id, job["draft"], profiles)
     job["issues"] = mapper.validate_contract(job["contract"], job["draft"]["schema"], profiles)
+    from app.modules.ontology.semantic.schema_def import validate_business_model
+    job["business_model_issues"] = validate_business_model(job["draft"]["schema"])
+    job["issues"].extend({
+        "level": "error", "code": item["code"],
+        "table": item.get("ref"), "msg": item["message"],
+    } for item in job["business_model_issues"])
     if any(i["level"] == "error" for i in job["issues"]):
         job["status"] = "needs_review"
         job["release_gate"] = release_gate.evaluate(job)
