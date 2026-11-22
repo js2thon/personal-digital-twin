@@ -1,4 +1,6 @@
 """Regression tests for tenant isolation in the Automodel job cache."""
+import pytest
+
 from app.modules.ontology.automodel import jobs
 
 
@@ -31,8 +33,12 @@ def test_memory_fallback_listing_is_tenant_scoped(monkeypatch):
 
 def test_persistent_upsert_cannot_reassign_job_to_another_tenant(monkeypatch):
     class FakeDB:
-        def __init__(self):
+        def __init__(self, existing=None):
+            self.existing = existing
             self.sql = ""
+
+        def fetch_one(self, sql, params=None):
+            return self.existing
 
         def execute(self, sql, params=None):
             self.sql = sql
@@ -46,4 +52,22 @@ def test_persistent_upsert_cannot_reassign_job_to_another_tenant(monkeypatch):
     jobs.save(_job("persisted-id", "source"), tenant="tenant-a")
 
     assert "WHERE ontology.automodel_jobs.tenant_id=EXCLUDED.tenant_id" in db.sql
-    assert "ON CONFLICT (id) DO UPDATE" in db.sql
+    assert ("tenant-a", "persisted-id") in jobs._MEM
+
+
+def test_persistent_id_collision_does_not_poison_other_tenant_cache(monkeypatch):
+    class FakeDB:
+        def fetch_one(self, sql, params=None):
+            return {"tenant_id": "tenant-a"}
+
+        def execute(self, sql, params=None):
+            raise AssertionError("upsert must not run after tenant collision")
+
+    monkeypatch.setattr(jobs, "_db", lambda: FakeDB())
+    monkeypatch.setattr(jobs, "ensure_schema", lambda: True)
+    jobs._MEM.clear()
+
+    with pytest.raises(PermissionError, match="another tenant"):
+        jobs.save(_job("shared-id", "attacker-source"), tenant="tenant-b")
+
+    assert ("tenant-b", "shared-id") not in jobs._MEM
