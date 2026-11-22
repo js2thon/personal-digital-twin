@@ -118,6 +118,20 @@ class MappingValidateIn(BaseModel):
     mappings: list[dict]
     ontology_schema: dict | None = None
 
+class DatasetInspectIn(BaseModel):
+    """CSV/XLSX 文件以 base64 传入；限制 10 MiB。"""
+    file_name: str
+    content_base64: str
+    sheet_name: str | None = None
+    ontology_schema: dict | None = None
+
+
+class DatasetPreviewIn(DatasetInspectIn):
+    """使用人工确认的映射生成实例化预览；不会写库。"""
+    mappings: list[dict]
+    preview_limit: int = 20
+
+
 
 def _mapping_schema(schema: dict | None) -> dict:
     if schema:
@@ -146,6 +160,42 @@ def mapping_validate(payload: MappingValidateIn, request: Request):
     """校验人工确认的字段映射；不触发连接器、SQL 或业务数据写入。"""
     from app.modules.ontology import mapping_pipeline as MP
     result = MP.validate_mappings(payload.mappings, _mapping_schema(payload.ontology_schema))
+    result["principal"] = _principal(request).get("user_id", "anonymous")
+    return result
+
+
+def _read_dataset_payload(file_name: str, content_base64: str, sheet_name: str | None):
+    import base64
+    from app.modules.ontology import mapping_pipeline as MP
+    if len(content_base64) > 14 * 1024 * 1024:
+        raise HTTPException(413, "文件编码后超过上传限制")
+    try:
+        raw = base64.b64decode(content_base64, validate=True)
+        return MP.read_tabular_file(file_name, raw, sheet_name)
+    except (ValueError, UnicodeError) as exc:
+        raise HTTPException(400, f"数据集解析失败：{exc}") from exc
+
+
+@router.post("/ontology/modelling/dataset/inspect")
+def dataset_inspect(payload: DatasetInspectIn, request: Request):
+    """解析 CSV/XLSX，返回字段画像和本体映射候选；只读。"""
+    from app.modules.ontology import mapping_pipeline as MP
+    dataset = _read_dataset_payload(payload.file_name, payload.content_base64, payload.sheet_name)
+    schema = _mapping_schema(payload.ontology_schema)
+    report = MP.suggest_mappings(dataset["columns"], schema)
+    return {"dataset": {k: v for k, v in dataset.items() if k != "rows"},
+            "mapping_suggestions": report, "principal": _principal(request).get("user_id", "anonymous")}
+
+
+@router.post("/ontology/modelling/mapping/preview-file")
+def mapping_preview_file(payload: DatasetPreviewIn, request: Request):
+    """读取 CSV/XLSX 并按已确认映射生成实例、校验报告和字段血缘；不写库。"""
+    from app.modules.ontology import mapping_pipeline as MP
+    dataset = _read_dataset_payload(payload.file_name, payload.content_base64, payload.sheet_name)
+    schema = _mapping_schema(payload.ontology_schema)
+    result = MP.preview_rows(dataset["rows"], payload.mappings, schema,
+                             source_name=payload.file_name, limit=payload.preview_limit)
+    result["dataset"] = {k: v for k, v in dataset.items() if k != "rows"}
     result["principal"] = _principal(request).get("user_id", "anonymous")
     return result
 
