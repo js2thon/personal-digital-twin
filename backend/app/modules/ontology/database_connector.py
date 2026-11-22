@@ -220,7 +220,7 @@ def _is_sensitive_column(name: str, configured: set[str] | None = None) -> bool:
     """Conservatively redact likely credentials and direct personal identifiers."""
     normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", name.casefold())
     configured = {
-        re.sub(r"[^a-z0-9\\u4e00-\\u9fff]", "", str(item).casefold())
+        re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", str(item).casefold())
         for item in (configured or set())
     }
     if normalized in configured:
