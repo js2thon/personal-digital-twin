@@ -54,3 +54,21 @@ def test_execution_supports_stable_source_record_upsert():
     assert 'sync_mode == "upsert"' in source
     assert 'instance_payload["id"] = source_state["instance_id"]' in source
     assert "Missing rows are never deleted implicitly" in source
+
+
+
+def test_full_snapshot_requires_upsert_mode():
+    from app.modules.ontology.mapping_execution import execute_approved_dataset
+    import inspect
+
+    params = inspect.signature(execute_approved_dataset).parameters
+    assert params["full_snapshot"].default is False
+    assert params["sync_mode"].default == "append"
+
+
+def test_full_snapshot_uses_tombstones_not_hard_deletes():
+    source = Path("app/modules/ontology/mapping_execution.py").read_text(encoding="utf-8")
+    assert "tombstoned_at=now()" in source
+    assert "last_seen_run_id IS DISTINCT FROM" in source
+    assert "it never deletes" in source or "never deletes" in source
+    assert "records_tombstoned" in source
