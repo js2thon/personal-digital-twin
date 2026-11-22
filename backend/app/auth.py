@@ -60,3 +60,17 @@ def actor_from_request(request: Request) -> str:
 
 def current_actor(request: Request) -> str:
     return getattr(request.state, "actor", "owner")
+
+
+
+def allow_identity_context_headers(request: Request) -> bool:
+    """Only loopback callers may supply development identity/context headers.
+
+    Remote API-key authentication currently represents a single service owner,
+    not an end-user identity provider. Therefore remote callers cannot select
+    tenant, user, role, scope, or schema version via request headers.
+    """
+    host = peer_host(request)
+    return host in _LOOPBACK or (
+        settings.allow_testclient_actor and host in _TEST_HOSTS
+    )
