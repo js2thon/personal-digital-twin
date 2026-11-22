@@ -6,7 +6,7 @@
   关系事实的 object_value = {"external_id": ...}，正好命中 projection.py 的
   pick_object_external_id 路径 —— 不再依赖名字匹配。
 
-writer 可注入：默认只返回结果（便于测试）；`PgWriter` 写入 PG 并交给投影/Outbox。
+物化结果仅用于 Discovery 预览与质量分析；旧 `PgWriter` 已禁用。
 本模块接收的 TableSet 属于 Automodel Discovery 数据集，永远不能作为生产摄取凭据。
 """
 from __future__ import annotations
