@@ -338,7 +338,17 @@ def edit_mapping_contract(job_id: str, payload: MappingContractEditIn, request: 
     if blockers:
         raise HTTPException(400, {"message": "映射契约未通过校验，未保存", "issues": issues})
     job["contract"] = contract
-    job["issues"] = issues
+    # Keep independent business-model and modeling-standard findings in the release gate.
+    other_issues = []
+    for item in (job.get("business_model_issues") or []):
+        other_issues.append({"level": "error", "code": item.get("code"),
+                             "table": item.get("ref"), "msg": item.get("message")})
+    for item in (job.get("standards_report") or {}).get("findings", []):
+        other_issues.append({"level": "error" if item.get("severity") == "error" else "warning",
+                             "code": item.get("code"), "table": item.get("ref"),
+                             "msg": item.get("message"),
+                             "recommendation": item.get("recommendation")})
+    job["issues"] = issues + other_issues
     job["materialized"] = pipeline.materializer.materialize(ts, contract)
     with _LOCK:
         _FRAMES.pop(job_id, None)
