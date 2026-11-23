@@ -35,7 +35,7 @@ def to_binding(contract: dict | None, *, ontology_version: str | None = None) ->
         obj = object_binding(str(object_type))
         source = {
             "source_id": data.get("source") or item.get("source_id"),
-            "table": str(table),
+            "table": str(table) if table else None,
             "primary_key": list(item.get("primary_key") or []),
             "title_property": item.get("title_property"),
         }
@@ -66,7 +66,7 @@ def to_binding(contract: dict | None, *, ontology_version: str | None = None) ->
             links.append({
                 "target_link_type": relation.get("type"),
                 "mapping_type": "foreign_key",
-                "source": {"table": str(table), "column": relation.get("column")},
+                "source": {"table": str(table) if table else None, "column": relation.get("column")},
                 "target": {
                     "object_type": relation.get("target"),
                     "table": relation.get("target_table"),
