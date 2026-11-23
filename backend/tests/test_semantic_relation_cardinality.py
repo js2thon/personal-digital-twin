@@ -146,3 +146,31 @@ def test_write_relation_uses_persisted_endpoint_types_not_request_types(monkeypa
 
     assert observed["source_type"] == "Person"
     assert observed["target_type"] == "Department"
+
+
+def test_write_relation_rejects_endpoint_without_persisted_type(monkeypatch):
+    import pytest
+    from app.modules.ontology.semantic import service as service_module
+    from app.modules.ontology.semantic.constraints import ConstraintViolation
+
+    monkeypatch.setattr(service_module.versioning, "current_version",
+                        lambda: {"ontology_version": "test-v1"})
+    instances = {
+        "source-1": {"id": "source-1", "type_name": ""},
+        "target-1": {"id": "target-1", "type_name": "Department"},
+    }
+    monkeypatch.setattr(service_module.store, "get_instance",
+                        lambda instance_id, tenant_id: instances.get(instance_id))
+    svc = service_module.OntologyService(
+        {"entity_types": {}, "relation_types": {}}, tenant_id="tenant-a"
+    )
+    monkeypatch.setattr(svc, "_audit", lambda *args, **kwargs: None)
+
+    with pytest.raises(ConstraintViolation):
+        svc.write_relation({
+            "source_id": "source-1",
+            "target_id": "target-1",
+            "relation_type": "assigned_to",
+            "source_type": "Person",
+            "target_type": "Department",
+        }, auto_reasoning=False)
