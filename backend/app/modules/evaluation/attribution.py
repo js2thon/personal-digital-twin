@@ -13,9 +13,12 @@ def attribute(result: dict) -> dict:
     engine = str(result.get("engine") or "")
     error = str(result.get("error") or "")
     intent = str(actual.get("intent") or "")
+    expected_intent = str(result.get("expected_intent") or "")
 
     candidates: list[tuple[str, float, str]] = []
-    if not intent and not error and not sparql and engine not in {"guard", "template"}:
+    if expected_intent and intent and expected_intent != intent:
+        candidates.append(("F1", 0.90, f"意图不匹配：期望 {expected_intent}，实际 {intent}"))
+    elif not intent and not error and not sparql and engine not in {"guard", "template"}:
         candidates.append(("F1", 0.75, "问答结果未返回意图信息"))
 
     if error or not actual.get("ok"):
