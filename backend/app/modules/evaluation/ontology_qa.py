@@ -170,7 +170,11 @@ def run_suite(tenant_id: str, actor: str, suite_id: str, spec: dict,
     results = []
     for q in questions:
         t0 = time.perf_counter()
-        out = ontology_qa.answer(spec, q["question"], data=data, use_llm=use_llm)
+        try:
+            out = ontology_qa.answer(spec, q["question"], data=data, use_llm=use_llm)
+        except Exception as exc:  # noqa: BLE001 - 单题失败不终止整组评测
+            out = {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:200]}",
+                   "attempts": [], "sparql": ""}
         latency = round((time.perf_counter() - t0) * 1000, 3)
         actual = _actual(out)
         expect = q["expect"] if isinstance(q["expect"], dict) else json.loads(q["expect"])
