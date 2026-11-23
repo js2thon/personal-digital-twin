@@ -29,6 +29,7 @@ def test_tabular_reader_adds_automodel_normalized_header_aliases():
     parsed = read_tabular_file("employees.csv", "员工编号,Employee Name\nE001,Zhang San\n".encode("utf-8"))
     row = parsed["rows"][0]
     assert row["员工编号"] == "E001"
+    assert row["员工编号"] == row["员工编号"]
     assert row["employee_name"] == "Zhang San"
 
 

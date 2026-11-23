@@ -388,7 +388,7 @@ def read_tabular_file(file_name: str, content: bytes,
     import re
     normalized = {}
     for header in headers:
-        alias = re.sub(r"[^0-9A-Za-z_\\u4e00-\\u9fff]+", "_", header).strip("_").lower() or "column"
+        alias = re.sub(r"[^0-9A-Za-z_\u4e00-\u9fff]+", "_", header).strip("_").lower() or "column"
         normalized.setdefault(alias, []).append(header)
     collisions = {alias: names for alias, names in normalized.items() if len(names) > 1}
     if collisions:
