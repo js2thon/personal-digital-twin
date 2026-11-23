@@ -81,10 +81,15 @@ def create_suite(tenant_id: str, actor: str, payload: dict) -> dict:
         for item in questions:
             q = str(item.get("question") or "").strip()
             expect = item.get("expect")
-            if not q or not isinstance(expect, dict) or expect.get("type") not in {
-                "answer_set", "sparql_result", "ask_boolean", "min_rows"
-            }:
-                raise ValueError("每道题必须包含 question 和有效的 expect.type")
+            kind = expect.get("type") if isinstance(expect, dict) else None
+            valid = {
+                "answer_set": isinstance(expect.get("values"), list),
+                "sparql_result": isinstance(expect.get("rows"), list),
+                "ask_boolean": isinstance(expect.get("value"), bool),
+                "min_rows": isinstance(expect.get("value"), int) and expect["value"] >= 0,
+            } if kind in {"answer_set", "sparql_result", "ask_boolean", "min_rows"} else {}
+            if not q or not valid.get(kind, False):
+                raise ValueError("题目 expect 必须符合 answer_set / sparql_result / ask_boolean / min_rows 对应结构")
             db.execute(
                 """INSERT INTO ontology.eval_questions
                    (id,suite_id,tenant_id,question,intent,tags,expect,difficulty,source)
@@ -198,7 +203,7 @@ def run_suite(tenant_id: str, actor: str, suite_id: str, spec: dict,
     run_id = str(uuid.uuid4())
     metrics = {"total": total, "passed": passed, "failed": total - passed,
                "accuracy": round(passed / total, 6), "latency_ms": elapsed,
-               "executable_rate": round(sum(bool(r["actual"]["ok"]) for r in results) / total, 6)}
+               "executable_rate": round(sum(bool(r["actual"]["ok"] and r["sparql"]) for r in results) / total, 6)}
     with db.transaction():
         db.execute(
             """INSERT INTO ontology.eval_runs(id,tenant_id,suite_id,snapshot,metrics,status,created_by)
