@@ -116,6 +116,15 @@ class OntologyService:
         types = resolve_types([src_instance, dst_instance])
         src_type = types.get(src, "")
         dst_type = types.get(dst, "")
+        if not src_type or not dst_type:
+            violations = [{
+                "constraint": "relation_endpoint_type",
+                "severity": "violation",
+                "message": "源或目标实例缺少有效对象类型，无法验证关系端点约束",
+            }]
+            self._audit("write_relation", payload.get("relation_type"), "rejected", violations)
+            raise ConstraintViolation("关系写入被拒绝：源或目标实例缺少有效对象类型",
+                                      {"blocking": True, "violations": violations})
         check = dict(payload, source_type=src_type, target_type=dst_type)
         relation_type = str(payload.get("relation_type") or "")
         relation_spec = (self.schema.get("relation_types") or {}).get(relation_type) or {}
