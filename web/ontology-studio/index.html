@@ -81,8 +81,8 @@ window.applySemanticMappingEdit=({table,column,property})=>{
 };
 
 window.applySemanticRelationEdit=payload=>{
- if(!S.job||!S.job.contract){setStatus('connection','当前任务尚无映射契约，无法编辑关系');return}
- const contract=JSON.parse(JSON.stringify(S.job.contract));
+ if(!S.job){setStatus('connection','请先选择自动建模任务');return}
+ const contract=JSON.parse(JSON.stringify(S.job.contract||{source:S.job.source?.id||S.job.source?.name||'',mappings:[],links:[]}));
  contract.mappings=Array.isArray(contract.mappings)?contract.mappings:[];
  contract.links=Array.isArray(contract.links)?contract.links:[];
  const schema=S.job.draft?.schema||S.job.schema||{},spec=schema.relation_types?.[payload.relation];
