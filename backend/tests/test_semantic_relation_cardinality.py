@@ -84,9 +84,11 @@ def test_store_lookup_is_tenant_and_relation_scoped(monkeypatch):
 
 def test_write_relation_rejects_missing_tenant_scoped_endpoint(monkeypatch):
     import pytest
+    from contextlib import nullcontext
     from app.modules.ontology.semantic import service as service_module
     from app.modules.ontology.semantic.constraints import ConstraintViolation
 
+    monkeypatch.setattr(service_module.db, "transaction", lambda: nullcontext())
     monkeypatch.setattr(service_module.versioning, "current_version",
                         lambda: {"ontology_version": "test-v1"})
     monkeypatch.setattr(service_module.store, "get_instance",
@@ -107,8 +109,10 @@ def test_write_relation_rejects_missing_tenant_scoped_endpoint(monkeypatch):
 
 
 def test_write_relation_uses_persisted_endpoint_types_not_request_types(monkeypatch):
+    from contextlib import nullcontext
     from app.modules.ontology.semantic import service as service_module
 
+    monkeypatch.setattr(service_module.db, "transaction", lambda: nullcontext())
     monkeypatch.setattr(service_module.versioning, "current_version",
                         lambda: {"ontology_version": "test-v1"})
     instances = {
@@ -119,6 +123,8 @@ def test_write_relation_uses_persisted_endpoint_types_not_request_types(monkeypa
                         lambda instance_id, tenant_id: instances.get(instance_id))
     monkeypatch.setattr(service_module.store, "find_relation_cardinality_conflicts",
                         lambda *args, **kwargs: [])
+    monkeypatch.setattr(service_module.store, "lock_relation_cardinality",
+                        lambda *args, **kwargs: None)
     monkeypatch.setattr(service_module.store, "insert_relation", lambda rec: "relation-1")
     monkeypatch.setattr(service_module, "evaluate_for_write",
                         lambda *args, **kwargs: {"violations": [], "applied_rules": [],
