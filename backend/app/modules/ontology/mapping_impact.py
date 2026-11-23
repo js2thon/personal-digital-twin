@@ -52,8 +52,8 @@ def analyze(*, tenant_id: str, old_mapping: dict, new_mapping: dict) -> dict:
     changes = compare_mappings(old_definition, new_definition)
     changed = changes["changed_properties"]
 
-    ME = __import__("app.modules.ontology.mapping_execution", fromlist=["ensure_schema"])
-    ME.ensure_schema()
+    from app.modules.ontology import mapping_execution
+    mapping_execution.ensure_schema()
     params = {"tenant_id": tenant_id, "mapping_id": old_id}
     where = []
     for i, item in enumerate(changed):
@@ -61,7 +61,8 @@ def analyze(*, tenant_id: str, old_mapping: dict, new_mapping: dict) -> dict:
         params[f"property_{i}"] = item["property"]
         where.append(f"(entity_type=:entity_{i} AND property_name=:property_{i})")
     impacted = db.fetch_one(
-        "SELECT count(*) AS lineage_rows, count(DISTINCT instance_id) AS instances "
+        "SELECT count(*) AS lineage_rows, count(DISTINCT instance_id) AS instances, "
+        "count(*) FILTER (WHERE ontology_version IS NULL) AS unversioned_rows "
         "FROM ontology.dataset_field_lineage WHERE tenant_id=:tenant_id "
         "AND mapping_set_id=CAST(:mapping_id AS uuid) "
         + ("AND (" + " OR ".join(where) + ")" if where else "AND false"),
@@ -86,10 +87,11 @@ def analyze(*, tenant_id: str, old_mapping: dict, new_mapping: dict) -> dict:
             "changed_property_count": len(changed),
             "changed_link_count": changes["changed_links"],
             "lineage_rows_for_changed_properties": int(impacted.get("lineage_rows") or 0),
+            "unversioned_lineage_rows": int(impacted.get("unversioned_rows") or 0),
             "distinct_instances_for_changed_properties": int(impacted.get("instances") or 0),
             "batches": batches,
             "scope_note": "仅统计旧映射版本已持久化的字段血缘；无血缘的历史实例标记为未评估，不推测影响数量。",
         },
-        "legacy_unversioned": False,
+        "legacy_unversioned": not bool(old_mapping.get("ontology_version")),
         "next_step": "人工审核影响清单后，另行批准重投影；本接口不会修改实例或 Fact。",
     }
