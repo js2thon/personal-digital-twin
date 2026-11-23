@@ -42,7 +42,11 @@ def _property_refs(schema: dict[str, Any], owner_name: str, owner: dict[str, Any
             col: new if prop == old else prop
             for col, prop in (binding.get("property_mappings") or {}).items()
         }
-    global_attrs = schema.get("attributes") or {}\n    for key, attr in list(global_attrs.items()):\n        if key == old and attr.get("owner") == owner_name:\n            global_attrs[new] = global_attrs.pop(key)\n    for interface_name in owner.get("interfaces") or []:
+    global_attrs = schema.get("attributes") or {}
+    for key, attr in list(global_attrs.items()):
+        if key == old and attr.get("owner") == owner_name:
+            global_attrs[new] = global_attrs.pop(key)
+    for interface_name in owner.get("interfaces") or []:
         interface = (schema.get("interfaces") or {}).get(interface_name)
         if interface:
             interface["properties"] = [new if x == old else x for x in interface.get("properties", [])]
