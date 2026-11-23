@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import copy
+import re
 import time
 import uuid
 
-from . import business_object_discovery, generator, mapper, materializer, profiler, release_gate
+from . import auto_fix, business_object_discovery, generator, mapper, materializer, profiler, release_gate
 from .connectors import TableSet
 
-STAGES = ("profile", "business_object_discovery", "draft", "map", "validate", "materialize", "metrics")
+STAGES = ("profile", "business_object_discovery", "draft", "auto_fix", "map", "validate", "materialize", "metrics")
 
 
 def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
@@ -38,6 +39,16 @@ def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
     job["draft"] = draft
     if stop_after == "draft":
         return _done(job)
+    auto_fix_report = stage("auto_fix", lambda: auto_fix.auto_fix_naming(draft["schema"]))
+    job["auto_fix_report"] = auto_fix_report
+    job["auto_fix_report"]["stage"] = "after_draft_before_mapping"
+    for change in auto_fix_report["applied"]:
+        _audit(job, "auto_fix_naming", "system", target_type=change["kind"],
+               target_ref=change["ref"], before=change["before"], after=change["after"],
+               comment=change["reason"])
+    if stop_after == "auto_fix":
+        return _done(job)
+
     contract = stage("map", lambda: mapper.build_contract(ts.source_id, draft, profiles))
     job["contract"] = contract
     issues = stage("validate", lambda: mapper.validate_contract(contract, draft["schema"], profiles))
@@ -175,6 +186,11 @@ def apply_review(job: dict, decisions: list[dict], actor: str = "reviewer",
         before = copy.deepcopy(section[ref])
         if decision.get("label"):
             section[ref]["label"] = decision["label"]
+        if kind == "class" and decision.get("technical_name") is not None:
+            technical_name = str(decision.get("technical_name") or "").strip()
+            if not technical_name or not re.fullmatch(r"[A-Z][A-Za-z0-9]*", technical_name):
+                raise ValueError("technical_name 必须为 PascalCase，例如 DataManagementDepartmentPersonnel")
+            section[ref]["technical_name"] = technical_name
         ref_after = ref
         if action == "reject":
             section.pop(ref)
@@ -275,6 +291,12 @@ def rebuild(job: dict, ts: TableSet) -> dict:
     from . import metrics as mx
     profiles = profiler.profile(ts)
     job["profiles"] = {k: v.to_dict() for k, v in profiles.items()}
+    auto_fix_report = auto_fix.auto_fix_naming(job["draft"]["schema"])
+    job["auto_fix_report"] = auto_fix_report
+    for change in auto_fix_report["applied"]:
+        _audit(job, "auto_fix_naming", "system", target_type=change["kind"],
+               target_ref=change["ref"], before=change["before"], after=change["after"],
+               comment=change["reason"])
     job["contract"] = mapper.build_contract(ts.source_id, job["draft"], profiles)
     job["issues"] = mapper.validate_contract(job["contract"], job["draft"]["schema"], profiles)
     from app.modules.ontology.semantic.schema_def import validate_business_model

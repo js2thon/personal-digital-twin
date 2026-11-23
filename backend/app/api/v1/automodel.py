@@ -111,6 +111,7 @@ def _summary(job: dict) -> dict:
             "materialized": (job.get("materialized") or {}).get("stats"),
             "metrics": (job.get("metrics") or {}).get("stats"),
             "business_object_discovery": job.get("business_object_discovery"),
+            "auto_fix_report": job.get("auto_fix_report"),
             "standards_report": job.get("standards_report"),
             "release_gate": job.get("release_gate"),
             "schema_version": job.get("schema_version")}
@@ -250,6 +251,9 @@ def review(job_id: str, payload: ReviewIn, request: Request):
             raise HTTPException(400, f"非法审核决策：{d}")
         if d.get("new_name") and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", d["new_name"]):
             raise HTTPException(400, f"new_name 非法：{d['new_name']}")
+    for decision in payload.decisions:
+        if decision.get("technical_name") is not None and not re.fullmatch(r"[A-Z][A-Za-z0-9]{0,63}", str(decision["technical_name"])):
+            raise HTTPException(400, "technical_name 必须为 PascalCase")
     pipeline.apply_review(job, payload.decisions, actor=actor)
     pipeline.rebuild(job, _source(job_id))
     if payload.acknowledge_warnings:
