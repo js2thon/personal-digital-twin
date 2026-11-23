@@ -98,6 +98,7 @@ def _pack(ts: connectors.TableSet) -> bytes:
         doc["tables"].append({
             "name": t.name, "df": buf.getvalue(), "dtypes": {c: str(d) for c, d in t.df.dtypes.items()},
             "primary_key": t.primary_key, "comment": t.comment, "column_comments": t.column_comments,
+            "column_labels": t.column_labels, "column_roles": t.column_roles,
             "row_count": t.row_count,
             "foreign_keys": [{"column": fk.column, "ref_table": fk.ref_table, "ref_column": fk.ref_column,
                               "declared": fk.declared} for fk in t.foreign_keys]})
@@ -117,7 +118,8 @@ def _unpack(blob: bytes) -> connectors.TableSet:
                     pass
         ts.tables[t["name"]] = connectors.Table(
             name=t["name"], df=df, primary_key=t.get("primary_key") or [], comment=t.get("comment") or "",
-            column_comments=t.get("column_comments") or {}, row_count=t.get("row_count"),
+            column_comments=t.get("column_comments") or {}, column_labels=t.get("column_labels") or {},
+            column_roles=t.get("column_roles") or {}, row_count=t.get("row_count"),
             foreign_keys=[connectors.ForeignKey(**fk) for fk in t.get("foreign_keys") or []])
     return ts
 
@@ -198,7 +200,7 @@ def job_dataset(job_id: str) -> str | None:
 
 
 # ------------------------------------------------------------------ 版本
-SNAP_KEYS = ("profiles", "draft", "contract", "issues", "stages", "metrics", "actions_log", "config", "schema_version", "design_layout")
+SNAP_KEYS = ("profiles", "draft", "contract", "issues", "stages", "metrics", "actions_log", "config", "schema_version", "design_layout", "business_object_discovery", "standards_report", "release_gate", "metadata_revision", "metadata_sync")
 
 
 def _snapshot(job: dict) -> dict:
