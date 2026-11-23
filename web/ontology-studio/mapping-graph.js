@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const svg=(tag,attrs={},label='')=>{const n=document.createElementNS('http://www.w3.org/2000/svg',tag);Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,String(v)));if(label){if(tag==='text')n.textContent=label;else{const t=document.createElementNS('http://www.w3.org/2000/svg','title');t.textContent=label;n.append(t)}}return n};
 const norm=(table,column)=>table+'.'+column;
-function cardinalityOf(spec){const raw=String(spec?.cardinality||spec?.relation_cardinality||spec?.mapping_type||spec?.kind||'').toLowerCase().replace(/[\s-]/g,'_');if(['many_to_many','n_to_n','n:n','*:*','m:n'].includes(raw)||spec?.via_table||spec?.junction_table)return'many_to_many';if(['many_to_one','n_to_one','n:1','* : 1','m:1'].includes(raw))return'many_to_one';if(['one_to_many','1:n','1:*'].includes(raw))return'many_to_one';return'';}
+function cardinalityOf(spec){const raw=String(spec?.cardinality||spec?.relation_cardinality||spec?.mapping_type||spec?.kind||'').toLowerCase().replace(/[\s-]/g,'_');if(['many_to_many','n_to_n','n:n','*:*','m:n'].includes(raw)||spec?.via_table||spec?.junction_table)return'many_to_many';if(['many_to_one','n_to_one','n:1','* : 1','m:1'].includes(raw))return'many_to_one';if(['one_to_many','1:n','1:*'].includes(raw))return'one_to_many';return'';}
 function render(job){
  const root=$('semanticMappingGraph');if(!root)return;
  const contract=job?.contract||{},schema=job?.draft?.schema||job?.schema||{};
@@ -48,6 +48,10 @@ function render(job){
    add(sourceFields,fid,{id:fid,label:column,kind:'source-field',meta:{table:link.table,column:column,role:role}});
    edges.push({from:fid,to:rid,label:role});
   }
+ }
+ // Include schema object types even before any source table has been mapped.
+ for(const [cls,entity] of Object.entries(schema.entity_types||{})){
+  add(targetObjects,cls,{id:'class:'+cls,label:entity.label||cls,kind:'ontology-class',meta:{class:cls,technical_name:entity.technical_name||cls}});
  }
  // Keep schema relations selectable even when their contract mapping is missing.
  for(const [rn,spec] of Object.entries(schema.relation_types||{})){
@@ -101,7 +105,9 @@ function render(job){
   const cls=p.meta?.class;if(cls&&targetObjects.has(cls))drawEdges.push({from:p.id,to:'class:'+cls,style:'solid'});
  }
  for(const r of targetRels.values()){
-  const target=r.meta?.target;if(target&&targetObjects.has(target))drawEdges.push({from:r.id,to:'class:'+target,style:'relation'});
+  const source=r.meta?.source,target=r.meta?.target;
+  if(source&&targetObjects.has(source))drawEdges.push({from:r.id,to:'class:'+source,style:'relation'});
+  if(target&&targetObjects.has(target))drawEdges.push({from:r.id,to:'class:'+target,style:'relation'});
  }
  // Table-to-field hierarchy is explicit and remains visible even before mappings exist.
  for(const field of sourceFields.values()){
@@ -147,12 +153,15 @@ function render(job){
    '</dl><p class="smg-kind">关联映射：'+connected.length+'</p>';
   if(n.kind==='source-field'){
    const mapping=(job.contract?.mappings||[]).find(x=>String(x.table)===String(m.table));
-   const attrs=Object.entries(schema.attributes||{}).filter(([key,a])=>a.owner===mapping?.class);
+   const classes=Object.entries(schema.entity_types||{});
+   const currentClass=mapping?.class||'';
+   const attrsFor=cls=>Object.entries(schema.attributes||{}).filter(([key,a])=>a.owner===cls);
    const current=Object.entries(mapping?.attributes||{}).find(([key,col])=>String(col)===String(m.column))?.[0]||'';
-   if(mapping){
-    detail.insertAdjacentHTML('beforeend','<hr><p class="smg-kind">调整字段对应的本体属性（仅修改当前草稿）</p><label for="smgProperty">目标属性</label><select id="smgProperty" style="width:100%;margin:6px 0"><option value="">不映射</option>'+attrs.map(([key,a])=>'<option value="'+esc(key)+'" '+(key===current?'selected':'')+'>'+esc(a.label||key)+' · '+esc(key)+'</option>').join('')+'</select><button id="smgApply" class="primary" style="width:100%">应用到草稿</button>');
-    $('smgApply').onclick=()=>{if(window.applySemanticMappingEdit)window.applySemanticMappingEdit({table:m.table,column:m.column,property:$('smgProperty').value});};
-   }
+   const classControl=mapping?'<input type="hidden" id="smgTargetClass" value="'+esc(currentClass)+'">':'<label for="smgTargetClass">目标本体对象</label><select id="smgTargetClass" style="width:100%;margin:6px 0"><option value="">请选择对象类型</option>'+classes.map(([key,v])=>'<option value="'+esc(key)+'">'+esc(v.label||key)+'</option>').join('')+'</select>';
+   detail.insertAdjacentHTML('beforeend','<hr><p class="smg-kind">将源字段映射到本体属性；尚未建立对象映射的源表也可在此创建草稿。</p>'+classControl+'<label for="smgProperty">目标属性</label><select id="smgProperty" style="width:100%;margin:6px 0"><option value="">不映射</option>'+attrsFor(currentClass).map(([key,a])=>'<option value="'+esc(key)+'" '+(key===current?'selected':'')+'>'+esc(a.label||key)+' · '+esc(key)+'</option>').join('')+'</select><button id="smgApply" class="primary" style="width:100%">应用到草稿</button>');
+   const fillProperties=()=>{const cls=$('smgTargetClass').value,items=attrsFor(cls);$('smgProperty').innerHTML='<option value="">不映射</option>'+items.map(([key,a])=>'<option value="'+esc(key)+'">'+esc(a.label||key)+' · '+esc(key)+'</option>').join('')};
+   if(!mapping)$('smgTargetClass').onchange=fillProperties;
+   $('smgApply').onclick=()=>{if(window.applySemanticMappingEdit)window.applySemanticMappingEdit({table:m.table,column:m.column,property:$('smgProperty').value,class:$('smgTargetClass').value});};
   }else if(n.kind==='ontology-relation'){
    const spec=schema.relation_types?.[m.relation]||{},profiles=job.profiles||{},maps=job.contract?.mappings||[];
    const option=(value,label)=>'<option value="'+esc(value)+'">'+esc(label)+'</option>';
@@ -197,7 +206,8 @@ function render(job){
    }
   }
  }
- inspect(left.find(x=>x.kind==='source-field')||right.find(x=>x.kind==='ontology-relation')||left[0]||right[0],edges);
+ const first=[...sourceFields.values()][0]||[...targetRels.values()][0]||[...sourceTables.values()][0]||[...targetObjects.values()][0];
+ if(first)inspect(first,edges);else detail.textContent='暂无可选择的映射节点';
 }
 window.renderSemanticMappingGraph=render;
 })();

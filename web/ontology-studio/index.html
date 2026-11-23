@@ -68,16 +68,26 @@ async function loadProvenance(entity,predicate=null){if(!S.jid||!entity){$('inst
 async function loadSession(id){S.sid=id;S.jid=null;S.job=null;S.studio={};S.studioGraph=null;try{S.model=await api('/kg/'+encodeURIComponent(id));renderModel();$('activeAsset').textContent=S.model.ontology?.label||id;$('lineageSource').textContent='RDF / OWL Session';$('lineageFlow').innerHTML='<div class="empty">当前 RDF 会话未返回数据源与字段映射血缘。请选择左侧自动建模任务查看端到端 Pipeline。</div>';$('mappingTable').innerHTML='<div class="empty">RDF 会话当前未包含映射契约数据。</div>';$('metricLineage').innerHTML='<div class="empty">可在行为与指标视图读取指标注册表。</div>';$('instanceLineage').textContent='RDF Session 未提供字段级实例血缘。';$('evidenceSummary').innerHTML='<div class="empty">RDF Session 未提供候选审核证据与置信度。</div>';$('issues').innerHTML='<div class="empty">请在本体质量门禁中执行 RDF/OWL 质量报告。</div>';$('versions').innerHTML='<div class="empty">RDF Session 当前未提供版本审计记录。</div>';$('actions').innerHTML='<div class="empty">RDF Session 当前未提供业务 Action 目录。</div>';$('functions').innerHTML='<div class="empty">可在行为与指标视图读取指标定义；独立 Functions 目录尚未接入。</div>';tab('relationship');setStatus('connection','已连接：RDF / OWL 本体会话 '+id)}catch(e){setStatus('connection','本体读取失败：'+e.message)}}
 async function loadJob(id){S.jid=id;S.sid=null;S.model=null;S.studio={};S.studioGraph=null;try{const base='/automodel/jobs/'+encodeURIComponent(id);const results=await Promise.allSettled([api(base+'?full=true'),api(base+'/studio/overview'),api(base+'/studio/schema-graph?props=true'),api(base+'/studio/quality'),api(base+'/pipeline'),api(base+'/studio/actions'),api(base+'/versions'),api(base+'/metrics'),api(base+'/studio/governance')]);if(results[0].status!=='fulfilled')throw results[0].reason;S.job=results[0].value;S.mappingDirty=false;S.graphMode='schema';S.graphScale=1;S.instanceGraph=null;const keys=['overview','graph','quality','pipeline','actions','versions','metrics','governance'];keys.forEach((k,i)=>{const r=results[i+1];if(r.status==='fulfilled'){if(k==='graph')S.studioGraph=r.value;else S.studio[k]=r.value}else S.studio[k+'_error']=r.reason?.message||'接口不可用'});renderJob();$('mappingPublish').disabled=!(S.job.release_gate?.ready)&&!(S.studio.governance?.release_gate?.ready);if(['published','written'].includes(S.job.status))$('mappingPublish').disabled=true;$('activeAsset').textContent='自动建模 · '+id;tab('lineage');setStatus('connection','已连接：自动建模任务 '+id+' · 工作台数据已按可用接口加载')}catch(e){setStatus('connection','任务详情读取失败：'+e.message)}}
 async function refresh(){setStatus('connection','正在连接 API…');try{const [a,b]=await Promise.allSettled([api('/kg/sessions'),api('/automodel/jobs')]);S.sessions=a.status==='fulfilled'?(a.value.items||[]):[];S.jobs=b.status==='fulfilled'?(b.value.items||[]):[];$('sessions').innerHTML=S.sessions.length?S.sessions.map(x=>'<button class="session '+(x.id===S.sid?'active':'')+'" data-id="'+esc(x.id)+'"><b>'+esc(x.name||x.id)+'</b><small>'+fmt(x.stats?.classes)+' 类 · '+fmt(x.stats?.individuals)+' 实例</small></button>').join(''):'<div class="muted">暂无 RDF 本体会话</div>';$('jobs').innerHTML=S.jobs.length?S.jobs.map(x=>'<button class="job '+(x.id===S.jid?'active':'')+'" data-id="'+esc(x.id)+'"><b>'+esc(x.source?.name||x.source?.database||x.id)+'</b><small>'+esc(x.status||'unknown')+' · '+esc(x.schema_version||'未发布')+'</small></button>').join(''):'<div class="muted">暂无自动建模任务</div>';$('sessions').querySelectorAll('[data-id]').forEach(x=>x.onclick=()=>loadSession(x.dataset.id));$('jobs').querySelectorAll('[data-id]').forEach(x=>x.onclick=()=>loadJob(x.dataset.id));if(a.status==='rejected'&&b.status==='rejected')throw a.reason;setStatus('connection','API 已连接 · '+S.sessions.length+' 个本体会话 · '+S.jobs.length+' 个自动建模任务')}catch(e){setStatus('connection','API 连接失败：'+e.message)}}
-window.applySemanticMappingEdit=({table,column,property})=>{
- if(!S.job||!Array.isArray(S.job.contract?.mappings))return;
- const contract=JSON.parse(JSON.stringify(S.job.contract));
- const mapping=contract.mappings.find(x=>String(x.table)===String(table));
+window.applySemanticMappingEdit=({table,column,property, class:targetClass})=>{
+ if(!S.job)return;
+ const schema=S.job.draft?.schema||S.job.schema||{};
+ const contract=JSON.parse(JSON.stringify(S.job.contract||{source:S.job.source?.id||S.job.source?.name||'',mappings:[],links:[]}));
+ contract.mappings=Array.isArray(contract.mappings)?contract.mappings:[];
+ let mapping=contract.mappings.find(x=>String(x.table)===String(table));
+ if(!mapping&&property){
+  if(!targetClass){setStatus('connection','请选择目标本体对象类型');return}
+  const profile=S.job.profiles?.[table]||{};
+  mapping={table,class:targetClass,primary_key:profile.primary_key||[],attributes:{},relations:[]};
+  contract.mappings.push(mapping);
+ }
  if(!mapping)return;
+ if(targetClass&&mapping.class!==targetClass){setStatus('connection','该源表已绑定到其他对象类型，不能直接更改对象类型');return}
+ if(property&&schema.attributes?.[property]?.owner!==mapping.class){setStatus('connection','目标属性不属于所选对象类型');return}
  mapping.attributes=mapping.attributes||{};
  Object.keys(mapping.attributes).forEach(key=>{if(String(mapping.attributes[key])===String(column))delete mapping.attributes[key]});
  if(property)mapping.attributes[property]=column;
  S.job.contract=contract;S.mappingDirty=true;$('mappingPublish').disabled=true;renderJob();
- setStatus('connection','映射草稿已调整，尚未保存；请先验证，再保存。');
+ setStatus('connection','字段映射草稿已调整，尚未保存；请先验证，再保存。');
 };
 
 window.applySemanticRelationEdit=payload=>{
