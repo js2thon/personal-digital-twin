@@ -4,7 +4,7 @@
 """
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from app.db import session as db
 
@@ -252,8 +252,8 @@ def _fact_traceability(claims: list[dict], evidences: list[dict], source_ref: di
 
 
 @router.get("/lineage/facts/{fact_id}")
-def trace_fact(fact_id: str):
-    """从 Fact 下钻到 Claim、原始证据及结构化来源信息。"""
+def trace_fact(fact_id: str, request: Request):
+    """从当前租户 Fact 下钻到 Claim、原始证据及结构化来源信息。"""
     import uuid
 
     try:
@@ -261,11 +261,13 @@ def trace_fact(fact_id: str):
     except (ValueError, TypeError, AttributeError):
         raise HTTPException(400, "invalid fact id")
 
+    principal = getattr(request.state, "principal", {}) or {}
+    tenant_id = str(principal.get("tenant_id") or "default")
     fact = db.fetch_one(
         "SELECT id::text AS id, claim_id::text AS claim_id, predicate, object_value, "
         " status, source_ref, ontology_version, source_id, valid_from, valid_to, recorded_at "
-        "FROM knowledge.facts WHERE id=CAST(:id AS uuid)",
-        {"id": fid},
+        "FROM knowledge.facts WHERE id=CAST(:id AS uuid) AND tenant_id=:tenant_id",
+        {"id": fid, "tenant_id": tenant_id},
     )
     if not fact:
         raise HTTPException(404, "fact not found")
