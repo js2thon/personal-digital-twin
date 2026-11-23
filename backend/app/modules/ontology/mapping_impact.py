@@ -51,8 +51,13 @@ def analyze(*, tenant_id: str, old_mapping: dict, new_mapping: dict) -> dict:
     from app.db import session as db
 
     old_id = old_mapping["id"]
-    old_definition = old_mapping.get("definition") or {}
-    new_definition = new_mapping.get("definition") or {}
+    old_definition = dict(old_mapping.get("definition") or {})
+    new_definition = dict(new_mapping.get("definition") or {})
+    for definition, mapping in ((old_definition, old_mapping), (new_definition, new_mapping)):
+        binding = dict(definition.get("ontology_binding") or {})
+        binding.setdefault("ontology_version", mapping.get("ontology_version"))
+        binding.setdefault("schema_version", mapping.get("schema_version"))
+        definition["ontology_binding"] = binding
     changes = compare_mappings(old_definition, new_definition)
     changed = changes["changed_properties"]
 
@@ -60,11 +65,11 @@ def analyze(*, tenant_id: str, old_mapping: dict, new_mapping: dict) -> dict:
         "SELECT to_regclass('ontology.dataset_field_lineage') AS lineage_table, "
         "to_regclass('ontology.dataset_ingestion_runs') AS runs_table") or {}
     params = {"tenant_id": tenant_id, "mapping_id": old_id}
+    entities = sorted({item["entity_type"] for item in changed if item["entity_type"]})
     where = []
-    for i, item in enumerate(changed):
-        params[f"entity_{i}"] = item["entity_type"]
-        params[f"property_{i}"] = item["property"]
-        where.append(f"(entity_type=:entity_{i} AND property_name=:property_{i})")
+    for i, entity in enumerate(entities):
+        params[f"entity_{i}"] = entity
+        where.append(f"entity_type=:entity_{i}")
     impacted = db.fetch_one(
         "SELECT count(*) AS lineage_rows, count(DISTINCT instance_id) AS instances, "
         "count(*) FILTER (WHERE ontology_version IS NULL) AS unversioned_rows "
@@ -91,7 +96,7 @@ def analyze(*, tenant_id: str, old_mapping: dict, new_mapping: dict) -> dict:
         "impact_estimate": {
             "changed_property_count": len(changed),
             "changed_link_count": changes["changed_links"],
-            "lineage_rows_for_changed_properties": int(impacted.get("lineage_rows") or 0),
+            "lineage_rows_for_affected_entities": int(impacted.get("lineage_rows") or 0),
             "unversioned_lineage_rows": int(impacted.get("unversioned_rows") or 0),
             "distinct_instances_for_changed_properties": int(impacted.get("instances") or 0),
             "batches": batches,
