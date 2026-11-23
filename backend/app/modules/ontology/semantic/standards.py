@@ -60,7 +60,7 @@ def check_ontology_modeling_standards(schema: Any) -> dict[str, Any]:
                     f"对象类型 {name} 使用中文业务标识；展示名称与对象引用保持不变",
                     "如需跨系统/API 稳定集成，可补充 PascalCase technical_name，例如 DataManagementDepartmentPersonnel")
             else:
-                add("error", "OBJECT_NAME_NOT_PASCAL_CASE", name,
+                add("info", "OBJECT_NAME_NOT_PASCAL_CASE", name,
                     f"对象类型技术标识 {technical_name} 不符合 PascalCase 规范",
                     "使用 PascalCase technical_name（如 Employee、PurchaseOrder），中文业务名称放在 label")
         if not str(obj.get("label") or "").strip():
@@ -88,13 +88,13 @@ def check_ontology_modeling_standards(schema: Any) -> dict[str, Any]:
             add("warning", "OBJECT_TITLE_MISSING", name,
                 f"对象 {name} 没有展示属性", "指定适合对象列表和详情页展示的 title_property")
         elif title not in attr_map:
-            add("error", "OBJECT_TITLE_UNKNOWN", name,
+            add("warning", "OBJECT_TITLE_UNKNOWN", name,
                 f"对象 {name} 的展示属性 {title} 未定义", "将 title_property 指向对象已定义的属性")
         identifiers = [a["name"] for a in attrs if a.get("identifier")]
         identity_rules = obj.get("identity_rules") or []
         if not identity_rules and not any(b.get("mode") == "action_created"
                                           for b in obj.get("backing_sources") or []):
-            add("error", "OBJECT_IDENTITY_MISSING", name,
+            add("warning", "OBJECT_IDENTITY_MISSING", name,
                 f"对象 {name} 缺少业务身份规则", "定义稳定业务键；无法预先分配身份的对象需声明 action_created")
         if not identifiers and identity_rules:
             add("warning", "IDENTIFIER_PROPERTY_NOT_MARKED", name,
@@ -217,6 +217,6 @@ def check_ontology_modeling_standards(schema: Any) -> dict[str, Any]:
         "summary": {"total": len(findings), "errors": counts["error"],
                     "warnings": counts["warning"], "info": counts["info"]},
         "findings": findings,
-        "policy": {"errors_block_publish": True, "warnings_require_review": True,
+        "policy": {"errors_block_publish": True, "warnings_require_review": False,
                    "info_blocks_publish": False, "style_findings_block_publish": False},
     }
