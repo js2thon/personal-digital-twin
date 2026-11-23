@@ -31,6 +31,14 @@ function render(job){
    edges.push({from:fid,to:rid,label:'外键 → 关系'});
   }
  }
+ // Include every discovered source column, not only columns already mapped, so users can add mappings.
+ for(const [table,profile] of Object.entries(job.profiles||{})){
+  add(sourceTables,table,{id:'table:'+table,label:table,kind:'source-table',meta:{table:table,primary_key:profile.primary_key||[]}});
+  for(const [column,info] of Object.entries(profile.columns||{})){
+   const id='field:'+norm(table,column);
+   add(sourceFields,id,{id:id,label:column,kind:'source-field',meta:{table:table,column:column,role:info.role||'未映射字段',data_type:info.dtype||'unknown'}});
+  }
+ }
  for(const link of links){
   const rid='relation:'+link.type;
   add(targetRels,rid,{id:rid,label:(schema.relation_types?.[link.type]?.label||link.type),kind:'ontology-relation',meta:{relation:link.type,via_table:link.table,cardinality:'many_to_many'}});
