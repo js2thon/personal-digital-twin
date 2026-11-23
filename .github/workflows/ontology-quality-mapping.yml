@@ -11,6 +11,7 @@ on:
       - "backend/tests/test_rdf_quality.py"
       - "backend/tests/test_ontology_mapping_*.py"
       - "backend/tests/test_mapping_contract.py"
+      - "backend/tests/test_ontology_mapping_impact.py"
       - "backend/tests/test_ontology_dataset_preview.py"
       - "backend/tests/test_database_connector.py"
       - "backend/tests/test_database_connector_integration.py"
@@ -122,6 +123,7 @@ jobs:
           tests/test_rdf_quality.py
           tests/test_ontology_mapping_pipeline.py
           tests/test_mapping_contract.py
+          tests/test_ontology_mapping_impact.py
           tests/test_ontology_dataset_preview.py
           tests/test_ontology_mapping_execution.py
           tests/test_database_connector.py
