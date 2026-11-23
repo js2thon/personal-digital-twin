@@ -170,19 +170,19 @@ def test_auto_fix_naming_preserves_business_labels_and_mapping_references():
         "attributes": {},
     }
     report = auto_fix_naming(schema)
-    assert report["count"] == 3
+    assert report["count"] == 0
     obj = schema["entity_types"]["数据管理部人员"]
     assert obj["label"] == "数据管理部人员"
-    assert obj["technical_name"].startswith("BusinessObject")
-    renamed = obj["attributes"][0]["name"]
-    assert renamed.startswith("field_")
-    assert obj["title_property"] == renamed
-    assert obj["identity_rules"][0]["key_properties"] == [renamed]
-    assert obj["backing_sources"][0]["property_mappings"]["employee_id"] == renamed
-    assert list(schema["relation_types"])[0].startswith("related_")
+    assert "technical_name" not in obj
+    assert obj["attributes"][0]["name"] == "员工编号"
+    assert obj["title_property"] == "员工编号"
+    assert obj["identity_rules"][0]["key_properties"] == ["员工编号"]
+    assert obj["backing_sources"][0]["property_mappings"]["employee_id"] == "员工编号"
+    assert list(schema["relation_types"]) == ["隶属于"]
     assert auto_fix_naming(schema)["count"] == 0
     standards = check_ontology_modeling_standards(schema)
     assert standards["summary"]["errors"] == 0
+    assert standards["summary"]["info"] >= 2
 
 
 def test_manual_technical_name_override_is_audited():
