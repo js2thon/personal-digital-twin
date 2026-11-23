@@ -19,6 +19,7 @@ on:
       - "backend/tests/test_automodel_pipeline_hardening.py"
       - "backend/tests/test_business_object_model.py"
       - "backend/tests/test_automodel_metadata_overrides.py"
+      - "backend/tests/test_automodel.py"
       - "backend/tests/test_ontology_qa_provenance.py"
       - "backend/pyproject.toml"
       - ".github/workflows/ontology-quality-mapping.yml"
@@ -126,5 +127,6 @@ jobs:
           tests/test_automodel_pipeline_hardening.py
           tests/test_business_object_model.py
           tests/test_automodel_metadata_overrides.py
+          tests/test_automodel.py
           tests/test_ontology_ingestion_batches.py
           tests/test_ontology_qa_provenance.py
