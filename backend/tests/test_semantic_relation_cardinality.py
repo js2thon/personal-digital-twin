@@ -113,6 +113,7 @@ def test_write_relation_uses_persisted_endpoint_types_not_request_types(monkeypa
     from app.modules.ontology.semantic import service as service_module
 
     monkeypatch.setattr(service_module.db, "transaction", lambda: nullcontext())
+    monkeypatch.setattr(service_module.db, "transaction", lambda: nullcontext())
     monkeypatch.setattr(service_module.versioning, "current_version",
                         lambda: {"ontology_version": "test-v1"})
     instances = {
@@ -156,6 +157,7 @@ def test_write_relation_uses_persisted_endpoint_types_not_request_types(monkeypa
 
 def test_write_relation_rejects_endpoint_without_persisted_type(monkeypatch):
     import pytest
+    from contextlib import nullcontext
     from app.modules.ontology.semantic import service as service_module
     from app.modules.ontology.semantic.constraints import ConstraintViolation
 
@@ -180,3 +182,18 @@ def test_write_relation_rejects_endpoint_without_persisted_type(monkeypatch):
             "source_type": "Person",
             "target_type": "Department",
         }, auto_reasoning=False)
+
+
+def test_cardinality_locks_are_scoped_and_acquired_in_stable_order(monkeypatch):
+    from app.modules.ontology.semantic import store
+
+    lock_keys = []
+    monkeypatch.setattr(store.db, "fetch_one",
+                        lambda sql, params: lock_keys.append(params["lock_key"]))
+    store.lock_relation_cardinality(
+        "tenant-a", "assigned_to", "source-1", "target-1", "one_to_one"
+    )
+    assert lock_keys == sorted([
+        "ontology-relation:tenant-a:assigned_to:source:source-1",
+        "ontology-relation:tenant-a:assigned_to:target:target-1",
+    ])
