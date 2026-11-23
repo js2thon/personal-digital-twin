@@ -53,6 +53,7 @@ def test_legacy_property_mapping_contract_projects_to_binding():
     assert {x["target_property"] for x in binding["object_bindings"][0]["property_maps"]} == {
         "employeeName", "email"
     }
+    assert validate_binding(binding) == []
 
 
 def test_binding_validation_reports_duplicate_source_columns():
