@@ -140,6 +140,63 @@ def validate_contract(contract: dict, schema: dict,
             for col in (link.get("source_column"), link.get("target_column")):
                 if col not in (p.columns or {}):
                     issue(table, "MISSING_JUNCTION_COLUMN", f"关联表字段 {col} 不存在")
+    # Validate relation contract endpoints against the actual discovered FK metadata.
+    class_by_table = {m.get("table"): m.get("class") for m in contract.get("mappings", [])}
+    for m in contract.get("mappings", []):
+        table, cls = m.get("table"), m.get("class")
+        p = profile_map.get(table)
+        for r in m.get("relations", []):
+            rn = r.get("type")
+            spec = rels.get(rn)
+            if not spec:
+                continue
+            if spec.get("cardinality") != "many_to_one" or spec.get("table") != table:
+                issue(table, "RELATION_MAPPING_KIND_MISMATCH", f"关系 {rn} 不是该源表上的多对一关系")
+                continue
+            if spec.get("source") != cls or spec.get("target") != r.get("target"):
+                issue(table, "RELATION_ENDPOINT_MISMATCH", f"关系 {rn} 的本体端点与映射不一致")
+            target_table = r.get("target_table")
+            if target_table not in profile_map or class_by_table.get(target_table) != spec.get("target"):
+                issue(table, "RELATION_TARGET_TABLE_MISMATCH",
+                      f"关系 {rn} 的目标表 {target_table} 未映射为 {spec.get('target')}")
+            if p:
+                fk = next((x for x in (p.foreign_keys or [])
+                           if x.get("column") == r.get("column")
+                           and x.get("ref_table") == target_table), None)
+                if not fk:
+                    issue(table, "RELATION_FK_MISMATCH",
+                          f"关系 {rn} 的字段 {r.get('column')} 并非指向 {target_table} 的有效外键")
+            if not r.get("target_id") or "{value}" not in str(r.get("target_id")):
+                issue(table, "INVALID_RELATION_TARGET_ID",
+                      f"关系 {rn} 缺少有效的目标实例 ID 模板")
+
+    for link in contract.get("links", []):
+        table = link.get("table")
+        p = profile_map.get(table)
+        spec = rels.get(link.get("type"))
+        if not spec:
+            continue
+        if spec.get("cardinality") != "many_to_many":
+            issue(table, "JUNCTION_RELATION_KIND_MISMATCH",
+                  f"关系 {link.get('type')} 不是多对多关系")
+            continue
+        if class_by_table.get(link.get("source_table")) != spec.get("source") or class_by_table.get(link.get("target_table")) != spec.get("target"):
+            issue(table, "JUNCTION_ENDPOINT_MISMATCH",
+                  f"关联表 {table} 两端映射对象与关系 {link.get('type')} 不一致")
+        if p:
+            source_fk = next((x for x in (p.foreign_keys or [])
+                              if x.get("column") == link.get("source_column")
+                              and x.get("ref_table") == link.get("source_table")), None)
+            target_fk = next((x for x in (p.foreign_keys or [])
+                              if x.get("column") == link.get("target_column")
+                              and x.get("ref_table") == link.get("target_table")), None)
+            if not source_fk:
+                issue(table, "JUNCTION_SOURCE_FK_MISMATCH",
+                      f"关联表字段 {link.get('source_column')} 不是指向 {link.get('source_table')} 的外键")
+            if not target_fk:
+                issue(table, "JUNCTION_TARGET_FK_MISMATCH",
+                      f"关联表字段 {link.get('target_column')} 不是指向 {link.get('target_table')} 的外键")
+
     for rn, spec in rels.items():
         if spec.get("source") not in types or spec.get("target") not in types:
             issue(None, "INVALID_RELATION_ENDPOINT", f"关系 {rn} 的端点类型未定义")

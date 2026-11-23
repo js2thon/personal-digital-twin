@@ -305,6 +305,79 @@ def contract_yaml(job_id: str, request: Request):
     return mapper.to_yaml(_job(job_id, request)["contract"])
 
 
+
+
+class MappingContractEditIn(BaseModel):
+    """人工编辑映射契约；校验或保存草稿，不执行业务数据写入。"""
+    contract: dict
+    validate_only: bool = False
+
+
+@router.post("/automodel/jobs/{job_id}/mapping-contract")
+def edit_mapping_contract(job_id: str, payload: MappingContractEditIn, request: Request):
+    tenant, actor = _tenant(request)
+    job = _job(job_id, request)
+    if job.get("status") in ("published", "written"):
+        raise HTTPException(409, "已发布任务不能直接修改映射；请创建新版本")
+    contract = payload.contract
+    if not isinstance(contract, dict) or not isinstance(contract.get("mappings"), list) or not isinstance(contract.get("links", []), list):
+        raise HTTPException(400, "映射契约结构无效")
+    if str(contract.get("source") or "") != str(job.get("source") or ""):
+        raise HTTPException(400, "映射契约数据源与当前任务不一致")
+    schema = (job.get("draft") or {}).get("schema") or {}
+    if str(contract.get("schema_version") or "") != str(schema.get("schema_version") or ""):
+        raise HTTPException(409, "映射契约本体版本已变化，请刷新任务后重试")
+    from app.modules.ontology.automodel import profiler
+    ts = _source(job_id)
+    profiles = profiler.profile(ts)
+    try:
+        issues = mapper.validate_contract(contract, schema, profiles)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise HTTPException(400, f"映射契约结构无效：{type(exc).__name__}") from exc
+    known_tables = set(profiles)
+    for item in contract.get("mappings", []):
+        if item.get("table") not in known_tables:
+            issues.append({"level": "error", "code": "UNKNOWN_SOURCE_TABLE",
+                           "table": item.get("table"), "msg": f"来源表不存在：{item.get('table')}"})
+    for item in contract.get("links", []):
+        if item.get("table") not in known_tables:
+            issues.append({"level": "error", "code": "UNKNOWN_JUNCTION_TABLE",
+                           "table": item.get("table"), "msg": f"关联表不存在：{item.get('table')}"})
+    if not contract.get("mappings"):
+        issues.append({"level": "error", "code": "MISSING_MAPPING_TABLES",
+                       "table": None, "msg": "至少需要一个源表映射"})
+    blockers = [item for item in issues if item.get("level") == "error"]
+    if payload.validate_only:
+        return {"valid": not blockers, "issues": issues, "contract": contract,
+                "source": job.get("source"), "schema_version": schema.get("schema_version")}
+    if blockers:
+        raise HTTPException(400, {"message": "映射契约未通过校验，未保存", "issues": issues})
+    job["contract"] = contract
+    # Keep independent business-model and modeling-standard findings in the release gate.
+    other_issues = []
+    for item in (job.get("business_model_issues") or []):
+        other_issues.append({"level": "error", "code": item.get("code"),
+                             "table": item.get("ref"), "msg": item.get("message")})
+    for item in (job.get("standards_report") or {}).get("findings", []):
+        other_issues.append({"level": "error" if item.get("severity") == "error" else "warning",
+                             "code": item.get("code"), "table": item.get("ref"),
+                             "msg": item.get("message"),
+                             "recommendation": item.get("recommendation")})
+    job["issues"] = issues + other_issues
+    job["materialized"] = pipeline.materializer.materialize(ts, contract)
+    with _LOCK:
+        _FRAMES.pop(job_id, None)
+    has_warnings = any(item.get("level") == "warning" for item in issues)
+    has_review = bool((job.get("draft") or {}).get("review"))
+    job["status"] = "needs_review" if has_warnings or has_review else "ready_to_publish"
+    job["release_gate"] = pipeline.release_gate.evaluate(
+        job, require_cq=bool((job.get("config") or {}).get("require_cq_for_publish")))
+    jobs.save(job, tenant, actor)
+    _snap(job, tenant, actor, "mapping_edit", "人工编辑映射契约")
+    return {"saved": True, "valid": True, "issues": issues, "contract": contract,
+            "status": job["status"], "release_gate": job["release_gate"],
+            "materialized": (job.get("materialized") or {}).get("stats")}
+
 # ------------------------------------------------------------------ 指标 / 问答
 @router.get("/automodel/jobs/{job_id}/metrics")
 def list_metrics(job_id: str, request: Request):
