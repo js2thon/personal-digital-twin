@@ -58,11 +58,26 @@
   const fmt = v => v == null || isNaN(v) ? "—" : Number(v).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
 
   function mount(el, node) {
-    let r = roots.get(el);
-    if (!r) { r = ReactDOM.createRoot(el); roots.set(el, r); }
-    r.render(node);
+    let entry = roots.get(el);
+    if (entry && entry.host.parentNode !== el) {
+      try { entry.root.unmount(); } catch (_) { /* detached tree; continue */ }
+      roots.delete(el); entry = null;
+    }
+    if (!entry) {
+      const host = document.createElement("div");
+      host.setAttribute("data-react-mount", "recharts");
+      el.replaceChildren(host);
+      entry = { host, root: ReactDOM.createRoot(host) };
+      roots.set(el, entry);
+    }
+    entry.root.render(node);
   }
-  function unmount(el) { const r = roots.get(el); if (r) { r.unmount(); roots.delete(el); } }
+  function unmount(el) {
+    const entry = roots.get(el); if (!entry) return;
+    try { entry.root.unmount(); } catch (_) { /* host may already be detached */ }
+    if (entry.host.parentNode === el) entry.host.remove();
+    roots.delete(el);
+  }
 
   /* ================================================================ 指标图 */
   function MetricChart({ spec }) {
