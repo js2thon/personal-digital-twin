@@ -106,3 +106,39 @@ def test_execution_prefers_stored_binding_projection():
     assert execution_mappings(contract) == [
         {"entity_type": "Employee", "property": "displayName", "source": "preferred_name"}
     ]
+
+
+def test_automodel_builder_emits_binding_without_changing_legacy_contract():
+    from types import SimpleNamespace
+    from app.modules.ontology.automodel.mapper import build_contract
+
+    schema = {
+        "schema_version": "schema-7",
+        "entity_types": {"Person": {"title_property": "fullName"}},
+        "relation_types": {},
+        "attributes": {
+            "fullName": {"owner": "Person", "column": "full_name"},
+        },
+    }
+    draft = {"schema": schema, "class_map": {"people": "Person"}}
+    profiles = {
+        "people": SimpleNamespace(
+            primary_key=["person_id"],
+            columns={"person_id": object(), "full_name": object()},
+            foreign_keys=[],
+        ),
+    }
+
+    contract = build_contract("hr", draft, profiles)
+
+    assert contract["mappings"][0]["attributes"] == {"fullName": "full_name"}
+    assert contract["ontology_binding"]["schema_version"] == "schema-7"
+    obj = contract["ontology_binding"]["object_bindings"][0]
+    assert obj["object_type"] == "Person"
+    assert obj["backing_sources"][0]["primary_key"] == ["person_id"]
+    assert obj["property_maps"] == [{
+        "source_column": "full_name",
+        "target_property": "fullName",
+        "source_table": "people",
+        "status": "draft",
+    }]
