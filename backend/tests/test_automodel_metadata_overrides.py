@@ -22,3 +22,16 @@ def test_profile_serialization_exposes_column_label():
         name="employees", df=pd.DataFrame({"name": ["A", "B"]}), column_labels={"name": "员工姓名"})})
     result = profiler.profile(source)["employees"].to_dict()
     assert result["columns"]["name"]["label"] == "员工姓名"
+
+
+def test_dataset_pack_roundtrip_keeps_manual_metadata():
+    from app.modules.ontology.automodel.versions import _pack, _unpack
+    source = TableSet(source_id="hr", kind="file", tables={"employees": Table(
+        name="employees", df=pd.DataFrame({"salary": [100]}), comment="员工主数据",
+        column_comments={"salary": "员工薪酬"}, column_labels={"salary": "薪资"},
+        column_roles={"salary": "enum"})})
+    restored = _unpack(_pack(source)).tables["employees"]
+    assert restored.comment == "员工主数据"
+    assert restored.column_comments["salary"] == "员工薪酬"
+    assert restored.column_labels["salary"] == "薪资"
+    assert restored.column_roles["salary"] == "enum"

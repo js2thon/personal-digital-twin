@@ -383,10 +383,11 @@ function initMappingExecution(){
  if(MAP_TABLE_SELECTED&&maps.some(m=>m.table===MAP_TABLE_SELECTED))$('ingTable').value=MAP_TABLE_SELECTED;
  const sync=(reset)=>{const table=$('ingTable').value,m=maps.find(x=>x.table===table)||{},keys=m.primary_key||[];
   $('ingKey').innerHTML=keys.map(k=>'<option value="'+esc(k)+'">'+esc(k)+'</option>').join('');
-  $('ingKey').disabled=$('ingMode').value!=='upsert'||!keys.length;
+  $('ingKey').disabled=$('ingMode').value!=='upsert'||keys.length!==1;
   $('btnMapSave').disabled=!maps.length;
   if(reset){MAPSET=null;INGEST_SNAPSHOT=null;$('btnMapApprove').disabled=true;$('btnIngestExecute').disabled=true;}
-  $('ingHint').textContent=keys.length?'稳定源键：'+keys.join(', '):'该表无稳定主键，Upsert 不可用，请先完善主键或选择 Append。';};
+  if(!MAPSET){$('btnMapApprove').disabled=true;$('btnIngestExecute').disabled=true;}
+  $('ingHint').textContent=keys.length===1?'稳定源键：'+keys[0]:(keys.length>1?'当前为复合主键，执行器暂不支持复合源键，请选择 Append。':'该表无稳定主键，Upsert 不可用，请先完善主键或选择 Append。');};
  $('ingTable').onchange=()=>{MAP_TABLE_SELECTED=$('ingTable').value;sync(true)};$('ingMode').onchange=()=>sync(false);
  $('ingFile').onchange=()=>{INGEST_SNAPSHOT=null;$('btnIngestExecute').disabled=!MAPSET||MAPSET.status!=='approved'};
  sync(false);loadIngestionRuns();
