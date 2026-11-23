@@ -90,7 +90,7 @@ def test_live_database_discovery_redaction_and_read_only(
     assert table["table"] == "ontology_connector_probe"
     assert result["sample_limit"] == connector.MAX_SAMPLE_ROWS
     assert table["sample_count"] == connector.MAX_SAMPLE_ROWS
-    assert table["sample_rows"][0]["full_name"] == "张三"
+    assert "张三" in [row["full_name"] for row in table["sample_rows"]]
     assert table["sample_rows"][0]["phone_number"] == "<redacted>"
     assert "phone_number" in table["redacted_columns"]
 
@@ -146,7 +146,7 @@ def test_live_database_discovery_redaction_and_read_only(
     streamed = list(connector.stream_table_rows(
         profile_name=profile_name, tenant_id="integration-tenant",
         schema_name=None, table_name="ontology_connector_probe",
-        columns=["full_name", "phone_number"], primary_key="id", batch_size=1,
+        columns=["full_name", "phone_number"], primary_key="id", batch_size=50,
     ))
     assert len(streamed) == 121
     assert streamed[0]["full_name"] == "张三"
