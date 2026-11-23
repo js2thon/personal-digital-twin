@@ -151,3 +151,15 @@ def ontology_eval_run(suite_id: str, body: OntologyRunIn, request: Request):
     tenant, actor = _tenant_actor(request)
     return _call(oq_eval.run_suite, tenant, actor, suite_id, body.spec,
                   body.data, body.snapshot, body.use_llm)
+
+
+@router.get("/evaluation/ontology/runs")
+def ontology_eval_runs(request: Request, limit: int = 30):
+    tenant, _ = _tenant_actor(request)
+    return {"items": _call(oq_eval.list_runs, tenant, limit)}
+
+
+@router.get("/evaluation/ontology/runs/{run_id}")
+def ontology_eval_run_detail(run_id: str, request: Request):
+    tenant, _ = _tenant_actor(request)
+    return _call(oq_eval.get_run, tenant, run_id)
