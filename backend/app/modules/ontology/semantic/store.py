@@ -190,6 +190,36 @@ def list_relations(tenant_id: str, where: str = "", params: dict | None = None,
     return [_decode(r) for r in rows]
 
 
+def find_relation_cardinality_conflicts(tenant_id: str, relation_type: str,
+                                      source_id: str, target_id: str,
+                                      cardinality: str) -> list[dict]:
+    """Fetch only active authoritative edges that can conflict with this relation.
+
+    The result is intentionally bounded: one conflicting row is enough to reject
+    a write. This avoids loading a tenant-wide relation list for every insert.
+    """
+    conditions = []
+    if cardinality in ("one_to_one", "many_to_one"):
+        conditions.append(
+            "(source_id = CAST(:s AS uuid) AND target_id <> CAST(:tgt AS uuid))"
+        )
+    if cardinality in ("one_to_one", "one_to_many"):
+        conditions.append(
+            "(target_id = CAST(:tgt AS uuid) AND source_id <> CAST(:s AS uuid))"
+        )
+    if not conditions:
+        return []
+    rows = db.fetch_all(
+        "SELECT id, source_id, relation_type, target_id, status, derived "
+        "FROM ontology.instance_relations "
+        "WHERE tenant_id = :t AND relation_type = :rt "
+        "AND derived = false AND status = 'active' "
+        "AND (" + " OR ".join(conditions) + ") LIMIT 2",
+        {"t": tenant_id, "rt": relation_type, "s": source_id, "tgt": target_id},
+    )
+    return [_decode(r) for r in rows]
+
+
 def graph_for_impact(tenant_id: str) -> tuple[list[dict], list[dict]]:
     """为影响分析提供完整图数据：图谱实体 + active 关系（汇报链等在此）。
 
