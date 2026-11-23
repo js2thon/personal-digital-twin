@@ -8,7 +8,7 @@ import uuid
 from . import auto_fix, business_object_discovery, generator, mapper, materializer, profiler, release_gate
 from .connectors import TableSet
 
-STAGES = ("profile", "business_object_discovery", "draft", "map", "validate", "materialize", "metrics")
+STAGES = ("profile", "business_object_discovery", "draft", "auto_fix", "map", "validate", "materialize", "metrics")
 
 
 def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
