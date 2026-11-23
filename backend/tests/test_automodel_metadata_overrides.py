@@ -26,10 +26,10 @@ def test_profile_serialization_exposes_column_label():
 
 def test_tabular_reader_adds_automodel_normalized_header_aliases():
     from app.modules.ontology.mapping_pipeline import read_tabular_file
-    parsed = read_tabular_file("employees.csv", "员工编号,Employee Name\nE001,Zhang San\n".encode("utf-8"))
+    parsed = read_tabular_file("employees.csv", "员工 编号,Employee Name\nE001,Zhang San\n".encode("utf-8"))
     row = parsed["rows"][0]
-    assert row["员工编号"] == "E001"
-    assert row["员工编号"] == row["员工编号"]
+    assert row["员工 编号"] == "E001"
+    assert row["员工_编号"] == "E001"
     assert row["employee_name"] == "Zhang San"
 
 
