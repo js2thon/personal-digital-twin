@@ -181,12 +181,16 @@ def test_database_statement_timeout_is_enforced(dialect, url_env):
         with engine.connect() as conn:
             connector._enforce_read_only(conn, engine.dialect.name)
             started = time.monotonic()
-            with pytest.raises(SQLAlchemyError):
-                conn.exec_driver_sql(statement)
+            if dialect == "mysql":
+                # MySQL documents that SLEEP() as the only selected expression
+                # returns 1 (rather than raising) when max_execution_time interrupts it.
+                assert conn.exec_driver_sql(statement).scalar_one() == 1
+            else:
+                with pytest.raises(SQLAlchemyError):
+                    conn.exec_driver_sql(statement)
             elapsed = time.monotonic() - started
-            # Both the server statement timeout and the MySQL driver read timeout
-            # are configured at five seconds. Allow CI scheduling jitter, but not
-            # a silently unbounded six-second query.
+            # The configured five-second server timeout must interrupt the
+            # six-second statement. Allow CI scheduling jitter, not an unbounded query.
             assert 4.0 <= elapsed < 10.0
             conn.rollback()
     finally:
