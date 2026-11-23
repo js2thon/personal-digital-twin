@@ -265,8 +265,8 @@ def trace_fact(fact_id: str, request: Request):
     tenant_id = str(principal.get("tenant_id") or "default")
     fact = db.fetch_one(
         "SELECT id::text AS id, claim_id::text AS claim_id, predicate, object_value, "
-        " status, source_ref, ontology_version, source_id, valid_from, valid_to, recorded_at "
-        "FROM knowledge.facts WHERE id=CAST(:id AS uuid) AND tenant_id=:tenant_id",
+        " status, to_jsonb(f)->'source_ref' AS source_ref, ontology_version, source_id, valid_from, valid_to, recorded_at "
+        "FROM knowledge.facts f WHERE id=CAST(:id AS uuid) AND tenant_id=:tenant_id",
         {"id": fid, "tenant_id": tenant_id},
     )
     if not fact:
