@@ -29,29 +29,23 @@ def _unique(base: str, used: set[str]) -> str:
     return candidate
 
 
-def _property_refs(schema: dict[str, Any], old: str, new: str) -> None:
-    for obj in (schema.get("entity_types") or {}).values():
-        for attr in obj.get("attributes") or []:
-            if attr.get("name") == old:
-                attr["name"] = new
-        if obj.get("title_property") == old:
-            obj["title_property"] = new
-        for rule in obj.get("identity_rules") or []:
-            rule["key_properties"] = [new if x == old else x for x in rule.get("key_properties", [])]
-        for binding in obj.get("backing_sources") or []:
-            binding["property_mappings"] = {
-                col: new if prop == old else prop
-                for col, prop in (binding.get("property_mappings") or {}).items()
-            }
-    for interface in (schema.get("interfaces") or {}).values():
-        interface["properties"] = [new if x == old else x for x in interface.get("properties", [])]
-    for relation in (schema.get("relation_types") or {}).values():
-        for prop in relation.get("properties") or []:
-            if prop.get("name") == old:
-                prop["name"] = new
-    attrs = schema.get("attributes") or {}
-    if old in attrs:
-        attrs[new] = attrs.pop(old)
+def _property_refs(schema: dict[str, Any], owner: dict[str, Any], old: str, new: str) -> None:
+    for attr in owner.get("attributes") or []:
+        if attr.get("name") == old:
+            attr["name"] = new
+    if owner.get("title_property") == old:
+        owner["title_property"] = new
+    for rule in owner.get("identity_rules") or []:
+        rule["key_properties"] = [new if x == old else x for x in rule.get("key_properties", [])]
+    for binding in owner.get("backing_sources") or []:
+        binding["property_mappings"] = {
+            col: new if prop == old else prop
+            for col, prop in (binding.get("property_mappings") or {}).items()
+        }
+    for interface_name in owner.get("interfaces") or []:
+        interface = (schema.get("interfaces") or {}).get(interface_name)
+        if interface:
+            interface["properties"] = [new if x == old else x for x in interface.get("properties", [])]
 
 
 def _snake_name(name: str, used: set[str], prefix: str) -> str:
@@ -98,7 +92,7 @@ def auto_fix_naming(schema: dict[str, Any]) -> dict[str, Any]:
                 continue
             new = _snake_name(old, used, "field")
             used.add(new)
-            _property_refs(schema, old, new)
+            _property_refs(schema, obj, old, new)
             changes.append({"kind": "property_name", "ref": f"{object_name}.{old}",
                             "before": old, "after": new,
                             "reason": "property identifier must use snake_case"})
