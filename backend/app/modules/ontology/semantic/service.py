@@ -99,13 +99,30 @@ class OntologyService:
     # ------------------------------------------------------------ write_relation
     def write_relation(self, payload: dict, *, auto_reasoning: bool = True) -> dict:
         """写入一条权威关系：类型约束（继承感知）+ 基数 + 规则 + 推理补全。"""
-        existing = store.list_relations(self.tenant_id, "derived = false", limit=2000)
-        # 端点类型优先从已落库实例反查，避免客户端自报类型绕过约束
-        types = resolve_types(store.list_instances(self.tenant_id, limit=2000))
         src, dst = str(payload.get("source_id") or ""), str(payload.get("target_id") or "")
-        src_type = types.get(src) or payload.get("source_type") or ""
-        dst_type = types.get(dst) or payload.get("target_type") or ""
+        # 必须按 ID 在当前租户内精确读取端点；禁止在大租户列表截断后
+        # 回退信任客户端提交的 source_type / target_type。
+        src_instance = store.get_instance(src, self.tenant_id) if src else None
+        dst_instance = store.get_instance(dst, self.tenant_id) if dst else None
+        if not src_instance or not dst_instance:
+            violations = [{
+                "constraint": "relation_endpoint",
+                "severity": "violation",
+                "message": "源或目标实例不存在，或不属于当前租户",
+            }]
+            self._audit("write_relation", payload.get("relation_type"), "rejected", violations)
+            raise ConstraintViolation("关系写入被拒绝：源或目标实例不存在，或不属于当前租户",
+                                      {"blocking": True, "violations": violations})
+        types = resolve_types([src_instance, dst_instance])
+        src_type = types.get(src, "")
+        dst_type = types.get(dst, "")
         check = dict(payload, source_type=src_type, target_type=dst_type)
+        relation_type = str(payload.get("relation_type") or "")
+        relation_spec = (self.schema.get("relation_types") or {}).get(relation_type) or {}
+        cardinality = relation_spec.get("cardinality", "many_to_many")
+        existing = store.find_relation_cardinality_conflicts(
+            self.tenant_id, relation_type, src, dst, cardinality
+        )
 
         report = validate_relation(self.schema, check, existing_edges=existing)
         if report["blocking"]:
