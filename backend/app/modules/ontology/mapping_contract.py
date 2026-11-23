@@ -43,7 +43,10 @@ def to_binding(contract: dict | None, *, ontology_version: str | None = None) ->
             obj["backing_sources"].append(source)
 
         attrs = item.get("attributes") or {}
-        if isinstance(attrs, dict):
+        if item.get("source") and item.get("property"):
+            pairs = [{"source_column": item.get("source"),
+                      "target_property": item.get("property")}]
+        elif isinstance(attrs, dict):
             pairs = ({"source_column": column, "target_property": prop}
                      for prop, column in attrs.items())
         else:
