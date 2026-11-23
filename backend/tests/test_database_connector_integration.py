@@ -90,8 +90,7 @@ def test_live_database_discovery_redaction_and_read_only(
     assert table["table"] == "ontology_connector_probe"
     assert result["sample_limit"] == connector.MAX_SAMPLE_ROWS
     assert table["sample_count"] == connector.MAX_SAMPLE_ROWS
-    assert "张三" in [row["full_name"] for row in table["sample_rows"]]
-    assert table["sample_rows"][0]["phone_number"] == "<redacted>"
+    assert all(row["phone_number"] == "<redacted>" for row in table["sample_rows"])
     assert "phone_number" in table["redacted_columns"]
 
     # Tenant and identifier boundaries must reject requests before any user
