@@ -113,7 +113,6 @@ def test_write_relation_uses_persisted_endpoint_types_not_request_types(monkeypa
     from app.modules.ontology.semantic import service as service_module
 
     monkeypatch.setattr(service_module.db, "transaction", lambda: nullcontext())
-    monkeypatch.setattr(service_module.db, "transaction", lambda: nullcontext())
     monkeypatch.setattr(service_module.versioning, "current_version",
                         lambda: {"ontology_version": "test-v1"})
     instances = {
@@ -161,6 +160,7 @@ def test_write_relation_rejects_endpoint_without_persisted_type(monkeypatch):
     from app.modules.ontology.semantic import service as service_module
     from app.modules.ontology.semantic.constraints import ConstraintViolation
 
+    monkeypatch.setattr(service_module.db, "transaction", lambda: nullcontext())
     monkeypatch.setattr(service_module.versioning, "current_version",
                         lambda: {"ontology_version": "test-v1"})
     instances = {
