@@ -191,7 +191,8 @@ def run_suite(tenant_id: str, actor: str, suite_id: str, spec: dict,
         expect = q["expect"] if isinstance(q["expect"], dict) else json.loads(q["expect"])
         passed = bool(out.get("ok")) and _compare(expect, actual)
         results.append({
-            "question_id": q["id"], "question": q["question"], "passed": passed,
+            "question_id": q["id"], "question": q["question"],
+            "expected_intent": q.get("intent"), "passed": passed,
             "latency_ms": latency, "engine": out.get("engine"),
             "sparql": out.get("sparql") or "", "rows": actual["rows"],
             "answer_text": actual["answer"], "attempts": out.get("attempts") or [],
@@ -327,7 +328,7 @@ def list_failures(tenant_id: str, limit: int = 100,
            LEFT JOIN ontology.eval_questions q
              ON q.id=f.question_id AND q.tenant_id=f.tenant_id
            WHERE f.tenant_id=:tenant
-             AND (:code IS NULL OR f.primary_code=:code)
+             AND (CAST(:code AS VARCHAR) IS NULL OR f.primary_code=:code)
            ORDER BY f.created_at DESC LIMIT :limit""",
         {"tenant": tenant_id, "code": primary_code, "limit": limit})
 
