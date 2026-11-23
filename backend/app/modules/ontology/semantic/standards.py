@@ -103,7 +103,7 @@ def check_ontology_modeling_standards(schema: Any) -> dict[str, Any]:
             prop = str(attr.get("name") or "")
             ref = f"{name}.{prop}"
             if not _MEMBER_NAME.fullmatch(prop):
-                add("error", "PROPERTY_NAME_NOT_SNAKE_CASE", ref,
+                add("info", "PROPERTY_NAME_STYLE", ref,
                     f"属性名称 {prop} 不符合 snake_case 规范", "使用 employee_no、created_at 等 snake_case 名称")
             if not str(attr.get("description") or "").strip():
                 add("warning", "PROPERTY_DESCRIPTION_MISSING", ref,
@@ -161,7 +161,7 @@ def check_ontology_modeling_standards(schema: Any) -> dict[str, Any]:
     # Relationship semantics, typed endpoints, inverse and temporal validity.
     for name, rel in relations.items():
         if not _MEMBER_NAME.fullmatch(name):
-            add("error", "RELATION_NAME_NOT_SNAKE_CASE", name,
+            add("info", "RELATION_NAME_STYLE", name,
                 f"关系名称 {name} 不符合 snake_case 规范", "使用 reports_to、belongs_to 等动词或业务短语")
         if not str(rel.get("label") or "").strip():
             add("warning", "RELATION_LABEL_MISSING", name,
@@ -218,5 +218,5 @@ def check_ontology_modeling_standards(schema: Any) -> dict[str, Any]:
                     "warnings": counts["warning"], "info": counts["info"]},
         "findings": findings,
         "policy": {"errors_block_publish": True, "warnings_require_review": True,
-                   "info_blocks_publish": False},
+                   "info_blocks_publish": False, "style_findings_block_publish": False},
     }
