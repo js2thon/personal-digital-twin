@@ -119,3 +119,18 @@ def validate_binding(binding: dict) -> list[dict]:
         if link.get("mapping_type") not in {"foreign_key", "join_table"}:
             issues.append({"code": "UNSUPPORTED_LINK_MAPPING_TYPE"})
     return issues
+
+def execution_mappings(contract: dict | None) -> list[dict]:
+    """Return the legacy deterministic projection rows from the canonical binding."""
+    data = contract or {}
+    binding = data.get("ontology_binding") or to_binding(data)
+    rows = []
+    for obj in binding.get("object_bindings") or []:
+        for item in obj.get("property_maps") or []:
+            rows.append({
+                "entity_type": obj.get("object_type"),
+                "property": item.get("target_property"),
+                "source": item.get("source_column"),
+            })
+    return rows
+
