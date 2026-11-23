@@ -48,6 +48,11 @@ function render(job){
    edges.push({from:fid,to:rid,label:role});
   }
  }
+ // Keep schema relations selectable even when their contract mapping is missing.
+ for(const [rn,spec] of Object.entries(schema.relation_types||{})){
+  add(targetRels,'relation:'+rn,{id:'relation:'+rn,label:(spec.label||rn),kind:'ontology-relation',
+   meta:{relation:rn,source:spec.source,target:spec.target,table:spec.table,via_table:spec.via_table,cardinality:spec.cardinality||''}});
+ }
  const W=1200,H=Math.max(560,Math.max(sourceTables.size+sourceFields.size,targetObjects.size+targetProps.size+targetRels.size)*74+80);
  graph.setAttribute('viewBox','0 0 '+W+' '+H);graph.setAttribute('height',String(Math.min(H,1100)));
  const left=[...sourceTables.values(),...sourceFields.values()],right=[...targetObjects.values(),...targetProps.values(),...targetRels.values()];
