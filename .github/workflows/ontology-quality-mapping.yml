@@ -133,6 +133,7 @@ jobs:
           tests/test_automodel_metadata_overrides.py
           tests/test_ontology_ingestion_batches.py
           tests/test_ontology_qa_provenance.py
+          tests/test_fact_lineage_trace.py
       - name: Run relation mapping contract regression tests
         env:
           APP_ENV: dev
