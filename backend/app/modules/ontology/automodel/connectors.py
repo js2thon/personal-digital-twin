@@ -34,6 +34,8 @@ class Table:
     foreign_keys: list[ForeignKey] = field(default_factory=list)
     comment: str = ""
     column_comments: dict[str, str] = field(default_factory=dict)
+    column_labels: dict[str, str] = field(default_factory=dict)
+    column_roles: dict[str, str] = field(default_factory=dict)
     row_count: int | None = None
 
 
