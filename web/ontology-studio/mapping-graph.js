@@ -64,6 +64,15 @@ function render(job){
   detail.innerHTML='<b>'+esc(n.label)+'</b><p class="smg-kind">'+esc(n.kind)+'</p><dl>'+
    Object.entries(m).map(([k,v])=>'<dt>'+esc(k)+'</dt><dd>'+esc(Array.isArray(v)?v.join(', '):v)+'</dd>').join('')+
    '</dl><p class="smg-kind">关联映射：'+connected.length+'</p>';
+  if(n.kind==='source-field'){
+   const mapping=(job.contract?.mappings||[]).find(x=>String(x.table)===String(m.table));
+   const attrs=Object.entries(schema.attributes||{}).filter(([key,a])=>a.owner===mapping?.class);
+   const current=Object.entries(mapping?.attributes||{}).find(([key,col])=>String(col)===String(m.column))?.[0]||'';
+   if(mapping){
+    detail.insertAdjacentHTML('beforeend','<hr><p class="smg-kind">调整字段对应的本体属性（仅修改当前草稿）</p><label for="smgProperty">目标属性</label><select id="smgProperty" style="width:100%;margin:6px 0"><option value="">不映射</option>'+attrs.map(([key,a])=>'<option value="'+esc(key)+'" '+(key===current?'selected':'')+'>'+esc(a.label||key)+' · '+esc(key)+'</option>').join('')+'</select><button id="smgApply" class="primary" style="width:100%">应用到草稿</button>');
+    $('smgApply').onclick=()=>{if(window.applySemanticMappingEdit)window.applySemanticMappingEdit({table:m.table,column:m.column,property:$('smgProperty').value});};
+   }
+  }
  }
  inspect(left[0]||right[0],edges);
 }
