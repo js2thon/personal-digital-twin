@@ -289,7 +289,7 @@ def trace_fact(fact_id: str):
         "JOIN knowledge.evidence_spans es ON es.id=ce.evidence_id "
         "LEFT JOIN source.documents d ON d.id=es.document_id "
         "WHERE ce.claim_id = ANY(CAST(:claim_ids AS uuid[])) "
-        "ORDER BY d.title, es.page_no LIMIT 200",
+        "ORDER BY d.title, es.created_at, es.id LIMIT 200",
         {"claim_ids": claim_ids},
     ) if claim_ids else []
     return {
