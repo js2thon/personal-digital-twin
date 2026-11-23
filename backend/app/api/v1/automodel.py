@@ -330,7 +330,22 @@ def edit_mapping_contract(job_id: str, payload: MappingContractEditIn, request: 
     from app.modules.ontology.automodel import profiler
     ts = _source(job_id)
     profiles = profiler.profile(ts)
-    issues = mapper.validate_contract(contract, schema, profiles)
+    try:
+        issues = mapper.validate_contract(contract, schema, profiles)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise HTTPException(400, f"映射契约结构无效：{type(exc).__name__}") from exc
+    known_tables = set(profiles)
+    for item in contract.get("mappings", []):
+        if item.get("table") not in known_tables:
+            issues.append({"level": "error", "code": "UNKNOWN_SOURCE_TABLE",
+                           "table": item.get("table"), "msg": f"来源表不存在：{item.get('table')}"})
+    for item in contract.get("links", []):
+        if item.get("table") not in known_tables:
+            issues.append({"level": "error", "code": "UNKNOWN_JUNCTION_TABLE",
+                           "table": item.get("table"), "msg": f"关联表不存在：{item.get('table')}"})
+    if not contract.get("mappings"):
+        issues.append({"level": "error", "code": "MISSING_MAPPING_TABLES",
+                       "table": None, "msg": "至少需要一个源表映射"})
     blockers = [item for item in issues if item.get("level") == "error"]
     if payload.validate_only:
         return {"valid": not blockers, "issues": issues, "contract": contract,
