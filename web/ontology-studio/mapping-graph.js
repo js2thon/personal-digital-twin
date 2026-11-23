@@ -1,7 +1,7 @@
 (()=>{'use strict';
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const svg=(tag,attrs={},label='')=>{const n=document.createElementNS('http://www.w3.org/2000/svg',tag);Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,String(v)));if(label){const t=document.createElementNS('http://www.w3.org/2000/svg','title');t.textContent=label;n.append(t)}return n};
+const svg=(tag,attrs={},label='')=>{const n=document.createElementNS('http://www.w3.org/2000/svg',tag);Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,String(v)));if(label){if(tag==='text')n.textContent=label;else{const t=document.createElementNS('http://www.w3.org/2000/svg','title');t.textContent=label;n.append(t)}}return n};
 const norm=(table,column)=>table+'.'+column;
 function render(job){
  const root=$('semanticMappingGraph');if(!root)return;
