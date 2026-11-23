@@ -138,6 +138,7 @@ def test_chinese_business_object_name_does_not_block_ontology_publish_gate():
     job = _valid_job()
     job["draft"]["schema"] = schema
     job["standards_report"] = report
+    job["standards_review_acknowledged"] = True
     job["issues"] = [
         {"level": "info", "code": item["code"], "msg": item["message"]}
         for item in report["findings"] if item["severity"] == "info"
