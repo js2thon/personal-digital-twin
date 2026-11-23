@@ -79,44 +79,15 @@ def auto_fix_naming(schema: dict[str, Any]) -> dict[str, Any]:
     changes: list[dict[str, str]] = []
     objects = schema.get("entity_types") or {}
     for object_name, obj in objects.items():
-        if not _PASCAL.fullmatch(str(obj.get("technical_name") or object_name)):
-            old = str(obj.get("technical_name") or object_name)
-            new = _pascal_name(old)
+        # Localized business keys are valid and must remain untouched. Only repair
+        # an explicitly supplied technical identifier; style-only property and
+        # relation naming is reported as informational and never rewritten.
+        explicit = str(obj.get("technical_name") or "").strip()
+        if explicit and not _PASCAL.fullmatch(explicit):
+            new = _pascal_name(explicit)
             obj["technical_name"] = new
             changes.append({"kind": "object_technical_name", "ref": object_name,
-                            "before": old, "after": new,
-                            "reason": "technical identifier must use PascalCase"})
-
-        attrs = obj.get("attributes") or []
-        used = {str(a.get("name")) for a in attrs if a.get("name") and
-                _SNAKE.fullmatch(str(a.get("name")))}
-        for attr in attrs:
-            old = str(attr.get("name") or "")
-            if not old or _SNAKE.fullmatch(old):
-                continue
-            new = _snake_name(old, used, "field")
-            used.add(new)
-            _property_refs(schema, object_name, obj, old, new)
-            changes.append({"kind": "property_name", "ref": f"{object_name}.{old}",
-                            "before": old, "after": new,
-                            "reason": "property identifier must use snake_case"})
-
-    relations = schema.get("relation_types") or {}
-    used_relations = {str(k) for k in relations if _SNAKE.fullmatch(str(k))}
-    for old in list(relations):
-        if _SNAKE.fullmatch(str(old)):
-            continue
-        new = _snake_name(str(old), used_relations, "related")
-        used_relations.add(new)
-        relations[new] = relations.pop(old)
-        for relation in relations.values():
-            if relation.get("inverse_of") == old:
-                relation["inverse_of"] = new
-            characteristics = relation.get("characteristics") or {}
-            if characteristics.get("inverse_of") == old:
-                characteristics["inverse_of"] = new
-        changes.append({"kind": "relation_name", "ref": str(old),
-                        "before": str(old), "after": new,
-                        "reason": "relation identifier must use snake_case"})
+                            "before": explicit, "after": new,
+                            "reason": "explicit technical identifier must use PascalCase"})
 
     return {"applied": changes, "count": len(changes)}
