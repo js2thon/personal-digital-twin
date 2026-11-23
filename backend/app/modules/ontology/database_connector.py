@@ -106,7 +106,9 @@ def _engine(url: str):
         connect_args["options"] = "-c statement_timeout=5000 -c default_transaction_read_only=on"
     else:
         connect_args["connect_timeout"] = 5
-        connect_args["read_timeout"] = 5
+        # Let the server-side 5s execution timeout respond before the client
+        # socket deadline; otherwise PyMySQL drops the connection at the same instant.
+        connect_args["read_timeout"] = 10
         connect_args["write_timeout"] = 5
     return create_engine(url, pool_pre_ping=True, pool_size=1, max_overflow=0,
                          pool_timeout=5, pool_recycle=300, connect_args=connect_args)
