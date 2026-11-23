@@ -79,6 +79,33 @@ window.applySemanticMappingEdit=({table,column,property})=>{
  S.job.contract=contract;S.mappingDirty=true;$('mappingPublish').disabled=true;renderJob();
  setStatus('connection','映射草稿已调整，尚未保存；请先验证，再保存。');
 };
+
+window.applySemanticRelationEdit=payload=>{
+ if(!S.job||!Array.isArray(S.job.contract?.mappings))return;
+ const contract=JSON.parse(JSON.stringify(S.job.contract));
+ const schema=S.job.draft?.schema||S.job.schema||{},spec=schema.relation_types?.[payload.relation];
+ if(!spec){setStatus('connection','关系定义不存在，未修改草稿');return}
+ if(payload.kind==='many_to_one'){
+  const mapping=contract.mappings.find(x=>String(x.table)===String(payload.table)&&x.class===spec.source);
+  const target=contract.mappings.find(x=>String(x.table)===String(payload.target_table)&&x.class===spec.target);
+  if(!mapping||!target){setStatus('connection','关系两端必须选择已映射为对应对象类型的源表');return}
+  const pk=target.primary_key?.[0]||S.job.profiles?.[payload.target_table]?.primary_key?.[0];
+  if(!pk){setStatus('connection','目标表缺少主键，无法生成稳定目标实例 ID');return}
+  mapping.relations=mapping.relations||[];
+  const next={type:payload.relation,column:payload.column,target:spec.target,target_table:payload.target_table,target_id:contract.source+':'+payload.target_table+':{value}',by:'external_id'};
+  const at=mapping.relations.findIndex(x=>x.type===payload.relation);
+  if(at>=0)mapping.relations[at]=next;else mapping.relations.push(next);
+ }else if(payload.kind==='many_to_many'){
+  const source=contract.mappings.find(x=>String(x.table)===String(payload.source_table)&&x.class===spec.source);
+  const target=contract.mappings.find(x=>String(x.table)===String(payload.target_table)&&x.class===spec.target);
+  if(!source||!target){setStatus('connection','多对多关系两端必须选择已映射为对应对象类型的源表');return}
+  const next={table:payload.table,type:payload.relation,source_column:payload.source_column,source_table:payload.source_table,target_column:payload.target_column,target_table:payload.target_table,by:'external_id'};
+  const at=contract.links.findIndex(x=>x.type===payload.relation);
+  if(at>=0)contract.links[at]=next;else contract.links.push(next);
+ }else return;
+ S.job.contract=contract;S.mappingDirty=true;$('mappingPublish').disabled=true;renderJob();
+ setStatus('connection','关系映射已应用到草稿，尚未保存；请先验证，再保存。');
+};
 async function persistMapping(validateOnly){
  if(!S.jid||!S.job?.contract){setStatus('connection','请先选择自动建模任务');return}
  try{
