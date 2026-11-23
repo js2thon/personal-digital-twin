@@ -170,3 +170,16 @@ def ontology_eval_runs(request: Request, limit: int = 30):
 def ontology_eval_run_detail(run_id: str, request: Request):
     tenant, _ = _tenant_actor(request)
     return _call(oq_eval.get_run, tenant, run_id)
+
+
+@router.get("/evaluation/ontology/failures")
+def ontology_eval_failures(request: Request, limit: int = 100,
+                           primary_code: str | None = None):
+    tenant, _ = _tenant_actor(request)
+    return {"items": _call(oq_eval.list_failures, tenant, limit, primary_code)}
+
+
+@router.get("/evaluation/ontology/failures/summary")
+def ontology_eval_failure_summary(request: Request):
+    tenant, _ = _tenant_actor(request)
+    return _call(oq_eval.failure_summary, tenant)
