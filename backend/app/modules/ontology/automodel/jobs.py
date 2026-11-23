@@ -92,12 +92,6 @@ def save(job: dict, tenant: str = "default", actor: str = "owner",
             _MEM[cache_key] = job
         return job
     db = _db()
-    # A primary-key collision must not let another tenant's job enter this
-    # process cache even though the guarded upsert below would be a no-op.
-    existing = db.fetch_one(
-        "SELECT tenant_id FROM ontology.automodel_jobs WHERE id=:i", {"i": job["id"]})
-    if existing and str(existing["tenant_id"]) != str(tenant):
-        raise PermissionError("Automodel job belongs to another tenant")
     stage = next(reversed(job.get("stages") or {"created": 1}))
     params = {"id": job["id"], "t": tenant, "s": job["source"], "k": job.get("source_kind", "file"),
               "ref": json.dumps(source_ref or job.get("source_ref") or {}, ensure_ascii=False),
@@ -106,7 +100,11 @@ def save(job: dict, tenant: str = "default", actor: str = "owner",
               "r": json.dumps((job.get("draft") or {}).get("review") or [], ensure_ascii=False, default=str),
               "v": job.get("schema_version"), "pb": job.get("published_by"),
               "e": job.get("error"), "cb": actor}
-    db.execute(
+    # The ownership check must be part of the same atomic statement as the upsert.
+    # A SELECT followed by INSERT ... ON CONFLICT has a race: two tenants can both
+    # observe no row, then the losing tenant can still poison its tenant-keyed cache
+    # after the guarded upsert silently affects zero rows.
+    persisted = db.fetch_one(
         "INSERT INTO ontology.automodel_jobs (id, tenant_id, source_id, source_kind, source_ref, status, "
         " stage, artifact, review, schema_version, published_by, error, created_by) VALUES "
         "(:id, :t, :s, :k, CAST(:ref AS jsonb), :st, :stage, CAST(:a AS jsonb), CAST(:r AS jsonb), "
@@ -114,7 +112,11 @@ def save(job: dict, tenant: str = "default", actor: str = "owner",
         "ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, stage=EXCLUDED.stage, "
         " artifact=EXCLUDED.artifact, review=EXCLUDED.review, schema_version=EXCLUDED.schema_version, "
         " published_by=EXCLUDED.published_by, error=EXCLUDED.error, updated_at=now() "
-        "WHERE ontology.automodel_jobs.tenant_id=EXCLUDED.tenant_id", params)
+        "WHERE ontology.automodel_jobs.tenant_id=EXCLUDED.tenant_id "
+        "RETURNING id, tenant_id", params)
+    if not persisted or str(persisted.get("tenant_id")) != str(tenant):
+        raise PermissionError("Automodel job belongs to another tenant")
+    # Cache only after PostgreSQL confirms that this tenant owns the persisted row.
     with _LOCK:
         _MEM[cache_key] = job
     return job
