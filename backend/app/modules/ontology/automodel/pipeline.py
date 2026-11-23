@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import copy
+import re
 import time
 import uuid
 
-from . import business_object_discovery, generator, mapper, materializer, profiler, release_gate
+from . import auto_fix, business_object_discovery, generator, mapper, materializer, profiler, release_gate
 from .connectors import TableSet
 
-STAGES = ("profile", "business_object_discovery", "draft", "map", "validate", "materialize", "metrics")
+STAGES = ("profile", "business_object_discovery", "draft", "auto_fix", "map", "validate", "materialize", "metrics")
 
 
 def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
@@ -38,6 +39,16 @@ def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
     job["draft"] = draft
     if stop_after == "draft":
         return _done(job)
+    auto_fix_report = stage("auto_fix", lambda: auto_fix.auto_fix_naming(draft["schema"]))
+    job["auto_fix_report"] = auto_fix_report
+    job["auto_fix_report"]["stage"] = "after_draft_before_mapping"
+    for change in auto_fix_report["applied"]:
+        _audit(job, "auto_fix_naming", "system", target_type=change["kind"],
+               target_ref=change["ref"], before=change["before"], after=change["after"],
+               comment=change["reason"])
+    if stop_after == "auto_fix":
+        return _done(job)
+
     contract = stage("map", lambda: mapper.build_contract(ts.source_id, draft, profiles))
     job["contract"] = contract
     issues = stage("validate", lambda: mapper.validate_contract(contract, draft["schema"], profiles))
@@ -64,13 +75,43 @@ def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
     if has_blocking or stop_after in ("map", "validate"):
         job["status"] = "needs_review" if (issues or draft.get("review")) else "validated"
         job["release_gate"] = release_gate.evaluate(job)
+        refresh_summary(job)
         return _done(job, keep_status=True)
     job["materialized"] = stage("materialize", lambda: materializer.materialize(ts, contract))
     from . import metrics as mx
     job["metrics"] = stage("metrics", lambda: mx.generate(draft["schema"]))
     job["status"] = "needs_review" if (draft["review"] or has_warnings) else "ready_to_publish"
     job["release_gate"] = release_gate.evaluate(job)
+    refresh_summary(job)
     return _done(job, keep_status=True)
+
+
+def refresh_summary(job: dict) -> dict:
+    """按当前 Schema 与审核队列重算摘要统计与任务状态。
+
+    旧逻辑：stats 只在 generate 时写一次，审核/编辑后「待审核 N」不变；
+    状态只要有 warning 就停在 needs_review，即使发布门禁已 READY、警告不要求复核。
+    """
+    d = job.get("draft") or {}
+    sc = d.get("schema") or {}
+    review = d.get("review") or []
+    d["stats"] = {"classes": len(sc.get("entity_types") or {}),
+                  "relations": len(sc.get("relation_types") or {}),
+                  "attributes": len(sc.get("attributes") or {}),
+                  "needs_review": len(review)}
+    if job.get("status") in ("published", "written", "publish_partial_failure", "running"):
+        return job
+    issues = job.get("issues") or []
+    if any(i.get("level") == "error" for i in issues) or review:
+        job["status"] = "needs_review"
+        return job
+    warn = any(i.get("level") == "warning" for i in issues)
+    policy = (job.get("standards_report") or {}).get("policy") or {}
+    warn_blocks = warn and policy.get("warnings_require_review", True) \
+        and not job.get("standards_review_acknowledged")
+    gate_ready = (job.get("release_gate") or {}).get("ready", True)
+    job["status"] = "ready_to_publish" if (gate_ready and not warn_blocks) else "needs_review"
+    return job
 
 
 def _done(job, keep_status=False):
@@ -175,6 +216,11 @@ def apply_review(job: dict, decisions: list[dict], actor: str = "reviewer",
         before = copy.deepcopy(section[ref])
         if decision.get("label"):
             section[ref]["label"] = decision["label"]
+        if kind == "class" and decision.get("technical_name") is not None:
+            technical_name = str(decision.get("technical_name") or "").strip()
+            if not technical_name or not re.fullmatch(r"[A-Z][A-Za-z0-9]*", technical_name):
+                raise ValueError("technical_name 必须为 PascalCase，例如 DataManagementDepartmentPersonnel")
+            section[ref]["technical_name"] = technical_name
         ref_after = ref
         if action == "reject":
             section.pop(ref)
@@ -257,6 +303,7 @@ def apply_review(job: dict, decisions: list[dict], actor: str = "reviewer",
                finding_codes=[x.get("code") for x in (job.get("standards_report") or {}).get("findings", [])
                               if x.get("severity") == "warning"])
     job["release_gate"] = release_gate.evaluate(job)
+    refresh_summary(job)
     return job
 
 
@@ -268,6 +315,7 @@ def acknowledge_standards_warnings(job: dict, actor: str = "reviewer") -> dict:
     _audit(job, "acknowledge_standards_warnings", actor,
            finding_codes=[x.get("code") for x in warnings])
     job["release_gate"] = release_gate.evaluate(job)
+    refresh_summary(job)
     return job
 
 def rebuild(job: dict, ts: TableSet) -> dict:
@@ -275,6 +323,12 @@ def rebuild(job: dict, ts: TableSet) -> dict:
     from . import metrics as mx
     profiles = profiler.profile(ts)
     job["profiles"] = {k: v.to_dict() for k, v in profiles.items()}
+    auto_fix_report = auto_fix.auto_fix_naming(job["draft"]["schema"])
+    job["auto_fix_report"] = auto_fix_report
+    for change in auto_fix_report["applied"]:
+        _audit(job, "auto_fix_naming", "system", target_type=change["kind"],
+               target_ref=change["ref"], before=change["before"], after=change["after"],
+               comment=change["reason"])
     job["contract"] = mapper.build_contract(ts.source_id, job["draft"], profiles)
     job["issues"] = mapper.validate_contract(job["contract"], job["draft"]["schema"], profiles)
     from app.modules.ontology.semantic.schema_def import validate_business_model
@@ -294,11 +348,13 @@ def rebuild(job: dict, ts: TableSet) -> dict:
     if any(i["level"] == "error" for i in job["issues"]):
         job["status"] = "needs_review"
         job["release_gate"] = release_gate.evaluate(job)
+        refresh_summary(job)
         return job
     job["materialized"] = materializer.materialize(ts, job["contract"])
     job["metrics"] = mx.generate(job["draft"]["schema"])
     job["status"] = "needs_review" if (job["draft"]["review"] or any(i["level"] == "warning" for i in job["issues"])) else "ready_to_publish"
     job["release_gate"] = release_gate.evaluate(job)
+    refresh_summary(job)
     return job
 
 

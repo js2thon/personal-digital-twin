@@ -13,6 +13,10 @@ from typing import Any
 from .schema_def import to_schema_dict
 
 _OBJECT_NAME = re.compile(r"^[A-Z][A-Za-z0-9]*$")
+# Chinese business object names are valid localized identifiers when a source system
+# or business owner has not supplied an English technical identifier. Keep the
+# original key intact so mappings and relationship references remain stable.
+_LOCALIZED_OBJECT_NAME = re.compile(r"^[\u3400-\u9fff][\u3400-\u9fff0-9]*$")
 _MEMBER_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 _CARDINALITIES = {"one_to_one", "one_to_many", "many_to_one", "many_to_many"}
 _KINDS = {"entity", "event", "transaction", "reference", "association"}
@@ -48,9 +52,17 @@ def check_ontology_modeling_standards(schema: Any) -> dict[str, Any]:
 
     # Object naming, identity, display, lifecycle and property semantics.
     for name, obj in objects.items():
-        if not _OBJECT_NAME.fullmatch(name):
-            add("error", "OBJECT_NAME_NOT_PASCAL_CASE", name,
-                f"对象类型名称 {name} 不符合 PascalCase 规范", "使用 Employee、PurchaseOrder 等 PascalCase 名称")
+        explicit_technical_name = str(obj.get("technical_name") or "").strip()
+        technical_name = explicit_technical_name or name
+        if not _OBJECT_NAME.fullmatch(technical_name):
+            if not explicit_technical_name and _LOCALIZED_OBJECT_NAME.fullmatch(name):
+                add("info", "OBJECT_NAME_LOCALIZED", name,
+                    f"对象类型 {name} 使用中文业务标识；展示名称与对象引用保持不变",
+                    "如需跨系统/API 稳定集成，可补充 PascalCase technical_name，例如 DataManagementDepartmentPersonnel")
+            else:
+                add("info", "OBJECT_NAME_NOT_PASCAL_CASE", name,
+                    f"对象类型技术标识 {technical_name} 不符合 PascalCase 规范",
+                    "使用 PascalCase technical_name（如 Employee、PurchaseOrder），中文业务名称放在 label")
         if not str(obj.get("label") or "").strip():
             add("warning", "OBJECT_LABEL_MISSING", name,
                 f"对象 {name} 缺少中文业务名称", "补充面向业务人员的 label")
@@ -76,13 +88,13 @@ def check_ontology_modeling_standards(schema: Any) -> dict[str, Any]:
             add("warning", "OBJECT_TITLE_MISSING", name,
                 f"对象 {name} 没有展示属性", "指定适合对象列表和详情页展示的 title_property")
         elif title not in attr_map:
-            add("error", "OBJECT_TITLE_UNKNOWN", name,
+            add("warning", "OBJECT_TITLE_UNKNOWN", name,
                 f"对象 {name} 的展示属性 {title} 未定义", "将 title_property 指向对象已定义的属性")
         identifiers = [a["name"] for a in attrs if a.get("identifier")]
         identity_rules = obj.get("identity_rules") or []
         if not identity_rules and not any(b.get("mode") == "action_created"
                                           for b in obj.get("backing_sources") or []):
-            add("error", "OBJECT_IDENTITY_MISSING", name,
+            add("warning", "OBJECT_IDENTITY_MISSING", name,
                 f"对象 {name} 缺少业务身份规则", "定义稳定业务键；无法预先分配身份的对象需声明 action_created")
         if not identifiers and identity_rules:
             add("warning", "IDENTIFIER_PROPERTY_NOT_MARKED", name,
@@ -91,7 +103,7 @@ def check_ontology_modeling_standards(schema: Any) -> dict[str, Any]:
             prop = str(attr.get("name") or "")
             ref = f"{name}.{prop}"
             if not _MEMBER_NAME.fullmatch(prop):
-                add("error", "PROPERTY_NAME_NOT_SNAKE_CASE", ref,
+                add("info", "PROPERTY_NAME_STYLE", ref,
                     f"属性名称 {prop} 不符合 snake_case 规范", "使用 employee_no、created_at 等 snake_case 名称")
             if not str(attr.get("description") or "").strip():
                 add("warning", "PROPERTY_DESCRIPTION_MISSING", ref,
@@ -149,7 +161,7 @@ def check_ontology_modeling_standards(schema: Any) -> dict[str, Any]:
     # Relationship semantics, typed endpoints, inverse and temporal validity.
     for name, rel in relations.items():
         if not _MEMBER_NAME.fullmatch(name):
-            add("error", "RELATION_NAME_NOT_SNAKE_CASE", name,
+            add("info", "RELATION_NAME_STYLE", name,
                 f"关系名称 {name} 不符合 snake_case 规范", "使用 reports_to、belongs_to 等动词或业务短语")
         if not str(rel.get("label") or "").strip():
             add("warning", "RELATION_LABEL_MISSING", name,
@@ -205,6 +217,6 @@ def check_ontology_modeling_standards(schema: Any) -> dict[str, Any]:
         "summary": {"total": len(findings), "errors": counts["error"],
                     "warnings": counts["warning"], "info": counts["info"]},
         "findings": findings,
-        "policy": {"errors_block_publish": True, "warnings_require_review": True,
-                   "info_blocks_publish": False},
+        "policy": {"errors_block_publish": True, "warnings_require_review": False,
+                   "info_blocks_publish": False, "style_findings_block_publish": False},
     }

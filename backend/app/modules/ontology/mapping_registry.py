@@ -78,6 +78,23 @@ def approve(mapping_id: str, *, tenant_id: str, approved_by: str) -> dict | None
     return _serialize(row) if row else None
 
 
+def retire(mapping_id: str, *, tenant_id: str, retired_by: str) -> dict | None:
+    """停用映射版本（draft/approved → retired）。
+
+    映射版本是不可变审计记录，不做物理删除；retired 后写入执行器只接受 approved，
+    因此停用的版本不能再被用来写正式数据。已执行过写入的版本照常可停用，
+    其 IngestionRun 记录不受影响。
+    """
+    ensure_schema()
+    row = db.fetch_one(
+        "UPDATE ontology.dataset_mapping_sets SET status = 'retired' "
+        "WHERE id = CAST(:id AS uuid) AND tenant_id = :t AND status IN ('draft','approved') "
+        "RETURNING id, tenant_id, name, version, status, schema_version, "
+        "ontology_version, checksum, created_by, approved_by, approved_at, created_at",
+        {"id": mapping_id, "t": tenant_id})
+    return _serialize(row) if row else None
+
+
 def get(mapping_id: str, *, tenant_id: str) -> dict | None:
     ensure_schema()
     row = db.fetch_one(

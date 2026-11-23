@@ -20,7 +20,10 @@ def _schema_parts(schema: dict | None) -> tuple[list[dict], list[dict]]:
     """Accept SemanticSchema.to_schema_dict shape or a compact JSON schema."""
     schema = schema or {}
     raw_types = schema.get("entity_types") or {}
-    types = list(raw_types.values()) if isinstance(raw_types, dict) else list(raw_types)
+    # automodel 的 entity_types 是 {类名: 定义}，定义里不一定有 name 字段：用字典键兜底，
+    # 否则整类被跳过，所有映射都会报 unknown_target（目标本体属性不存在）。
+    types = ([{**v, "name": v.get("name") or k} for k, v in raw_types.items() if isinstance(v, dict)]
+             if isinstance(raw_types, dict) else list(raw_types))
     entities: list[dict] = []
     attributes: list[dict] = []
     for entity in types:

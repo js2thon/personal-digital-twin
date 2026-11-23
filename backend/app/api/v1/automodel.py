@@ -91,12 +91,17 @@ def _job(job_id: str, request: Request) -> dict:
 
 
 def _frames(job: dict):
+    # 任务落库只保存物化统计（不含 entities/facts）；从库里读回或缓存命中时，
+    # 也必须先保证物化明细在内存，否则 studio.quality/overview 会 KeyError: 'facts'。
+    mat = job.get("materialized") or {}
+    if "entities" not in mat or "facts" not in mat:
+        job["materialized"] = pipeline.materializer.materialize(_source(job["id"]), job["contract"])
+        with _LOCK:
+            _FRAMES.pop(job["id"], None)
     with _LOCK:
         hit = _FRAMES.get(job["id"])
     if hit:
         return hit
-    if not job.get("materialized") or "entities" not in job["materialized"]:
-        job["materialized"] = pipeline.materializer.materialize(_source(job["id"]), job["contract"])
     F, L = mx.frames(job["materialized"], job["draft"]["schema"])
     with _LOCK:
         _FRAMES[job["id"]] = (F, L)
@@ -104,6 +109,8 @@ def _frames(job: dict):
 
 
 def _summary(job: dict) -> dict:
+    if job.get("draft"):
+        pipeline.refresh_summary(job)          # 旧任务读出时也按当前审核队列重算
     d = job.get("draft") or {}
     return {"id": job["id"], "source": job["source"], "status": job["status"],
             "stages": job.get("stages"), "stats": d.get("stats"),
@@ -111,6 +118,7 @@ def _summary(job: dict) -> dict:
             "materialized": (job.get("materialized") or {}).get("stats"),
             "metrics": (job.get("metrics") or {}).get("stats"),
             "business_object_discovery": job.get("business_object_discovery"),
+            "auto_fix_report": job.get("auto_fix_report"),
             "standards_report": job.get("standards_report"),
             "release_gate": job.get("release_gate"),
             "schema_version": job.get("schema_version")}
@@ -250,6 +258,9 @@ def review(job_id: str, payload: ReviewIn, request: Request):
             raise HTTPException(400, f"非法审核决策：{d}")
         if d.get("new_name") and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", d["new_name"]):
             raise HTTPException(400, f"new_name 非法：{d['new_name']}")
+    for decision in payload.decisions:
+        if decision.get("technical_name") is not None and not re.fullmatch(r"[A-Z][A-Za-z0-9]{0,63}", str(decision["technical_name"])):
+            raise HTTPException(400, "technical_name 必须为 PascalCase")
     pipeline.apply_review(job, payload.decisions, actor=actor)
     pipeline.rebuild(job, _source(job_id))
     if payload.acknowledge_warnings:

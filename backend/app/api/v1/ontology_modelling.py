@@ -270,6 +270,20 @@ def mapping_set_approve(mapping_id: str, request: Request):
     return result
 
 
+@router.post("/ontology/modelling/mapping-sets/{mapping_id}/retire")
+def mapping_set_retire(mapping_id: str, request: Request):
+    """停用映射版本（draft/approved → retired）。不物理删除：映射版本是写入的审计依据；
+    停用后执行器只接受 approved，因此该版本不能再用于正式写入。"""
+    from app.modules.ontology import mapping_registry as MR
+    principal = _principal(request)
+    result = MR.retire(
+        mapping_id, tenant_id=str(principal.get("tenant_id") or "default"),
+        retired_by=str(principal.get("user_id") or "anonymous"))
+    if not result:
+        raise HTTPException(404, "映射版本不存在、非当前租户或已停用")
+    return result
+
+
 @router.get("/ontology/modelling/mapping-sets")
 def mapping_set_list(request: Request, name: str | None = None, limit: int = 50):
     """列出当前租户的映射版本及审批状态。"""

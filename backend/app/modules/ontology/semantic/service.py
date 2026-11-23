@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 
+from app.db import session as db
 from . import store, versioning
 from .constraints import (ConstraintViolation, assert_valid, validate_instance,
                           validate_relation)
@@ -98,14 +99,49 @@ class OntologyService:
 
     # ------------------------------------------------------------ write_relation
     def write_relation(self, payload: dict, *, auto_reasoning: bool = True) -> dict:
+        """在单事务内校验并写入关系，避免校验/写入之间出现并发竞态。"""
+        with db.transaction():
+            return self._write_relation_in_transaction(payload, auto_reasoning=auto_reasoning)
+
+    def _write_relation_in_transaction(self, payload: dict, *,
+                                        auto_reasoning: bool = True) -> dict:
         """写入一条权威关系：类型约束（继承感知）+ 基数 + 规则 + 推理补全。"""
-        existing = store.list_relations(self.tenant_id, "derived = false", limit=2000)
-        # 端点类型优先从已落库实例反查，避免客户端自报类型绕过约束
-        types = resolve_types(store.list_instances(self.tenant_id, limit=2000))
         src, dst = str(payload.get("source_id") or ""), str(payload.get("target_id") or "")
-        src_type = types.get(src) or payload.get("source_type") or ""
-        dst_type = types.get(dst) or payload.get("target_type") or ""
+        # 必须按 ID 在当前租户内精确读取端点；禁止在大租户列表截断后
+        # 回退信任客户端提交的 source_type / target_type。
+        src_instance = store.get_instance(src, self.tenant_id) if src else None
+        dst_instance = store.get_instance(dst, self.tenant_id) if dst else None
+        if not src_instance or not dst_instance:
+            violations = [{
+                "constraint": "relation_endpoint",
+                "severity": "violation",
+                "message": "源或目标实例不存在，或不属于当前租户",
+            }]
+            self._audit("write_relation", payload.get("relation_type"), "rejected", violations)
+            raise ConstraintViolation("关系写入被拒绝：源或目标实例不存在，或不属于当前租户",
+                                      {"blocking": True, "violations": violations})
+        types = resolve_types([src_instance, dst_instance])
+        src_type = types.get(src, "")
+        dst_type = types.get(dst, "")
+        if not src_type or not dst_type:
+            violations = [{
+                "constraint": "relation_endpoint_type",
+                "severity": "violation",
+                "message": "源或目标实例缺少有效对象类型，无法验证关系端点约束",
+            }]
+            self._audit("write_relation", payload.get("relation_type"), "rejected", violations)
+            raise ConstraintViolation("关系写入被拒绝：源或目标实例缺少有效对象类型",
+                                      {"blocking": True, "violations": violations})
         check = dict(payload, source_type=src_type, target_type=dst_type)
+        relation_type = str(payload.get("relation_type") or "")
+        relation_spec = (self.schema.get("relation_types") or {}).get(relation_type) or {}
+        cardinality = relation_spec.get("cardinality", "many_to_many")
+        store.lock_relation_cardinality(
+            self.tenant_id, relation_type, src, dst, cardinality
+        )
+        existing = store.find_relation_cardinality_conflicts(
+            self.tenant_id, relation_type, src, dst, cardinality
+        )
 
         report = validate_relation(self.schema, check, existing_edges=existing)
         if report["blocking"]:
