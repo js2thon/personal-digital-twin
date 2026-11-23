@@ -144,7 +144,7 @@ def test_modeling_standards_report_distinguishes_blocking_errors_and_review_warn
     assert report["summary"]["warnings"] > 0
     assert {
         "OBJECT_NAME_NOT_PASCAL_CASE", "OBJECT_KIND_INVALID",
-        "PROPERTY_NAME_NOT_SNAKE_CASE", "ENUM_VALUES_MISSING",
+        "PROPERTY_NAME_STYLE", "ENUM_VALUES_MISSING",
         "OBJECT_TITLE_UNKNOWN", "SOURCE_TARGET_PROPERTY_UNKNOWN",
         "RELATION_CARDINALITY_INVALID", "RELATION_ENDPOINT_UNTYPED",
         "RELATION_ENDPOINT_UNKNOWN",
