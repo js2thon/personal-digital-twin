@@ -109,3 +109,38 @@ def test_partial_publish_retry_recovers_existing_version_without_republishing(mo
     assert result["recovered"] is True
     assert job["status"] == "published"
     assert job["publish_steps"]["completed"] is True
+
+
+
+def test_chinese_business_object_name_does_not_block_ontology_publish_gate():
+    from app.modules.ontology.semantic.standards import check_ontology_modeling_standards
+
+    schema = {
+        "entity_types": {
+            "数据管理部人员": {
+                "label": "数据管理部人员",
+                "object_kind": "entity",
+                "attributes": [{"name": "employee_no", "description": "工号",
+                                "identifier": True, "range": "string"}],
+                "identity_rules": [{"key_properties": ["employee_no"]}],
+            }
+        },
+        "relation_types": {},
+        "interfaces": {},
+    }
+    report = check_ontology_modeling_standards(schema)
+    codes = {item["code"] for item in report["findings"]}
+    assert "OBJECT_NAME_NOT_PASCAL_CASE" not in codes
+    assert "OBJECT_NAME_LOCALIZED" in codes
+    assert report["summary"]["errors"] == 0
+    assert report["status"] in {"passed", "needs_review"}
+
+    job = _valid_job()
+    job["draft"]["schema"] = schema
+    job["standards_report"] = report
+    job["issues"] = [
+        {"level": "info", "code": item["code"], "msg": item["message"]}
+        for item in report["findings"] if item["severity"] == "info"
+    ]
+    gate = release_gate.evaluate(job)
+    assert gate["ready"] is True
