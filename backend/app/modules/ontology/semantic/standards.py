@@ -13,6 +13,10 @@ from typing import Any
 from .schema_def import to_schema_dict
 
 _OBJECT_NAME = re.compile(r"^[A-Z][A-Za-z0-9]*$")
+# Chinese business object names are valid localized identifiers when a source system
+# or business owner has not supplied an English technical identifier. Keep the
+# original key intact so mappings and relationship references remain stable.
+_LOCALIZED_OBJECT_NAME = re.compile(r"^[\\u3400-\\u9fff][\\u3400-\\u9fff0-9]*$")
 _MEMBER_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 _CARDINALITIES = {"one_to_one", "one_to_many", "many_to_one", "many_to_many"}
 _KINDS = {"entity", "event", "transaction", "reference", "association"}
@@ -48,9 +52,16 @@ def check_ontology_modeling_standards(schema: Any) -> dict[str, Any]:
 
     # Object naming, identity, display, lifecycle and property semantics.
     for name, obj in objects.items():
-        if not _OBJECT_NAME.fullmatch(name):
-            add("error", "OBJECT_NAME_NOT_PASCAL_CASE", name,
-                f"对象类型名称 {name} 不符合 PascalCase 规范", "使用 Employee、PurchaseOrder 等 PascalCase 名称")
+        technical_name = str(obj.get("technical_name") or obj.get("name") or name).strip()
+        if not _OBJECT_NAME.fullmatch(technical_name):
+            if _LOCALIZED_OBJECT_NAME.fullmatch(technical_name):
+                add("info", "OBJECT_NAME_LOCALIZED", name,
+                    f"对象类型 {name} 使用中文业务标识；展示名称与对象引用保持不变",
+                    "如需跨系统/API 稳定集成，可补充 PascalCase technical_name，例如 DataManagementDepartmentPersonnel")
+            else:
+                add("error", "OBJECT_NAME_NOT_PASCAL_CASE", name,
+                    f"对象类型技术标识 {technical_name} 不符合 PascalCase 规范",
+                    "使用 PascalCase technical_name（如 Employee、PurchaseOrder），中文业务名称放在 label")
         if not str(obj.get("label") or "").strip():
             add("warning", "OBJECT_LABEL_MISSING", name,
                 f"对象 {name} 缺少中文业务名称", "补充面向业务人员的 label")
