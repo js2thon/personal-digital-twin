@@ -352,27 +352,41 @@ def edit_mapping_contract(job_id: str, payload: MappingContractEditIn, request: 
                 "source": job.get("source"), "schema_version": schema.get("schema_version")}
     if blockers:
         raise HTTPException(400, {"message": "映射契约未通过校验，未保存", "issues": issues})
-    job["contract"] = contract
-    # Keep independent business-model and modeling-standard findings in the release gate.
-    other_issues = []
-    for item in (job.get("business_model_issues") or []):
-        other_issues.append({"level": "error", "code": item.get("code"),
-                             "table": item.get("ref"), "msg": item.get("message")})
-    for item in (job.get("standards_report") or {}).get("findings", []):
-        other_issues.append({"level": "error" if item.get("severity") == "error" else "warning",
-                             "code": item.get("code"), "table": item.get("ref"),
-                             "msg": item.get("message"),
-                             "recommendation": item.get("recommendation")})
-    job["issues"] = issues + other_issues
-    job["materialized"] = pipeline.materializer.materialize(ts, contract)
+    # Keep an in-memory snapshot so a failed materialization/persistence step cannot
+    # leave the tenant-scoped cached job pointing at an unsaved contract.
+    previous = {key: copy.deepcopy(job.get(key)) for key in
+                ("contract", "issues", "materialized", "status", "release_gate")}
+    try:
+        job["contract"] = contract
+        # Keep independent business-model and modeling-standard findings in the release gate.
+        other_issues = []
+        for item in (job.get("business_model_issues") or []):
+            other_issues.append({"level": "error", "code": item.get("code"),
+                                 "table": item.get("ref"), "msg": item.get("message")})
+        for item in (job.get("standards_report") or {}).get("findings", []):
+            other_issues.append({"level": "error" if item.get("severity") == "error" else "warning",
+                                 "code": item.get("code"), "table": item.get("ref"),
+                                 "msg": item.get("message"),
+                                 "recommendation": item.get("recommendation")})
+        job["issues"] = issues + other_issues
+        job["materialized"] = pipeline.materializer.materialize(ts, contract)
+        has_warnings = any(item.get("level") == "warning" for item in issues)
+        has_review = bool((job.get("draft") or {}).get("review"))
+        job["status"] = "needs_review" if has_warnings or has_review else "ready_to_publish"
+        job["release_gate"] = pipeline.release_gate.evaluate(
+            job, require_cq=bool((job.get("config") or {}).get("require_cq_for_publish")))
+        jobs.save(job, tenant, actor)
+    except Exception as exc:  # noqa: BLE001
+        for key, value in previous.items():
+            if value is None:
+                job.pop(key, None)
+            else:
+                job[key] = value
+        with _LOCK:
+            _FRAMES.pop(job_id, None)
+        raise HTTPException(500, "映射保存失败，原映射契约和预览已恢复") from exc
     with _LOCK:
         _FRAMES.pop(job_id, None)
-    has_warnings = any(item.get("level") == "warning" for item in issues)
-    has_review = bool((job.get("draft") or {}).get("review"))
-    job["status"] = "needs_review" if has_warnings or has_review else "ready_to_publish"
-    job["release_gate"] = pipeline.release_gate.evaluate(
-        job, require_cq=bool((job.get("config") or {}).get("require_cq_for_publish")))
-    jobs.save(job, tenant, actor)
     _snap(job, tenant, actor, "mapping_edit", "人工编辑映射契约")
     return {"saved": True, "valid": True, "issues": issues, "contract": contract,
             "status": job["status"], "release_gate": job["release_gate"],
