@@ -145,3 +145,52 @@ def test_chinese_business_object_name_does_not_block_ontology_publish_gate():
     ]
     gate = release_gate.evaluate(job)
     assert gate["ready"] is True
+
+
+
+def test_auto_fix_naming_preserves_business_labels_and_mapping_references():
+    from app.modules.ontology.automodel.auto_fix import auto_fix_naming
+    from app.modules.ontology.semantic.standards import check_ontology_modeling_standards
+
+    schema = {
+        "entity_types": {
+            "数据管理部人员": {
+                "label": "数据管理部人员",
+                "attributes": [{"name": "员工编号", "description": "工号",
+                                "identifier": True, "range": "string"}],
+                "title_property": "员工编号",
+                "identity_rules": [{"key_properties": ["员工编号"]}],
+                "backing_sources": [{"source_id": "hr", "table": "employees",
+                                     "primary_key": "id",
+                                     "property_mappings": {"employee_id": "员工编号"}}],
+            }
+        },
+        "relation_types": {"隶属于": {"source": "数据管理部人员", "target": "数据管理部人员"}},
+        "interfaces": {},
+        "attributes": {},
+    }
+    report = auto_fix_naming(schema)
+    assert report["count"] == 3
+    obj = schema["entity_types"]["数据管理部人员"]
+    assert obj["label"] == "数据管理部人员"
+    assert obj["technical_name"].startswith("BusinessObject")
+    renamed = obj["attributes"][0]["name"]
+    assert renamed.startswith("field_")
+    assert obj["title_property"] == renamed
+    assert obj["identity_rules"][0]["key_properties"] == [renamed]
+    assert obj["backing_sources"][0]["property_mappings"]["employee_id"] == renamed
+    assert list(schema["relation_types"])[0].startswith("related_")
+    assert auto_fix_naming(schema)["count"] == 0
+    standards = check_ontology_modeling_standards(schema)
+    assert standards["summary"]["errors"] == 0
+
+
+def test_manual_technical_name_override_is_audited():
+    job = _valid_job()
+    job["draft"]["schema"]["entity_types"]["Person"] = {"label": "人员"}
+    pipeline.apply_review(job, [{
+        "kind": "class", "ref": "Person", "action": "accept",
+        "technical_name": "EmployeePerson", "comment": "业务确认技术标识",
+    }], actor="reviewer-1")
+    assert job["draft"]["schema"]["entity_types"]["Person"]["technical_name"] == "EmployeePerson"
+    assert job["change_set"][-1]["actor"] == "reviewer-1"
