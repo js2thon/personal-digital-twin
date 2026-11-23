@@ -1,6 +1,8 @@
 """Dry-run impact analysis for immutable ontology data bindings."""
 from __future__ import annotations
 
+import json
+
 
 def _property_maps(definition: dict) -> dict[tuple, dict]:
     binding = definition.get("ontology_binding") or {}
@@ -21,8 +23,10 @@ def compare_mappings(old: dict, new: dict) -> dict:
         (entity, prop) for entity, prop in before.keys() | after.keys()
         if before.get((entity, prop)) != after.get((entity, prop))
     )
-    old_links = set(map(repr, (old.get("ontology_binding") or {}).get("link_maps") or []))
-    new_links = set(map(repr, (new.get("ontology_binding") or {}).get("link_maps") or []))
+    old_links = {json.dumps(x, sort_keys=True, ensure_ascii=False)
+                 for x in (old.get("ontology_binding") or {}).get("link_maps") or []}
+    new_links = {json.dumps(x, sort_keys=True, ensure_ascii=False)
+                 for x in (new.get("ontology_binding") or {}).get("link_maps") or []}
     return {
         "changed_properties": [
             {"entity_type": entity, "property": prop,
@@ -52,8 +56,9 @@ def analyze(*, tenant_id: str, old_mapping: dict, new_mapping: dict) -> dict:
     changes = compare_mappings(old_definition, new_definition)
     changed = changes["changed_properties"]
 
-    from app.modules.ontology import mapping_execution
-    mapping_execution.ensure_schema()
+    tables = db.fetch_one(
+        "SELECT to_regclass('ontology.dataset_field_lineage') AS lineage_table, "
+        "to_regclass('ontology.dataset_ingestion_runs') AS runs_table") or {}
     params = {"tenant_id": tenant_id, "mapping_id": old_id}
     where = []
     for i, item in enumerate(changed):
@@ -67,14 +72,14 @@ def analyze(*, tenant_id: str, old_mapping: dict, new_mapping: dict) -> dict:
         "AND mapping_set_id=CAST(:mapping_id AS uuid) "
         + ("AND (" + " OR ".join(where) + ")" if where else "AND false"),
         params,
-    ) or {}
+    ) or {} if tables.get("lineage_table") else {}
     batches = db.fetch_all(
         "SELECT id::text AS batch_id, source_sha256, status, rows_received "
         "FROM ontology.dataset_ingestion_runs "
         "WHERE tenant_id=:tenant_id AND mapping_set_id=CAST(:mapping_id AS uuid) "
         "ORDER BY started_at",
         {"tenant_id": tenant_id, "mapping_id": old_id},
-    )
+    ) if tables.get("runs_table") else []
     return {
         "dry_run": True,
         "execution_performed": False,
@@ -91,6 +96,8 @@ def analyze(*, tenant_id: str, old_mapping: dict, new_mapping: dict) -> dict:
             "distinct_instances_for_changed_properties": int(impacted.get("instances") or 0),
             "batches": batches,
             "scope_note": "仅统计旧映射版本已持久化的字段血缘；无血缘的历史实例标记为未评估，不推测影响数量。",
+            "lineage_available": bool(tables.get("lineage_table")),
+            "batch_history_available": bool(tables.get("runs_table")),
         },
         "legacy_unversioned": not bool(old_mapping.get("ontology_version")),
         "next_step": "人工审核影响清单后，另行批准重投影；本接口不会修改实例或 Fact。",
