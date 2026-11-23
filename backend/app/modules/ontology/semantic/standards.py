@@ -52,9 +52,10 @@ def check_ontology_modeling_standards(schema: Any) -> dict[str, Any]:
 
     # Object naming, identity, display, lifecycle and property semantics.
     for name, obj in objects.items():
-        technical_name = str(obj.get("technical_name") or obj.get("name") or name).strip()
+        explicit_technical_name = str(obj.get("technical_name") or "").strip()
+        technical_name = explicit_technical_name or name
         if not _OBJECT_NAME.fullmatch(technical_name):
-            if _LOCALIZED_OBJECT_NAME.fullmatch(technical_name):
+            if not explicit_technical_name and _LOCALIZED_OBJECT_NAME.fullmatch(name):
                 add("info", "OBJECT_NAME_LOCALIZED", name,
                     f"对象类型 {name} 使用中文业务标识；展示名称与对象引用保持不变",
                     "如需跨系统/API 稳定集成，可补充 PascalCase technical_name，例如 DataManagementDepartmentPersonnel")
