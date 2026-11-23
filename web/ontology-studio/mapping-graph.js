@@ -3,6 +3,7 @@ const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const svg=(tag,attrs={},label='')=>{const n=document.createElementNS('http://www.w3.org/2000/svg',tag);Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,String(v)));if(label){if(tag==='text')n.textContent=label;else{const t=document.createElementNS('http://www.w3.org/2000/svg','title');t.textContent=label;n.append(t)}}return n};
 const norm=(table,column)=>table+'.'+column;
+function cardinalityOf(spec){const raw=String(spec?.cardinality||spec?.relation_cardinality||spec?.mapping_type||spec?.kind||'').toLowerCase().replace(/[\s-]/g,'_');if(['many_to_many','n_to_n','n:n','*:*','m:n'].includes(raw)||spec?.via_table||spec?.junction_table)return'many_to_many';if(['many_to_one','n_to_one','n:1','* : 1','m:1'].includes(raw))return'many_to_one';if(['one_to_many','1:n','1:*'].includes(raw))return'many_to_one';return'';}
 function render(job){
  const root=$('semanticMappingGraph');if(!root)return;
  const contract=job?.contract||{},schema=job?.draft?.schema||job?.schema||{};
@@ -51,7 +52,7 @@ function render(job){
  // Keep schema relations selectable even when their contract mapping is missing.
  for(const [rn,spec] of Object.entries(schema.relation_types||{})){
   add(targetRels,'relation:'+rn,{id:'relation:'+rn,label:(spec.label||rn),kind:'ontology-relation',
-   meta:{relation:rn,source:spec.source,target:spec.target,table:spec.table,via_table:spec.via_table,cardinality:spec.cardinality||''}});
+   meta:{relation:rn,source:spec.source,target:spec.target,table:spec.table,via_table:spec.via_table||spec.junction_table,cardinality:cardinalityOf(spec)}});
  }
  const W=1200,H=Math.max(560,Math.max(sourceTables.size+sourceFields.size,targetObjects.size+targetProps.size+targetRels.size)*74+80);
  graph.setAttribute('viewBox','0 0 '+W+' '+H);graph.setAttribute('height',String(Math.min(H,1100)));
@@ -91,20 +92,25 @@ function render(job){
    const select=(id,label,items,selected)=>'<label for="'+id+'">'+label+'</label><select id="'+id+'" style="width:100%;margin:5px 0 9px"><option value="">请选择</option>'+items.map(x=>option(x.value,x.label)).join('')+'</select>';
    const set=(id,value)=>{if($(id))$(id).value=value||''};
    if(m.cardinality==='many_to_one'){
-    const sourceTable=m.table||m.source_table||spec.table||'';
-    const sourceProfile=profiles[sourceTable]||{};
+    const mappedSource=maps.find(x=>x.class===m.source)?.table||'';
+    const sourceTable=m.table||m.source_table||spec.table||mappedSource;
+    const current=maps.flatMap(x=>(x.relations||[]).map(r=>({...r,_table:x.table}))).find(x=>x.type===m.relation)||{};
+    const allTables=Object.keys(profiles).map(x=>({value:x,label:x}));
+    const sourceOptions=allTables.length?allTables:maps.filter(x=>x.class===m.source).map(x=>({value:x.table,label:x.table}));
     const targets=maps.filter(x=>x.class===m.target).map(x=>x.table);
-    const current=maps.find(x=>x.table===sourceTable)?.relations?.find(x=>x.type===m.relation)||{};
-    const fields=Object.keys(sourceProfile.columns||{}).map(x=>({value:x,label:x}));
-    detail.insertAdjacentHTML('beforeend','<hr><b>编辑多对一关系映射</b><p class="smg-kind">修改源外键列与目标对象对应的数据表</p>'+
-     select('smgRelColumn','源外键字段',fields,current.column)+
-     select('smgRelTargetTable','目标对象数据表',targets.map(x=>({value:x,label:x})),current.target_table||targets[0])+
+    const targetOptions=allTables.length?allTables:targets.map(x=>({value:x,label:x}));
+    const fields=table=>Object.keys(profiles[table]?.columns||{}).map(x=>({value:x,label:x}));
+    detail.insertAdjacentHTML('beforeend','<hr><b>编辑多对一关系映射</b><p class="smg-kind">先选择关系起点源表，再选择外键字段和目标对象数据表；尚未映射的表也可先配置。</p>'+
+     select('smgRelSourceTable','关系起点 / 外键所在表',sourceOptions,sourceTable||current._table)+
+     select('smgRelColumn','源外键字段',fields(sourceTable||current._table),current.column)+
+     select('smgRelTargetTable','目标对象数据表',targetOptions,current.target_table||targets[0])+
      '<button id="smgRelApply" class="primary" style="width:100%">应用关系草稿</button>');
-    set('smgRelColumn',current.column);set('smgRelTargetTable',current.target_table||targets[0]);
-    $('smgRelApply').onclick=()=>window.applySemanticRelationEdit?.({kind:'many_to_one',relation:m.relation,table:sourceTable,column:$('smgRelColumn').value,target_table:$('smgRelTargetTable').value});
+    set('smgRelSourceTable',sourceTable||current._table);set('smgRelColumn',current.column);set('smgRelTargetTable',current.target_table||targets[0]);
+    $('smgRelSourceTable').onchange=()=>{$('smgRelColumn').innerHTML='<option value="">请选择</option>'+fields($('smgRelSourceTable').value).map(x=>option(x.value,x.label)).join('')};
+    $('smgRelApply').onclick=()=>window.applySemanticRelationEdit?.({kind:'many_to_one',relation:m.relation,table:$('smgRelSourceTable').value,column:$('smgRelColumn').value,target_table:$('smgRelTargetTable').value});
    }else if(m.cardinality==='many_to_many'){
     const current=(job.contract?.links||[]).find(x=>x.type===m.relation)||{};
-    const classTables=cls=>maps.filter(x=>x.class===cls).map(x=>({value:x.table,label:x.table}));
+    const classTables=cls=>{const mapped=maps.filter(x=>x.class===cls).map(x=>({value:x.table,label:x.table}));return mapped.length?mapped:Object.keys(profiles).map(table=>({value:table,label:table+' · 待绑定对象'}))};
     const junctions=Object.entries(profiles).map(([table,p])=>({value:table,label:table+' · '+Object.keys(p.columns||{}).length+' 列'}));
     const fields=table=>Object.keys(profiles[table]?.columns||{}).map(x=>({value:x,label:x}));
     const defaultTable=current.table||m.via_table||spec.via_table||'';
@@ -118,10 +124,13 @@ function render(job){
     set('smgJunctionTable',defaultTable);set('smgSourceTable',current.source_table);set('smgSourceColumn',current.source_column);set('smgTargetTable',current.target_table);set('smgTargetColumn',current.target_column);
     $('smgJunctionTable').onchange=()=>{const table=$('smgJunctionTable').value;const fill=id=>{const old=$(id).value;$(id).innerHTML='<option value="">请选择</option>'+fields(table).map(x=>option(x.value,x.label)).join('');if(fields(table).some(x=>x.value===old))$(id).value=old};fill('smgSourceColumn');fill('smgTargetColumn')};
     $('smgRelApply').onclick=()=>window.applySemanticRelationEdit?.({kind:'many_to_many',relation:m.relation,table:$('smgJunctionTable').value,source_table:$('smgSourceTable').value,source_column:$('smgSourceColumn').value,target_table:$('smgTargetTable').value,target_column:$('smgTargetColumn').value});
+   }else{
+    detail.insertAdjacentHTML('beforeend','<hr><b>配置关系映射类型</b><p class="smg-kind">该关系未声明可识别的基数。请选择映射方式后继续配置。</p><select id="smgCardinality" style="width:100%;margin:6px 0"><option value="">请选择</option><option value="many_to_one">多对一（源表外键）</option><option value="many_to_many">多对多（关联表）</option></select><button id="smgCardinalityApply" class="primary" style="width:100%">继续配置</button>');
+    $('smgCardinalityApply').onclick=()=>{m.cardinality=$('smgCardinality').value;if(m.cardinality)inspect(n,allEdges)};
    }
   }
  }
- inspect(left[0]||right[0],edges);
+ inspect(left.find(x=>x.kind==='source-field')||right.find(x=>x.kind==='ontology-relation')||left[0]||right[0],edges);
 }
 window.renderSemanticMappingGraph=render;
 })();
