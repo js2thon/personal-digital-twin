@@ -76,8 +76,10 @@ def analyze(*, tenant_id: str, old_mapping: dict, new_mapping: dict) -> dict:
     new_definition = dict(new_mapping.get("definition") or {})
     for definition, mapping in ((old_definition, old_mapping), (new_definition, new_mapping)):
         binding = dict(definition.get("ontology_binding") or {})
-        binding.setdefault("ontology_version", mapping.get("ontology_version"))
-        binding.setdefault("schema_version", mapping.get("schema_version"))
+        if not binding.get("ontology_version"):
+            binding["ontology_version"] = mapping.get("ontology_version")
+        if not binding.get("schema_version"):
+            binding["schema_version"] = mapping.get("schema_version")
         definition["ontology_binding"] = binding
     changes = compare_mappings(old_definition, new_definition)
     changed = changes["changed_properties"]
