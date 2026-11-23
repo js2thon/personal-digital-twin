@@ -76,7 +76,7 @@ def ensure_schema() -> None:
     ADD COLUMN IF NOT EXISTS source_namespace VARCHAR(500) NOT NULL DEFAULT 'default'
     """)
     db.execute("""
-    DO $
+    DO $migrate$
     DECLARE old_constraint RECORD;
     BEGIN
         FOR old_constraint IN
@@ -98,7 +98,7 @@ def ensure_schema() -> None:
             ADD CONSTRAINT uq_dataset_source_records_source
             UNIQUE (tenant_id, mapping_name, source_namespace, source_record_id, entity_type);
         END IF;
-    END $;
+    END $migrate$;
     """)
     db.execute("""
     CREATE INDEX IF NOT EXISTS idx_dataset_source_records_instance
