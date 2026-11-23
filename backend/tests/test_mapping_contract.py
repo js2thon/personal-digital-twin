@@ -142,3 +142,13 @@ def test_automodel_builder_emits_binding_without_changing_legacy_contract():
         "source_table": "people",
         "status": "draft",
     }]
+
+
+def test_existing_binding_inherits_registry_ontology_version_when_missing():
+    binding = {
+        "binding_version": 1,
+        "object_bindings": [],
+        "link_maps": [],
+    }
+    result = to_binding({"ontology_binding": binding}, ontology_version="ontology-9")
+    assert result["ontology_version"] == "ontology-9"
