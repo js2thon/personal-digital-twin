@@ -19,6 +19,7 @@ on:
       - "backend/tests/test_automodel_pipeline_hardening.py"
       - "backend/tests/test_business_object_model.py"
       - "backend/tests/test_automodel_metadata_overrides.py"
+      - "backend/tests/test_automodel.py"
       - "backend/tests/test_ontology_qa_provenance.py"
       - "backend/pyproject.toml"
       - ".github/workflows/ontology-quality-mapping.yml"
@@ -128,3 +129,9 @@ jobs:
           tests/test_automodel_metadata_overrides.py
           tests/test_ontology_ingestion_batches.py
           tests/test_ontology_qa_provenance.py
+      - name: Run relation mapping contract regression tests
+        env:
+          APP_ENV: dev
+        run: >-
+          python -m pytest -q tests/test_automodel.py
+          -k "relation_contract_rejects_wrong_foreign_key_endpoint or junction_contract_rejects_wrong_endpoint_column"
