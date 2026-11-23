@@ -190,6 +190,27 @@ def list_relations(tenant_id: str, where: str = "", params: dict | None = None,
     return [_decode(r) for r in rows]
 
 
+def lock_relation_cardinality(tenant_id: str, relation_type: str,
+                              source_id: str, target_id: str,
+                              cardinality: str) -> None:
+    """Serialize writes that compete for a one-valued relation endpoint.
+
+    Must be called inside db.transaction(); transaction-scoped advisory locks
+    prevent two concurrent writers from both passing the same cardinality check.
+    """
+    keys = []
+    base = f"ontology-relation:{tenant_id}:{relation_type}"
+    if cardinality in ("one_to_one", "many_to_one"):
+        keys.append(f"{base}:source:{source_id}")
+    if cardinality in ("one_to_one", "one_to_many"):
+        keys.append(f"{base}:target:{target_id}")
+    for key in sorted(set(keys)):
+        db.fetch_one(
+            "SELECT pg_advisory_xact_lock(hashtext(:lock_key)::bigint) AS locked",
+            {"lock_key": key},
+        )
+
+
 def find_relation_cardinality_conflicts(tenant_id: str, relation_type: str,
                                       source_id: str, target_id: str,
                                       cardinality: str) -> list[dict]:
