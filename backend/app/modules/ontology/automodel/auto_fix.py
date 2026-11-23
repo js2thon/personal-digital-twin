@@ -29,7 +29,7 @@ def _unique(base: str, used: set[str]) -> str:
     return candidate
 
 
-def _property_refs(schema: dict[str, Any], owner: dict[str, Any], old: str, new: str) -> None:
+def _property_refs(schema: dict[str, Any], owner_name: str, owner: dict[str, Any], old: str, new: str) -> None:
     for attr in owner.get("attributes") or []:
         if attr.get("name") == old:
             attr["name"] = new
@@ -42,7 +42,7 @@ def _property_refs(schema: dict[str, Any], owner: dict[str, Any], old: str, new:
             col: new if prop == old else prop
             for col, prop in (binding.get("property_mappings") or {}).items()
         }
-    for interface_name in owner.get("interfaces") or []:
+    global_attrs = schema.get("attributes") or {}\n    for key, attr in list(global_attrs.items()):\n        if key == old and attr.get("owner") == owner_name:\n            global_attrs[new] = global_attrs.pop(key)\n    for interface_name in owner.get("interfaces") or []:
         interface = (schema.get("interfaces") or {}).get(interface_name)
         if interface:
             interface["properties"] = [new if x == old else x for x in interface.get("properties", [])]
@@ -92,7 +92,7 @@ def auto_fix_naming(schema: dict[str, Any]) -> dict[str, Any]:
                 continue
             new = _snake_name(old, used, "field")
             used.add(new)
-            _property_refs(schema, obj, old, new)
+            _property_refs(schema, object_name, obj, old, new)
             changes.append({"kind": "property_name", "ref": f"{object_name}.{old}",
                             "before": old, "after": new,
                             "reason": "property identifier must use snake_case"})
