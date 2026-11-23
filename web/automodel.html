@@ -154,7 +154,7 @@ tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
   <div class="cols">
     <div class="card">
       <h2>上传文件 <span class="hint">CSV / Excel / JSON / Parquet，多文件 = 多张表</span></h2>
-      <div class="drop" id="drop">拖入文件，或 <label><input id="files" type="file" multiple class="hidden" accept=".csv,.tsv,.txt,.xlsx,.xls,.json,.parquet">选择文件</label>
+      <div class="drop" id="drop">拖入文件，或 <label><input id="files" type="file" multiple class="hidden" accept=".csv,.xlsx,.xlsm">选择文件</label>
         <div id="fileList" style="margin-top:6px"></div></div>
       <div class="row" style="margin-top:10px">
         <input id="srcId" value="upload" title="数据源标识" style="flex:0 0 160px">
@@ -209,8 +209,17 @@ tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
     <div class="card"><h2>映射契约 <span class="hint">物化的唯一依据（YAML）</span></h2><pre id="contract">—</pre></div>
     <div class="card"><h2>发布与写入</h2>
       <div class="kpis" id="qKpis"></div>
-      <div class="row"><button class="primary auto" id="btnPublish">发布本体 + 指标草稿</button><button class="ghost auto" id="btnWrite">写入实体 / 事实</button></div>
-      <div class="hint">发布：本体进入 Registry 新版本，指标以草稿入库；写入：实体与事实落库并触发图投影。</div>
+      <div class="row"><button class="primary auto" id="btnPublish">发布本体 + 指标草稿</button></div>
+      <div class="hint">本体发布与业务数据写入分离。Discovery 只产生预览样本，不会直接写入正式实例库。</div>
+      <div class="card" style="margin-top:12px;border:1px solid var(--ax-border)">
+        <h2>正式数据映射执行 <span class="hint">Mapping Set 审核通过后，按 IngestionRun 分批写入</span></h2>
+        <div class="row"><div style="flex:1"><label class="f">本体来源表</label><select id="ingTable"></select></div><div style="flex:1"><label class="f">映射方案名称</label><input id="ingMapName" placeholder="例如 HR-员工映射"></div></div>
+        <div class="row"><div style="flex:2"><label class="f">正式数据文件（完整源文件，非 Discovery 样本）</label><input id="ingFile" type="file" accept=".csv,.xlsx,.xlsm"></div><div style="flex:1"><label class="f">Excel Sheet（可选）</label><input id="ingSheet" placeholder="Sheet1"></div></div>
+        <div class="row"><div><label class="f">源记录主键</label><select id="ingKey"></select></div><div><label class="f">同步方式</label><select id="ingMode"><option value="upsert">Upsert（需稳定主键）</option><option value="append">Append</option></select></div><div><label class="f">批次大小</label><select id="ingBatch"><option>100</option><option>250</option><option selected>500</option></select></div><div class="auto" style="padding-top:22px"><label class="hint"><input type="checkbox" id="ingReconcile"> 全量成功后软停用缺失记录</label></div></div>
+        <div class="row"><button class="ghost auto" id="btnMapSave">保存映射草稿</button><button class="ghost auto" id="btnMapApprove" disabled>审核映射版本</button><button class="primary auto" id="btnIngestExecute" disabled>执行正式数据写入</button></div>
+        <div class="hint" id="ingHint">先选择来源表并保存映射草稿；审核通过后才能执行。正式文件仅支持完整 CSV / XLSX / XLSM，不能使用建模采样数据代替。</div>
+        <div id="ingRuns" class="scroll" style="margin-top:10px"></div>
+      </div>
       <h2 style="margin-top:16px">导出</h2>
       <div class="row"><button class="ghost auto" id="btnJson">下载 JSON</button><button class="ghost auto" id="btnOwl">下载 OWL</button><button class="ghost auto" id="btnYaml">下载映射契约 YAML</button></div>
     </div>
@@ -345,14 +354,13 @@ $('btnDb').onclick=function(){busy(this,async()=>{const b={url:$('dbUrl').value.
 $('btnReload').onclick=loadJobs;
 async function loadJobs(){try{const r=await api('/automodel/jobs');$('jobList').innerHTML=(r.items||[]).map(j=>`<div data-id="${esc(j.id)}" class="${JOB&&JOB.id===j.id?'on':''}"><b>${esc(j.source_id||j.source)}</b> ${tag(j.status,j.status==='written'?'ok':j.status==='needs_review'?'warn':'')}<div class="muted">${esc(String(j.created_at||'').slice(0,16).replace('T',' '))} · ${esc(String(j.id).slice(0,8))}</div></div>`).join('')||'<span class="muted">暂无任务</span>';
  $('jobList').querySelectorAll('div[data-id]').forEach(d=>d.onclick=()=>openJob(d.dataset.id).then(()=>show('model')).catch(e=>note(e.message,true)))}catch(e){$('jobList').innerHTML='<span class="muted">'+esc(e.message)+'</span>'}}
-async function openJob(id){JOB=await api(`/automodel/jobs/${id}?full=true`);METRICS=null;OV=null;ML=[];EVQ=null;EVR=null;$('work').classList.remove('hidden');$('empty').classList.add('hidden');REL_INIT=false;
+async function openJob(id){JOB=await api(`/automodel/jobs/${id}?full=true`);MAPSET=null;INGEST_SNAPSHOT=null;MAP_TABLE_SELECTED=null;METRICS=null;OV=null;ML=[];EVQ=null;EVR=null;$('work').classList.remove('hidden');$('empty').classList.add('hidden');REL_INIT=false;
  $('jobTitle').textContent=(JOB.source||'')+' · '+String(JOB.id).slice(0,8);
  const st=JOB.draft&&JOB.draft.stats||{};$('jobMeta').innerHTML=`${tag(JOB.status,JOB.status==='written'?'ok':JOB.status==='needs_review'?'warn':'')} 类 ${st.classes} · 关系 ${st.relations} · 属性 ${st.attributes} · 待审核 ${st.needs_review} · 版本 ${esc(JOB.schema_version||'未发布')}`;
- $('btnPublish').disabled=!!(JOB.draft.review||[]).length||['published','written'].includes(JOB.status);$('btnWrite').disabled=JOB.status!=='published';
+ $('btnPublish').disabled=!!(JOB.draft.review||[]).length||['published','written'].includes(JOB.status);
  document.querySelectorAll('#jobList div[data-id]').forEach(d=>d.classList.toggle('on',d.dataset.id===JOB.id));
  try{OV=await api(J()+'/studio/overview')}catch(e){note(e.message,true)}renderConfig();renderOverview();}
 $('btnPublish').onclick=function(){busy(this,async()=>{const r=await post(J()+'/publish',{});note('已发布本体版本 '+r.schema_version+'；指标草稿 '+((r.metrics||{}).saved||0)+' 条');await openJob(JOB.id);loadJobs()})};
-$('btnWrite').onclick=function(){if(!confirm('将当前任务的实体与事实写入数据库（触发图投影）？'))return;busy(this,async()=>{const r=await post(J()+'/write?visibility=owner',{});note(`已写入：实体 ${r.entities_upserted}，事实 ${r.facts_inserted}`);await openJob(JOB.id);loadJobs()})};
 
 // ---------------- tabs
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
@@ -362,8 +370,64 @@ function show(t){document.querySelectorAll('#tabs button').forEach(b=>b.classLis
  TABS.forEach(x=>$('t-'+x).classList.toggle('hidden',x!==t||need));
  document.querySelectorAll('#t-src .needjob').forEach(e=>e.classList.toggle('hidden',!JOB));
  if(t==='jobs')loadJobs();if(!JOB)return;
- ({model:()=>{loadSchema();loadFlows()},map:()=>{loadContract();loadQuality()},inst:()=>{initInst();initRel();initAction()},metrics:loadMetrics,ver:loadVersions,ask:loadSuggest,eval:()=>{if(EVR)renderEvR();else if(EVQ)renderEvQ()}})[t]?.()}
+ ({model:()=>{loadSchema();loadFlows()},map:()=>{loadContract();loadQuality();initMappingExecution()},inst:()=>{initInst();initRel();initAction()},metrics:loadMetrics,ver:loadVersions,ask:loadSuggest,eval:()=>{if(EVR)renderEvR();else if(EVQ)renderEvQ()}})[t]?.()}
+let MAPSET=null, INGEST_SNAPSHOT=null, MAP_TABLE_SELECTED=null;
 async function loadContract(){try{const r=await fetch(base()+J()+'/contract.yaml',{headers:hdr()});$('contract').textContent=await r.text()}catch(e){}}
+function mappingRowsForTable(table){
+ const m=(JOB.contract&&JOB.contract.mappings||[]).find(x=>x.table===table);if(!m)return [];
+ return Object.entries(m.attributes||{}).map(([property,source])=>({source,entity_type:m.class,property}));
+}
+function initMappingExecution(){
+ if(!JOB)return;const maps=(JOB.contract&&JOB.contract.mappings)||[];
+ $('ingTable').innerHTML=maps.map(m=>'<option value="'+esc(m.table)+'">'+esc(m.table)+' → '+esc(m.class)+'</option>').join('');
+ if(MAP_TABLE_SELECTED&&maps.some(m=>m.table===MAP_TABLE_SELECTED))$('ingTable').value=MAP_TABLE_SELECTED;
+ const sync=(reset)=>{const table=$('ingTable').value,m=maps.find(x=>x.table===table)||{},keys=m.primary_key||[];
+  $('ingKey').innerHTML=keys.map(k=>'<option value="'+esc(k)+'">'+esc(k)+'</option>').join('');
+  $('ingKey').disabled=$('ingMode').value!=='upsert'||keys.length!==1;
+  $('btnMapSave').disabled=!maps.length;
+  if(reset){MAPSET=null;INGEST_SNAPSHOT=null;$('btnMapApprove').disabled=true;$('btnIngestExecute').disabled=true;}
+  if(!MAPSET){$('btnMapApprove').disabled=true;$('btnIngestExecute').disabled=true;}
+  $('ingHint').textContent=keys.length===1?'稳定源键：'+keys[0]:(keys.length>1?'当前为复合主键，执行器暂不支持复合源键，请选择 Append。':'该表无稳定主键，Upsert 不可用，请先完善主键或选择 Append。');};
+ $('ingTable').onchange=()=>{MAP_TABLE_SELECTED=$('ingTable').value;sync(true)};$('ingMode').onchange=()=>sync(false);
+ $('ingFile').onchange=()=>{INGEST_SNAPSHOT=null;$('btnIngestExecute').disabled=!MAPSET||MAPSET.status!=='approved'};
+ sync(false);loadIngestionRuns();
+}
+async function loadIngestionRuns(){
+ try{const r=await api('/ontology/modelling/mapping-sets?limit=20'),items=r.items||[];
+  $('ingRuns').innerHTML=items.length?'<table><tr><th>映射方案</th><th>版本</th><th>状态</th><th>创建时间</th></tr>'+items.map(x=>'<tr><td>'+esc(x.name)+'</td><td>v'+esc(x.version)+'</td><td>'+esc(x.status)+'</td><td>'+esc(String(x.created_at||'').slice(0,19))+'</td></tr>').join('')+'</table>':'<span class="muted">暂无映射版本</span>';
+ }catch(e){$('ingRuns').textContent='映射版本列表暂不可用：'+e.message}
+}
+function bindMappingExecution(){
+ $('btnMapSave').onclick=function(){busy(this,async()=>{
+  const table=$('ingTable').value,mappings=mappingRowsForTable(table);if(!mappings.length)throw new Error('当前来源表没有可执行的属性映射');
+  const name=$('ingMapName').value.trim()||((JOB.source||'source')+'-'+table+'-r'+(JOB.metadata_revision||0));
+  const r=await post('/ontology/modelling/mapping-sets',{name,mappings,ontology_schema:JOB.draft.schema});
+  MAPSET=r;INGEST_SNAPSHOT=null;$('btnMapApprove').disabled=false;$('btnIngestExecute').disabled=true;
+  $('ingHint').textContent='映射草稿 v'+r.version+' 已保存，请审核后执行。';note('已保存映射草稿 v'+r.version);loadIngestionRuns();
+ })};
+ $('btnMapApprove').onclick=function(){if(!MAPSET)throw new Error('请先保存映射草稿');if(!confirm('确认审核并批准该不可变映射版本？批准后才能写入正式数据。'))return;
+  busy(this,async()=>{const r=await post('/ontology/modelling/mapping-sets/'+encodeURIComponent(MAPSET.id)+'/approve',{});
+   MAPSET=r;$('btnIngestExecute').disabled=false;$('ingHint').textContent='映射版本 v'+r.version+' 已批准。选择完整正式数据文件后执行。';note('映射版本已批准');loadIngestionRuns();});
+ };
+ $('btnIngestExecute').onclick=function(){busy(this,async()=>{
+  if(!MAPSET||MAPSET.status!=='approved')throw new Error('必须先批准映射版本');
+  const file=$('ingFile').files[0];if(!file)throw new Error('请选择完整正式数据文件');if(file.size>10*1024*1024)throw new Error('当前接口单文件限制为 10 MiB，请先拆分数据文件');
+  const mode=$('ingMode').value,key=$('ingKey').value||null;
+  const selectedMapping=(JOB.contract&&JOB.contract.mappings||[]).find(x=>x.table===$('ingTable').value)||{};
+  if(mode==='upsert'&&(selectedMapping.primary_key||[]).length!==1)throw new Error('Upsert 当前只支持单列稳定主键；复合主键请先选择 Append。');
+  if(mode==='upsert'&&!key)throw new Error('Upsert 必须选择稳定源主键');
+  if($('ingReconcile').checked&&mode!=='upsert')throw new Error('软停用对账仅支持 Upsert');
+  const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=0x8000)binary+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
+  const content_base64=btoa(binary);INGEST_SNAPSHOT=INGEST_SNAPSHOT||('automodel-'+JOB.id+'-'+Date.now());
+  const result=await post('/ontology/modelling/dataset/execute-stream',{file_name:file.name,content_base64,
+   sheet_name:$('ingSheet').value.trim()||null,ontology_schema:JOB.draft.schema,mapping_set_id:MAPSET.id,
+   snapshot_id:INGEST_SNAPSHOT,sync_mode:mode,source_id_column:mode==='upsert'?key:null,
+   batch_size:Number($('ingBatch').value),reconcile_missing:$('ingReconcile').checked});
+  $('ingRuns').innerHTML='<div class="kpis"><div class="kpi"><div class="n">'+fmt(result.rows_received)+'</div><div class="l">接收行数</div></div><div class="kpi"><div class="n">'+fmt(result.batches)+'</div><div class="l">批次数</div></div><div class="kpi"><div class="n">'+fmt((result.runs||[]).filter(x=>x.status==='succeeded').length)+'</div><div class="l">成功批次</div></div></div><pre>'+esc(JSON.stringify(result,null,2))+'</pre>';
+  $('ingHint').textContent='正式执行状态：'+result.status+'；snapshot_id='+result.snapshot_id+'。同一快照重试可恢复已完成批次。';
+  note('正式数据执行完成：'+result.batches+' 批，'+result.rows_received+' 行');
+ })};
+}
 
 // ---------------- 建模配置
 function renderConfig(){const P=JOB.profiles||{};

@@ -331,3 +331,4 @@ def test_studio_governance_and_bidirectional_provenance(ctx):
 def test_generator_level_suffix_label():
     from app.modules.ontology.automodel.generator import _guess_label
     assert _guess_label("dept_name_lv5") == "5级部门"
+

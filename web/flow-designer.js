@@ -40,8 +40,27 @@
     border: css("--ax-border", dark() ? "#3f3f46" : "#e4e4e7"), accent: css("--ax-accent", dark() ? "#a1caff" : "#0067ce"),
     ok: dark() ? "#90ca90" : "#2f7d33", warn: dark() ? "#eec448" : "#b45309", bad: dark() ? "#ffaea7" : "#c0262c" });
   const esc = s => String(s ?? "");
-  function mount(el, node) { let r = roots.get(el); if (!r) { r = ReactDOM.createRoot(el); roots.set(el, r); } r.render(node); }
-  function unmount(el) { const r = roots.get(el); if (r) { r.unmount(); roots.delete(el); } }
+  function mount(el, node) {
+    let entry = roots.get(el);
+    if (entry && entry.host.parentNode !== el) {
+      try { entry.root.unmount(); } catch (_) { /* detached root: discard safely */ }
+      roots.delete(el); entry = null;
+    }
+    if (!entry) {
+      const host = document.createElement("div");
+      host.setAttribute("data-react-mount", "flow-designer");
+      el.replaceChildren(host);
+      entry = { host, root: ReactDOM.createRoot(host) };
+      roots.set(el, entry);
+    }
+    entry.root.render(node);
+  }
+  function unmount(el) {
+    const entry = roots.get(el); if (!entry) return;
+    try { entry.root.unmount(); } catch (_) { /* host may already be detached */ }
+    if (entry.host.parentNode === el) entry.host.remove();
+    roots.delete(el);
+  }
 
   /* ---------------- 简易分层布局（无 dagre 依赖）：按关系做拓扑分层 */
   function layered(ids, edges, { dx = 300, dy = 40, heights = {} } = {}) {

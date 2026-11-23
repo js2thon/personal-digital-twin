@@ -10,13 +10,26 @@ def build_contract(source_id: str, draft: dict, profiles: dict[str, TableProfile
     mappings = []
     for t, cls in class_map.items():
         p = profiles[t]
-        id_tpl = (f"{source_id}:{t}:" + ":".join("{%s}" % k for k in p.primary_key)) if p.primary_key else None
+        obj = schema["entity_types"][cls]
+        binding = next((b for b in (obj.get("backing_sources") or [])
+                        if b.get("source_id") == source_id and b.get("table") == t), None)
+        primary_key = list((binding or {}).get("primary_key") or p.primary_key)
+        id_tpl = (f"{source_id}:{t}:" + ":".join("{%s}" % k for k in primary_key)) if primary_key else None
+        source_to_property = (binding or {}).get("property_mappings") or {}
+        if source_to_property:
+            property_columns = {prop: col for col, prop in source_to_property.items()
+                                if col in (p.columns or {})}
+        else:
+            property_columns = {k: v["column"] for k, v in attrs.items()
+                                if v["owner"] == cls and not v.get("identifier")
+                                and v.get("column") and v["column"] in (p.columns or {})}
+        title_property = obj.get("title_property")
+        title_column = next((col for col, prop in source_to_property.items()
+                             if prop == title_property and col in (p.columns or {})), None)
         m = {"table": t, "class": cls, "id": id_tpl,
-             "name": schema["entity_types"][cls].get("name_column") or None,
-             "primary_key": list(p.primary_key),
-             "attributes": {k: v["column"] for k, v in attrs.items()
-                            if v["owner"] == cls and not v.get("identifier")
-                            and v.get("column") and v["column"] in (p.columns or {})},
+             "name": title_column or obj.get("name_column") or None,
+             "primary_key": primary_key,
+             "attributes": property_columns,
              "relations": []}
         for rn, r in rels.items():
             if r.get("table") == t and r["cardinality"] == "many_to_one":

@@ -28,6 +28,7 @@ class ColumnProfile:
     unique: bool
     samples: list = field(default_factory=list)
     comment: str = ""
+    label: str = ""
 
 
 @dataclass
@@ -79,7 +80,7 @@ def _dtype(s: pd.Series) -> str:
     return "text"
 
 
-def profile_column(name: str, s: pd.Series, comment: str = "") -> ColumnProfile:
+def profile_column(name: str, s: pd.Series, comment: str = "", label: str = "", role_override: str | None = None) -> ColumnProfile:
     n = len(s)
     nn = s.dropna()
     distinct = int(nn.nunique())
@@ -108,10 +109,12 @@ def profile_column(name: str, s: pd.Series, comment: str = "") -> ColumnProfile:
         role = "measure"
     else:
         role = "text"
+    if role_override and role_override in {"identifier", "name", "enum", "measure", "temporal", "text", "boolean"}:
+        role = role_override
     return ColumnProfile(name=name, dtype=dt, role=role,
                          null_ratio=round(float(s.isna().mean()) if n else 0, 3),
                          distinct=distinct, distinct_ratio=round(ratio, 3), unique=bool(unique),
-                         samples=[str(x) for x in nn.unique()[:5]], comment=comment)
+                         samples=[str(x) for x in nn.unique()[:5]], comment=comment, label=label)
 
 
 def _candidate_pk(tname: str, cols: dict[str, ColumnProfile]) -> list[str]:
@@ -184,8 +187,13 @@ def infer_foreign_keys(ts: TableSet, profiles: dict[str, TableProfile]) -> None:
 def profile(ts: TableSet) -> dict[str, TableProfile]:
     out: dict[str, TableProfile] = {}
     for t, tbl in ts.tables.items():
-        cols = {c: profile_column(c, tbl.df[c], tbl.column_comments.get(c, "")) for c in tbl.df.columns}
+        cols = {c: profile_column(c, tbl.df[c], tbl.column_comments.get(c, ""),
+                                   tbl.column_labels.get(c, ""), tbl.column_roles.get(c))
+                for c in tbl.df.columns}
         pk = list(tbl.primary_key) or _candidate_pk(t, cols)
+        for key in pk:
+            if key in cols:
+                cols[key].role = "identifier"
         for c in pk:
             cols[c].role = "identifier"
         fks = [{"column": fk.column, "ref_table": fk.ref_table, "ref_column": fk.ref_column,

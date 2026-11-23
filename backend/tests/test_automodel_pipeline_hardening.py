@@ -75,3 +75,37 @@ def test_review_rejects_unknown_actions_and_records_audit():
     assert job["change_set"][-1]["actor"] == "reviewer-1"
     assert job["change_set"][-1]["target_ref"] == "name"
     assert job["change_set"][-1]["comment"] == "业务确认"
+
+
+def test_release_gate_requires_explicit_acknowledgement_for_modeling_warnings():
+    job = _valid_job()
+    job["standards_report"] = {
+        "status": "warning",
+        "findings": [{"code": "MISSING_DESCRIPTION", "severity": "warning"}],
+    }
+    report = release_gate.evaluate(job)
+    assert report["state"] == "REVIEW_REQUIRED"
+    assert not report["ready"]
+    assert "STANDARDS_REVIEW_PENDING" in {x["code"] for x in report["blockers"]}
+    job["standards_review_acknowledged"] = True
+    report = release_gate.evaluate(job)
+    assert report["state"] == "READY"
+    assert report["ready"]
+
+
+def test_partial_publish_retry_recovers_existing_version_without_republishing(monkeypatch):
+    from app.modules.ontology.automodel import publish
+
+    job = _valid_job()
+    job["status"] = "publish_partial_failure"
+    job["schema_version"] = "v2.0.1+hr.123456"
+    monkeypatch.setattr(release_gate, "assert_publishable", lambda *a, **k: {"ready": True})
+    monkeypatch.setattr(publish, "recover_partial_publish", lambda *a, **k: {
+        "published": True, "schema_version": "v2.0.1+hr.123456", "recovered": True,
+    })
+    monkeypatch.setattr(publish, "publish_schema",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not republish")))
+    result = pipeline.approve_and_publish(job, "owner", tenant="tenant-a")
+    assert result["recovered"] is True
+    assert job["status"] == "published"
+    assert job["publish_steps"]["completed"] is True

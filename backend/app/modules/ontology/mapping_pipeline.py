@@ -382,6 +382,23 @@ def read_tabular_file(file_name: str, content: bytes,
         workbook.close()
     else:
         raise ValueError("仅支持 .csv、.xlsx、.xlsm 文件")
+    # Add the same normalized aliases used by Automodel's source connector while
+    # retaining original headers. This lets a full source file map to the normalized
+    # Discovery contract without losing the original source-column name in evidence.
+    import re
+    normalized = {}
+    for header in headers:
+        alias = re.sub(r"[^0-9A-Za-z_\u4e00-\u9fff]+", "_", header).strip("_").lower() or "column"
+        normalized.setdefault(alias, []).append(header)
+    collisions = {alias: names for alias, names in normalized.items() if len(names) > 1}
+    if collisions:
+        raise ValueError("字段规范化后重名，无法安全映射：" + "; ".join(
+            alias + " <- " + ", ".join(names) for alias, names in collisions.items()))
+    for row in rows:
+        for alias, names in normalized.items():
+            original = names[0]
+            if alias != original:
+                row[alias] = row.get(original)
     columns = []
     for name in headers:
         samples = [row.get(name) for row in rows[:100] if row.get(name) not in (None, "")]

@@ -110,6 +110,9 @@ def _summary(job: dict) -> dict:
             "review": d.get("review"), "issues": job.get("issues"),
             "materialized": (job.get("materialized") or {}).get("stats"),
             "metrics": (job.get("metrics") or {}).get("stats"),
+            "business_object_discovery": job.get("business_object_discovery"),
+            "standards_report": job.get("standards_report"),
+            "release_gate": job.get("release_gate"),
             "schema_version": job.get("schema_version")}
 
 
@@ -232,6 +235,7 @@ def get_job(job_id: str, request: Request, full: bool = False):
 
 class ReviewIn(BaseModel):
     decisions: list[dict] = Field(default_factory=list)
+    acknowledge_warnings: bool = False
 
 
 @router.post("/automodel/jobs/{job_id}/review")
@@ -242,12 +246,14 @@ def review(job_id: str, payload: ReviewIn, request: Request):
         raise HTTPException(409, "已发布的任务不能再审核，请新建任务")
     for d in payload.decisions:
         if d.get("kind") not in ("class", "relation", "attribute") or \
-                d.get("action") not in ("accept", "reject", "rename"):
+                d.get("action") not in ("accept", "reject", "rename", "merge"):
             raise HTTPException(400, f"非法审核决策：{d}")
         if d.get("new_name") and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", d["new_name"]):
             raise HTTPException(400, f"new_name 非法：{d['new_name']}")
-    pipeline.apply_review(job, payload.decisions)
+    pipeline.apply_review(job, payload.decisions, actor=actor)
     pipeline.rebuild(job, _source(job_id))
+    if payload.acknowledge_warnings:
+        pipeline.acknowledge_standards_warnings(job, actor)
     with _LOCK:
         _FRAMES.pop(job_id, None)
     jobs.save(job, tenant, actor)
@@ -787,47 +793,80 @@ def edit_metadata(job_id: str, payload: MetadataIn, request: Request):
         raise HTTPException(409, "已发布的任务元数据只读；请在「数据集库」复用建模后修改")
     P, sc = job.get("profiles") or {}, job["draft"]["schema"]
     cmap = job["draft"].get("class_map") or {}
+    ts = _source(job_id)
     role_changed = False
     for t, c in payload.tables.items():
-        if t not in P:
+        if t not in P or t not in ts.tables:
             raise HTTPException(400, f"表不存在：{t}")
-        P[t]["comment"] = c[:500]
+        ts.tables[t].comment = c[:500]
         cls = cmap.get(t)
-        if cls in sc["entity_types"] and c:
+        if cls in sc["entity_types"]:
             sc["entity_types"][cls]["description"] = c[:500]
     for e in payload.columns:
         col = ((P.get(e.table) or {}).get("columns") or {}).get(e.column)
-        if col is None:
+        table = ts.tables.get(e.table)
+        if col is None or table is None or e.column not in table.df.columns:
             raise HTTPException(400, f"列不存在：{e.table}.{e.column}")
         if e.role is not None and e.role not in ROLES:
             raise HTTPException(400, f"角色非法：{e.role}")
+        if e.role is not None and e.column in (table.primary_key or []) and e.role != "identifier":
+            raise HTTPException(400, f"主键列 {e.table}.{e.column} 的角色必须保持 identifier")
         for v in (e.label, e.comment):
             if v is not None and len(v) > 500:
                 raise HTTPException(400, "文本过长")
-        if e.comment is not None:
-            col["comment"] = e.comment
-        if e.label is not None:
-            col["label"] = e.label
+        if e.comment is not None: table.column_comments[e.column] = e.comment
+        if e.label is not None: table.column_labels[e.column] = e.label
         if e.role is not None and e.role != col.get("role"):
-            col["role"] = e.role
+            table.column_roles[e.column] = e.role
             role_changed = True
         cls = cmap.get(e.table)
         for a in sc.get("attributes", {}).values():
             if a.get("owner") == cls and a.get("column") == e.column:
-                if e.label is not None:
-                    a["label"] = e.label
-                if e.comment is not None:
-                    a["description"] = e.comment
-                if e.role is not None:
-                    a["role"] = e.role
-    if role_changed:
-        job["metrics"] = mx.generate(sc)
-        with _LOCK:
-            _FRAMES.pop(job_id, None)
+                if e.label is not None: a["label"] = e.label
+                if e.comment is not None: a["description"] = e.comment
+                if e.role is not None: a["role"] = e.role
+        if cls in (sc.get("entity_types") or {}):
+            for a in sc["entity_types"][cls].get("attributes") or []:
+                if a.get("column") == e.column:
+                    if e.label is not None: a["label"] = e.label
+                    if e.comment is not None: a["description"] = e.comment
+                    if e.role is not None: a["role"] = e.role
+    from app.modules.ontology.automodel import profiler
+    profiles = profiler.profile(ts)
+    job["profiles"] = {k: v.to_dict() for k, v in profiles.items()}
+    from app.modules.ontology.automodel.business_object_discovery import discover
+    job["business_object_discovery"] = discover(profiles, sc)
+    job["contract"] = mapper.build_contract(ts.source_id, job["draft"], profiles)
+    job["issues"] = mapper.validate_contract(job["contract"], sc, profiles)
+    from app.modules.ontology.semantic.schema_def import validate_business_model
+    job["business_model_issues"] = validate_business_model(sc)
+    job["issues"].extend({"level": "error", "code": x["code"], "table": x.get("ref"), "msg": x["message"]}
+                         for x in job["business_model_issues"])
+    from app.modules.ontology.semantic.standards import check_ontology_modeling_standards
+    job["standards_report"] = check_ontology_modeling_standards(sc)
+    job["standards_review_acknowledged"] = False
+    job["issues"].extend({"level": "error" if x["severity"] == "error" else "warning",
+                          "code": x["code"], "table": x.get("ref"), "msg": x["message"],
+                          "recommendation": x["recommendation"]} for x in job["standards_report"]["findings"])
+    job["materialized"] = pipeline.materializer.materialize(ts, job["contract"])
+    job["metrics"] = mx.generate(sc)
+    job["metadata_revision"] = int(job.get("metadata_revision") or 0) + 1
+    ds = vs.save_dataset(ts, name="metadata-revision-" + str(job["metadata_revision"]), tenant=tenant, actor=actor)
+    if ds.get("id"):
+        job["dataset_id"] = ds["id"]
+        vs.link_job(job_id, ds["id"])
+    job["metadata_sync"] = {"revision": job["metadata_revision"], "status": "synchronized",
+        "updated_at": time.time(), "artifacts": ["profiles", "business_object_discovery",
+        "schema_annotations", "mapping_contract", "validation", "materialized_preview", "metrics"],
+        "review_queue_preserved": True}
+    job["status"] = "needs_review" if (job["draft"].get("review") or
+        any(x["level"] in ("error", "warning") for x in job["issues"])) else "ready_to_publish"
+    job["release_gate"] = pipeline.release_gate.evaluate(job)
+    with _LOCK: _FRAMES.pop(job_id, None)
     jobs.save(job, tenant, actor)
-    _snap(job, tenant, actor, "edit", "元数据编辑")
-    return {"ok": True, "role_changed": role_changed,
-            "metrics": (job.get("metrics") or {}).get("stats")}
+    _snap(job, tenant, actor, "edit", "元数据编辑 r" + str(job["metadata_revision"]))
+    return {"ok": True, "role_changed": role_changed, "metadata_revision": job["metadata_revision"],
+            "metadata_sync": job["metadata_sync"], "metrics": (job.get("metrics") or {}).get("stats")}
 
 
 # ------------------------------------------------------------------ 本体设计器（React Flow）
@@ -1046,12 +1085,22 @@ def pipeline_view(job_id: str, request: Request):
         node("source", "数据源", "done", f"{len(P)} 张表 · {job.get('source')}", "src"),
         node("profile", "数据画像", "done" if "profile" in st else "todo",
              f"{sum(len(p.get('columns') or {}) for p in P.values())} 列", "src"),
+        node("business_object_discovery", "业务对象发现",
+             "done" if "business_object_discovery" in st else "todo",
+             f"候选 {((job.get('business_object_discovery') or {}).get('candidate_count', 0))} · 归并建议 {((job.get('business_object_discovery') or {}).get('merge_candidate_count', 0))}",
+             "model"),
         node("draft", "本体草案", "done" if "draft" in st else "todo",
              f"类 {len(d.get('schema', {}).get('entity_types', {}))} · 关系 {len(d.get('schema', {}).get('relation_types', {}))} · 属性 {len(d.get('schema', {}).get('attributes', {}))}", "model"),
         node("review", "人工审核", "warn" if d.get("review") else "done", f"待审核 {len(d.get('review') or [])}", "model"),
         node("map", "映射契约", "done" if job.get("contract") else "todo", f"{len((job.get('contract') or {}).get('mappings') or [])} 个映射", "map"),
         node("validate", "契约校验", "error" if errs else ("done" if job.get("issues") is not None else "todo"),
              f"错误 {len(errs)} · 提示 {len(job.get('issues') or []) - len(errs)}", "map"),
+        node("modeling_standards", "建模规范检查",
+             "error" if (job.get("standards_report") or {}).get("status") == "fail" else
+             ("warn" if any(x.get("severity") == "warning" for x in (job.get("standards_report") or {}).get("findings", []))
+              and not job.get("standards_review_acknowledged") else
+              ("done" if "modeling_standards" in st else "todo")),
+             f"问题 {((job.get('standards_report') or {}).get('summary') or {}).get('total', 0)}", "model"),
         node("materialize", "物化", "done" if mat else "todo", f"实体 {mat.get('entities', '—')} · 事实 {mat.get('facts', '—')}", "inst"),
         node("metrics", "指标生成", "done" if job.get("metrics") else "todo",
              " · ".join(f"{k} {v}" for k, v in ((job.get("metrics") or {}).get("stats") or {}).items()), "metrics"),

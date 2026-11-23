@@ -140,7 +140,8 @@ def _range(dtype: str) -> str:
 
 
 def generate(profiles: dict[str, TableProfile], version: str = "draft",
-             existing_schema: dict | None = None, llm=None) -> dict:
+             existing_schema: dict | None = None, llm=None,
+             source_id: str = "", discovery: dict | None = None) -> dict:
     """返回 {schema, class_map, inferences, review}。"""
     existing_types = set(((existing_schema or {}).get("entity_types") or {}).keys())
     entity_types, relation_types, attributes = {}, {}, {}
@@ -218,7 +219,18 @@ def generate(profiles: dict[str, TableProfile], version: str = "draft",
             if c.name in fk_cols:
                 continue
             key = c.name if c.name not in attributes else f"{_snake(cls)}_{c.name}"
+            column_lower = c.name.lower()
+            sensitivity = ("restricted" if re.search(
+                r"(id_card|identity_no|passport|phone|mobile|email|personal_address|身份证|手机号|电话|邮箱)", column_lower)
+                else "confidential" if re.search(
+                    r"(salary|wage|bank_account|account_no|medical|薪资|工资|银行账号)", column_lower)
+                else "internal")
+            temporal_role = ("valid_from" if re.search(r"(valid_from|effective_from|start_date|生效开始)", column_lower)
+                             else "valid_to" if re.search(r"(valid_to|effective_to|end_date|生效结束)", column_lower)
+                             else "event_time" if c.role == "temporal" else "")
             meta = {"range": _range(c.dtype), "owner": cls, "column": c.name, "role": c.role,
+                    "semantic_type": c.role, "sensitivity": sensitivity,
+                    "temporal_role": temporal_role,
                     "label": c.comment or COLUMN_LABELS.get(c.name) or _guess_label(c.name)}
             if c.role == "enum":
                 meta["enum_values"] = c.samples
@@ -231,8 +243,57 @@ def generate(profiles: dict[str, TableProfile], version: str = "draft",
             infer("attribute", key, conf, f"{t}.{c.name}：{c.dtype}/{c.role}，空值率 {c.null_ratio:.0%}",
                   table=t, column=c.name, role=c.role)
 
+    # 4) 将数据画像提升为业务对象定义：对象身份、展示属性、对象类别和数据源绑定。
+    for table, cls in class_map.items():
+        profile = profiles[table]
+        obj = entity_types[cls]
+        column_to_property = {
+            meta["column"]: prop for prop, meta in attributes.items()
+            if meta.get("owner") == cls and meta.get("column")
+        }
+        key_properties = [column_to_property[k] for k in profile.primary_key
+                          if k in column_to_property]
+        title_property = column_to_property.get(obj.get("name_column") or "")
+        table_lower = table.lower()
+        if re.search(r"(event|history|log|audit|activity|事件|历史|日志)", table_lower):
+            object_kind = "event"
+        elif re.search(r"(order|transaction|payment|invoice|approval|claim|订单|交易|付款|发票|审批)", table_lower):
+            object_kind = "transaction"
+        elif re.search(r"(dict|dictionary|lookup|reference|code_list|字典|码表)", table_lower):
+            object_kind = "reference"
+        else:
+            object_kind = "entity"
+        obj["attributes"] = [
+            {"name": prop, "range": meta.get("range", "string"),
+             "required": False, "semantic_type": meta.get("semantic_type", ""),
+             "sensitivity": meta.get("sensitivity", "internal"),
+             "temporal_role": meta.get("temporal_role", ""),
+             "identifier": bool(meta.get("identifier")),
+             "description": meta.get("description", meta.get("label", ""))}
+            for prop, meta in attributes.items() if meta.get("owner") == cls
+        ]
+        discovery_item = next((x for x in (discovery or {}).get("candidates", [])
+                               if x.get("table") == table), None)
+        obj.update({
+            "discovery_evidence": discovery_item or {},
+            "object_kind": object_kind,
+            "title_property": title_property or "",
+            "identity_rules": ([{
+                "source_system": source_id, "key_properties": key_properties,
+                "normalization": "trim", "priority": 100, "unique": True,
+            }] if key_properties else []),
+            "backing_sources": [{
+                "source_id": source_id, "dataset": source_id, "table": table,
+                "primary_key": list(profile.primary_key),
+                "property_mappings": column_to_property,
+                "mode": "materialized",
+            }],
+            "source_table": table,
+        })
+
     schema = {"schema_version": version, "entity_types": entity_types,
               "relation_types": relation_types, "attributes": attributes,
+              "interfaces": {},
               "constraints": {"max_hops": 3,
                               "single_valued": [k for k, v in attributes.items()
                                                 if v.get("identifier")]},
@@ -241,6 +302,7 @@ def generate(profiles: dict[str, TableProfile], version: str = "draft",
         _llm_polish(schema, profiles, llm, inferences)
     review = [i for i in inferences if i["confidence"] < REVIEW_THRESHOLD]
     return {"schema": schema, "class_map": class_map, "inferences": inferences,
+            "business_object_discovery": discovery or {},
             "review": review,
             "stats": {"classes": len(entity_types), "relations": len(relation_types),
                       "attributes": len(attributes), "needs_review": len(review)}}
