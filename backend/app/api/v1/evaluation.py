@@ -12,7 +12,8 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app.modules.evaluation import dataset as ds
-from app.modules.evaluation import service as ev\nfrom app.modules.evaluation import ontology_qa as oq_eval
+from app.modules.evaluation import service as ev
+from app.modules.evaluation import ontology_qa as oq_eval
 
 router = APIRouter()
 
