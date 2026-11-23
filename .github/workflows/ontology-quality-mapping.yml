@@ -141,6 +141,7 @@ jobs:
           tests/test_fact_lineage_trace.py
           tests/evaluation/test_ontology_qa_eval.py
           tests/evaluation/test_ontology_qa_attribution.py
+          tests/evaluation/test_ontology_qa_intent_attribution.py
       - name: Run relation mapping contract regression tests
         env:
           APP_ENV: dev
