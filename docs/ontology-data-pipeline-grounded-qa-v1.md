@@ -36,6 +36,8 @@ Make ontology-backed answers accurate, concise, and auditable by first improving
 ### Data and mapping
 
 - Replaying the same immutable snapshot and mapping version produces no duplicate instances.
+- Source identity is tenant + logical mapping + source namespace + stable source record ID + entity type; different source tables with the same business key do not collide.
+- Snapshot checkpoints and missing-record reconciliation are scoped to the same source namespace; an empty snapshot cannot silently deactivate every source record.
 - Upsert rejects missing/duplicate source IDs and updates only changed records.
 - Failed batches do not advance source watermarks or trigger missing-record reconciliation.
 - Every mapped property can be traced to a source table, source row, source column, raw value and transformed value after production ingestion.
