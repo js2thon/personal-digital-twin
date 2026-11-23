@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 
+from app.db import session as db
 from . import store, versioning
 from .constraints import (ConstraintViolation, assert_valid, validate_instance,
                           validate_relation)
@@ -98,6 +99,12 @@ class OntologyService:
 
     # ------------------------------------------------------------ write_relation
     def write_relation(self, payload: dict, *, auto_reasoning: bool = True) -> dict:
+        """在单事务内校验并写入关系，避免校验/写入之间出现并发竞态。"""
+        with db.transaction():
+            return self._write_relation_in_transaction(payload, auto_reasoning=auto_reasoning)
+
+    def _write_relation_in_transaction(self, payload: dict, *,
+                                        auto_reasoning: bool = True) -> dict:
         """写入一条权威关系：类型约束（继承感知）+ 基数 + 规则 + 推理补全。"""
         src, dst = str(payload.get("source_id") or ""), str(payload.get("target_id") or "")
         # 必须按 ID 在当前租户内精确读取端点；禁止在大租户列表截断后
@@ -129,6 +136,9 @@ class OntologyService:
         relation_type = str(payload.get("relation_type") or "")
         relation_spec = (self.schema.get("relation_types") or {}).get(relation_type) or {}
         cardinality = relation_spec.get("cardinality", "many_to_many")
+        store.lock_relation_cardinality(
+            self.tenant_id, relation_type, src, dst, cardinality
+        )
         existing = store.find_relation_cardinality_conflicts(
             self.tenant_id, relation_type, src, dst, cardinality
         )
