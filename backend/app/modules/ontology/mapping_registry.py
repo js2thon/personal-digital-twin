@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from app.db import session as db
+from app.modules.ontology.mapping_contract import to_binding
 
 
 def _json(value) -> str:
@@ -41,7 +43,10 @@ def create_version(*, tenant_id: str, name: str, definition: dict,
                    schema_version: str, ontology_version: str,
                    created_by: str) -> dict:
     ensure_schema()
-    normalized = _json(definition)
+    stored_definition = deepcopy(definition or {})
+    stored_definition["ontology_binding"] = to_binding(
+        stored_definition, ontology_version=ontology_version)
+    normalized = _json(stored_definition)
     checksum = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
     with db.transaction():
         # Serialize version allocation per tenant + mapping name to avoid concurrent
@@ -94,6 +99,9 @@ def get(mapping_id: str, *, tenant_id: str) -> dict | None:
         except ValueError:
             definition = {}
     result["definition"] = definition or {}
+    result["definition"].setdefault(
+        "ontology_binding",
+        to_binding(result["definition"], ontology_version=result.get("ontology_version")))
     return result
 
 
