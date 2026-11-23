@@ -45,6 +45,16 @@ def compare_mappings(old: dict, new: dict) -> dict:
                  for x in (old.get("ontology_binding") or {}).get("link_maps") or []}
     new_links = {json.dumps(x, sort_keys=True, ensure_ascii=False)
                  for x in (new.get("ontology_binding") or {}).get("link_maps") or []}
+    schema_changes = _schema_diff(
+        old.get("ontology_schema") or {}, new.get("ontology_schema") or {})
+    affected_entities = {entity for entity, _ in changed if entity}
+    affected_entities.update(x["name"] for x in schema_changes["entity_types"])
+    for item in schema_changes["attributes"]:
+        for schema in (old.get("ontology_schema") or {}, new.get("ontology_schema") or {}):
+            attr = (schema.get("attributes") or {}).get(item["name"], {})
+            owner = attr.get("entity_type") or attr.get("owner") or attr.get("domain")
+            if owner:
+                affected_entities.add(owner)
     return {
         "changed_properties": [
             {"entity_type": entity, "property": prop,
@@ -61,8 +71,8 @@ def compare_mappings(old: dict, new: dict) -> dict:
             (old.get("ontology_binding") or {}).get("schema_version")
             != (new.get("ontology_binding") or {}).get("schema_version")
         ),
-        "ontology_schema_changes": _schema_diff(
-            old.get("ontology_schema") or {}, new.get("ontology_schema") or {}),
+        "ontology_schema_changes": schema_changes,
+        "affected_entity_types": sorted(affected_entities),
 
     }
 
@@ -88,7 +98,7 @@ def analyze(*, tenant_id: str, old_mapping: dict, new_mapping: dict) -> dict:
         "SELECT to_regclass('ontology.dataset_field_lineage') AS lineage_table, "
         "to_regclass('ontology.dataset_ingestion_runs') AS runs_table") or {}
     params = {"tenant_id": tenant_id, "mapping_id": old_id}
-    entities = sorted({item["entity_type"] for item in changed if item["entity_type"]})
+    entities = changes["affected_entity_types"]
     where = []
     for i, entity in enumerate(entities):
         params[f"entity_{i}"] = entity
