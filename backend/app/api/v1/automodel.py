@@ -809,6 +809,8 @@ def edit_metadata(job_id: str, payload: MetadataIn, request: Request):
             raise HTTPException(400, f"列不存在：{e.table}.{e.column}")
         if e.role is not None and e.role not in ROLES:
             raise HTTPException(400, f"角色非法：{e.role}")
+        if e.role is not None and e.column in (table.primary_key or []) and e.role != "identifier":
+            raise HTTPException(400, f"主键列 {e.table}.{e.column} 的角色必须保持 identifier")
         for v in (e.label, e.comment):
             if v is not None and len(v) > 500:
                 raise HTTPException(400, "文本过长")
