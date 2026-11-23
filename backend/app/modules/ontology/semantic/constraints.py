@@ -162,26 +162,34 @@ def validate_relation(schema: dict, relation: dict,
         v.append(_violation("target_type", "target_type",
                             f"{rel_type} 的目标须为 {'/'.join(dst_allow)}（含子类），实际 {dst_type}"))
 
-    # 基数：one_to_one / many_to_one 约束「同一 source 只能有一条该类型 active 边」
+    # 基数方向按标准语义分别约束：
+    # one_to_one：source 与 target 都唯一；
+    # many_to_one：同一 source 只能指向一个 target；
+    # one_to_many：同一 target 只能归属一个 source；
+    # many_to_many：两端均不限制。
     card = spec.get("cardinality", "many_to_many")
-    if card in ("one_to_one", "many_to_one"):
+    for e in (existing_edges or []):
+        if ((e.get("relation_type") or "") != rel_type
+                or e.get("status", "active") != "active"):
+            continue
+        same_src = str(e.get("source_id") or "") == src_id
+        same_dst = str(e.get("target_id") or "") == dst_id
+        if card in ("one_to_one", "many_to_one") and same_src and not same_dst:
+            v.append(_violation(
+                "cardinality", "target_id",
+                f"{rel_type} 是 {card} 关系，源 {src_id} 已存在其他目标 {e.get('target_id')}"
+            ))
+            break
+    if card in ("one_to_one", "one_to_many"):
         for e in (existing_edges or []):
-            same_src = str(e.get("source_id") or "") == src_id
-            same_type = (e.get("relation_type") or "") == rel_type
-            same_target = str(e.get("target_id") or "") == dst_id
-            if same_src and same_type and e.get("status", "active") == "active" and not same_target:
-                v.append(_violation("cardinality", "target_id",
-                                    f"{rel_type} 是 {card} 单值关系，源 {src_id} 已存在目标 "
-                                    f"{e.get('target_id')}；请先删除旧边"))
-                break
-    if card == "one_to_one":
-        for e in (existing_edges or []):
-            if (str(e.get("target_id") or "") == dst_id
-                    and (e.get("relation_type") or "") == rel_type
-                    and str(e.get("source_id") or "") != src_id
-                    and e.get("status", "active") == "active"):
-                v.append(_violation("cardinality", "source_id",
-                                    f"{rel_type} 是 one_to_one，目标 {dst_id} 已被占用"))
+            if ((e.get("relation_type") or "") == rel_type
+                    and e.get("status", "active") == "active"
+                    and str(e.get("target_id") or "") == dst_id
+                    and str(e.get("source_id") or "") != src_id):
+                v.append(_violation(
+                    "cardinality", "source_id",
+                    f"{rel_type} 是 {card} 关系，目标 {dst_id} 已被其他源占用"
+                ))
                 break
 
     return _report(v)
