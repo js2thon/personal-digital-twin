@@ -6,7 +6,7 @@ import copy
 import pandas as pd
 import pytest
 
-from app.modules.ontology.automodel import connectors, mapper, metrics as mx, pipeline, qa
+from app.modules.ontology.automodel import connectors, mapper, metrics as mx, pipeline, profiler, qa
 from app.modules.ontology.automodel.materializer import render
 
 
@@ -82,7 +82,7 @@ def test_review_rename_and_reject(ctx):
 def test_relation_contract_rejects_wrong_foreign_key_endpoint(ctx):
     job, schema, *_ = ctx
     contract = copy.deepcopy(job["contract"])
-    profiles = job["profiles"]
+    profiles = profiler.profile(_ts())
     relation = next(r for m in contract["mappings"] for r in m.get("relations", [])
                     if r["type"] == "reports_to")
     relation["column"] = "emp_no"  # exists, but is not an FK to the target table
@@ -96,7 +96,7 @@ def test_junction_contract_rejects_wrong_endpoint_column(ctx):
     assert contract["links"], "fixture should infer at least one many-to-many link"
     link = contract["links"][0]
     link["target_column"] = link["source_column"]
-    issues = mapper.validate_contract(contract, schema, job["profiles"])
+    issues = mapper.validate_contract(contract, schema, profiler.profile(_ts()))
     assert any(x["code"] == "JUNCTION_TARGET_FK_MISMATCH" for x in issues)
 
 
@@ -355,3 +355,105 @@ def test_generator_level_suffix_label():
     from app.modules.ontology.automodel.generator import _guess_label
     assert _guess_label("dept_name_lv5") == "5级部门"
 
+
+
+# ---------------------------------------------------------------- 关系映射端到端：API 草稿保存 → 校验 → 物化预览
+def test_mapping_contract_api_save_rebuilds_many_to_one_and_many_to_many(monkeypatch):
+    from app.api.v1 import automodel as api
+
+    job = pipeline.run(_ts())
+    contract = copy.deepcopy(job["contract"])
+    # Simulate a user editing the reports_to FK in the graphical editor.
+    reports = next(r for m in contract["mappings"] for r in m.get("relations", [])
+                   if r["type"] == "reports_to")
+    reports["column"] = "manager_emp_no"
+    reports["target_table"] = "employees"
+    # Keep the inferred junction mapping, but assert that it is materialized end-to-end too.
+    assert contract["links"]
+    saved = []
+    monkeypatch.setattr(api, "_tenant", lambda request: ("tenant-e2e", "tester"))
+    monkeypatch.setattr(api, "_job", lambda job_id, request: job)
+    monkeypatch.setattr(api, "_source", lambda job_id: _ts())
+    monkeypatch.setattr(api.jobs, "save", lambda *args, **kwargs: saved.append(args))
+    monkeypatch.setattr(api, "_snap", lambda *args, **kwargs: {"id": "snapshot"})
+
+    result = api.edit_mapping_contract(
+        job["id"], api.MappingContractEditIn(contract=contract), request=object()
+    )
+    assert result["saved"] is True
+    assert saved, "successful API save must persist the updated job"
+    assert job["contract"]["mappings"]
+    facts = job["materialized"]["facts"]
+    reports_to = [f for f in facts if f["predicate"] == "reports_to"]
+    assert reports_to
+    assert all(f["object_value"]["external_id"].startswith("hr:employees:")
+               for f in reports_to)
+    many_to_many = [f for f in facts if f["predicate"] in {
+        link["type"] for link in contract["links"]
+    }]
+    assert many_to_many
+    assert job["materialized"]["stats"]["dangling"] == 0
+
+
+def test_mapping_contract_api_invalid_relation_does_not_overwrite_saved_contract(monkeypatch):
+    from app.api.v1 import automodel as api
+    from fastapi import HTTPException
+
+    job = pipeline.run(_ts())
+    original = copy.deepcopy(job["contract"])
+    invalid = copy.deepcopy(original)
+    relation = next(r for m in invalid["mappings"] for r in m.get("relations", [])
+                    if r["type"] == "reports_to")
+    relation["column"] = "emp_no"  # existing column, but not the FK endpoint
+    save_calls = []
+    monkeypatch.setattr(api, "_tenant", lambda request: ("tenant-e2e", "tester"))
+    monkeypatch.setattr(api, "_job", lambda job_id, request: job)
+    monkeypatch.setattr(api, "_source", lambda job_id: _ts())
+    monkeypatch.setattr(api.jobs, "save", lambda *args, **kwargs: save_calls.append(args))
+    with pytest.raises(HTTPException) as exc:
+        api.edit_mapping_contract(
+            job["id"], api.MappingContractEditIn(contract=invalid), request=object()
+        )
+    assert exc.value.status_code == 400
+    assert job["contract"] == original
+    assert not save_calls
+
+
+def test_mapping_contract_api_blocks_published_job_edits(monkeypatch):
+    from app.api.v1 import automodel as api
+    from fastapi import HTTPException
+
+    job = pipeline.run(_ts())
+    job["status"] = "published"
+    monkeypatch.setattr(api, "_tenant", lambda request: ("tenant-e2e", "tester"))
+    monkeypatch.setattr(api, "_job", lambda job_id, request: job)
+    with pytest.raises(HTTPException) as exc:
+        api.edit_mapping_contract(
+            job["id"], api.MappingContractEditIn(contract=job["contract"]), request=object()
+        )
+    assert exc.value.status_code == 409
+
+
+def test_mapping_contract_api_save_failure_restores_previous_draft(monkeypatch):
+    from app.api.v1 import automodel as api
+    from fastapi import HTTPException
+
+    job = pipeline.run(_ts())
+    original_contract = copy.deepcopy(job["contract"])
+    original_materialized = copy.deepcopy(job["materialized"])
+    edited = copy.deepcopy(original_contract)
+    relation = next(r for m in edited["mappings"] for r in m.get("relations", [])
+                    if r["type"] == "reports_to")
+    relation["column"] = "manager_emp_no"
+    monkeypatch.setattr(api, "_tenant", lambda request: ("tenant-e2e", "tester"))
+    monkeypatch.setattr(api, "_job", lambda job_id, request: job)
+    monkeypatch.setattr(api, "_source", lambda job_id: _ts())
+    monkeypatch.setattr(api.jobs, "save",
+                        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("storage unavailable")))
+    with pytest.raises(HTTPException) as exc:
+        api.edit_mapping_contract(
+            job["id"], api.MappingContractEditIn(contract=edited), request=object()
+        )
+    assert exc.value.status_code == 500
+    assert job["contract"] == original_contract
+    assert job["materialized"] == original_materialized
