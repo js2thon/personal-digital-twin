@@ -53,6 +53,7 @@ def test_legacy_property_mapping_contract_projects_to_binding():
     assert {x["target_property"] for x in binding["object_bindings"][0]["property_maps"]} == {
         "employeeName", "email"
     }
+    assert validate_binding(binding) == []
 
 
 def test_binding_validation_reports_duplicate_source_columns():
@@ -142,3 +143,13 @@ def test_automodel_builder_emits_binding_without_changing_legacy_contract():
         "source_table": "people",
         "status": "draft",
     }]
+
+
+def test_existing_binding_inherits_registry_ontology_version_when_missing():
+    binding = {
+        "binding_version": 1,
+        "object_bindings": [],
+        "link_maps": [],
+    }
+    result = to_binding({"ontology_binding": binding}, ontology_version="ontology-9")
+    assert result["ontology_version"] == "ontology-9"

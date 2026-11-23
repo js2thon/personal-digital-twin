@@ -15,6 +15,8 @@ def to_binding(contract: dict | None, *, ontology_version: str | None = None) ->
     """Project legacy Automodel or dataset mappings into one binding structure."""
     data = deepcopy(contract or {})
     if data.get("binding_version") == BINDING_VERSION:
+        if ontology_version and not data.get("ontology_version"):
+            data["ontology_version"] = ontology_version
         return data
 
     objects: dict[str, dict[str, Any]] = {}
@@ -106,13 +108,15 @@ def validate_binding(binding: dict) -> list[dict]:
         if not object_type:
             issues.append({"code": "OBJECT_TYPE_REQUIRED"})
         for mapping in obj.get("property_maps") or []:
-            source = (mapping.get("source_table"), mapping.get("source_column"))
+            source_column = mapping.get("source_column")
+            source = (mapping.get("source_table") or binding.get("source_id"), source_column)
             target = (object_type, mapping.get("target_property"))
-            if not all(source) or not target[1]:
+            if not source_column or not target[1]:
                 issues.append({"code": "PROPERTY_MAPPING_INCOMPLETE", "object_type": object_type})
-            if source in seen:
+            if source_column and source in seen:
                 issues.append({"code": "DUPLICATE_SOURCE_COLUMN", "source": source})
-            seen.add(source)
+            if source_column:
+                seen.add(source)
     for link in binding.get("link_maps") or []:
         if not link.get("target_link_type") or not link.get("source") or not link.get("target"):
             issues.append({"code": "LINK_MAPPING_INCOMPLETE"})
