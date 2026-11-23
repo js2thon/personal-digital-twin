@@ -265,3 +265,19 @@ def get_run(tenant_id: str, run_id: str) -> dict:
            ORDER BY q.created_at,q.id""",
         {"id": run_id, "tenant": tenant_id})
     return {"run": run, "results": rows}
+
+
+def get_suite(tenant_id: str, suite_id: str) -> dict:
+    ensure_schema()
+    suite = db.fetch_one(
+        """SELECT id::text AS id,name,version,split,created_by,created_at
+           FROM ontology.eval_suites WHERE id=CAST(:id AS uuid) AND tenant_id=:tenant""",
+        {"id": suite_id, "tenant": tenant_id})
+    if not suite:
+        raise LookupError("题集不存在或不属于当前租户")
+    questions = db.fetch_all(
+        """SELECT id::text AS id,question,intent,tags,expect,difficulty,source,active
+           FROM ontology.eval_questions WHERE suite_id=CAST(:id AS uuid)
+             AND tenant_id=:tenant ORDER BY created_at,id""",
+        {"id": suite_id, "tenant": tenant_id})
+    return {"suite": suite, "questions": questions}
