@@ -432,3 +432,28 @@ def test_mapping_contract_api_blocks_published_job_edits(monkeypatch):
             job["id"], api.MappingContractEditIn(contract=job["contract"]), request=object()
         )
     assert exc.value.status_code == 409
+
+
+def test_mapping_contract_api_save_failure_restores_previous_draft(monkeypatch):
+    from app.api.v1 import automodel as api
+    from fastapi import HTTPException
+
+    job = pipeline.run(_ts())
+    original_contract = copy.deepcopy(job["contract"])
+    original_materialized = copy.deepcopy(job["materialized"])
+    edited = copy.deepcopy(original_contract)
+    relation = next(r for m in edited["mappings"] for r in m.get("relations", [])
+                    if r["type"] == "reports_to")
+    relation["column"] = "manager_emp_no"
+    monkeypatch.setattr(api, "_tenant", lambda request: ("tenant-e2e", "tester"))
+    monkeypatch.setattr(api, "_job", lambda job_id, request: job)
+    monkeypatch.setattr(api, "_source", lambda job_id: _ts())
+    monkeypatch.setattr(api.jobs, "save",
+                        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("storage unavailable")))
+    with pytest.raises(HTTPException) as exc:
+        api.edit_mapping_contract(
+            job["id"], api.MappingContractEditIn(contract=edited), request=object()
+        )
+    assert exc.value.status_code == 500
+    assert job["contract"] == original_contract
+    assert job["materialized"] == original_materialized
