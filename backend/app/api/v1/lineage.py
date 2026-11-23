@@ -273,7 +273,7 @@ def trace_fact(fact_id: str):
         "SELECT c.id::text AS id, c.claim_type, c.predicate, c.status AS claim_status "
         "FROM knowledge.claims c WHERE c.id=CAST(:claim_id AS uuid) "
         "OR EXISTS (SELECT 1 FROM jsonb_array_elements_text("
-        "COALESCE(:corroborating_claims::jsonb, '[]'::jsonb)) x(value) "
+        "COALESCE(CAST(:corroborating_claims AS jsonb), '[]'::jsonb)) x(value) "
         "WHERE x.value=c.id::text) ORDER BY c.predicate",
         {"claim_id": fact.get("claim_id") or "00000000-0000-0000-0000-000000000000",
          "corroborating_claims": json.dumps(source_ref.get("corroborating_claims") or [])},
@@ -282,7 +282,7 @@ def trace_fact(fact_id: str):
     evidences = db.fetch_all(
         "SELECT DISTINCT ce.claim_id::text AS claim_id, es.id::text AS evidence_id, "
         " es.document_id::text AS document_id, d.title AS document_title, "
-        " es.span_text, es.page_no, es.start_offset, es.end_offset "
+        " to_jsonb(es) AS evidence "
         "FROM knowledge.claim_evidence ce "
         "JOIN knowledge.evidence_spans es ON es.id=ce.evidence_id "
         "LEFT JOIN source.documents d ON d.id=es.document_id "
