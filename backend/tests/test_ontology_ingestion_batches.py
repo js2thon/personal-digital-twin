@@ -21,3 +21,97 @@ def test_batch_digest_is_deterministic_and_content_sensitive():
 def test_chunks_reject_non_object_rows():
     with pytest.raises(ValueError, match="对象/字典"):
         list(_chunks([{"id": 1}, "bad"], 1))
+
+
+
+def test_database_source_namespace_isolated_by_profile_schema_and_table():
+    from app.modules.ontology.ingestion_batches import _database_source_namespace
+
+    crm = _database_source_namespace("crm", "public", "customers")
+    hr = _database_source_namespace("hr", "public", "customers")
+    audit = _database_source_namespace("crm", "audit", "customers")
+    assert crm == "db:crm:public.customers"
+    assert len({crm, hr, audit}) == 3
+
+
+def test_snapshot_checkpoints_and_reconciliation_are_namespace_scoped(monkeypatch):
+    from app.modules.ontology import ingestion_batches as IB
+
+    namespace = "db:crm:public.customers"
+    statements = []
+    mapping_set = {"status": "approved", "name": "customer-map", "checksum": "sum-1"}
+    monkeypatch.setattr(IB, "ensure_schema", lambda: None)
+    monkeypatch.setattr(IB.mapping_registry, "get", lambda *a, **k: mapping_set)
+
+    def fetch_one(sql, params=None):
+        statements.append(("fetch", sql, params or {}))
+        if "WITH stale AS" in sql:
+            return {"n": 0}
+        if "SELECT batch_sha256" in sql:
+            return None
+        raise AssertionError(f"unexpected query: {sql}")
+
+    monkeypatch.setattr(IB.db, "fetch_one", fetch_one)
+    monkeypatch.setattr(IB.db, "execute",
+                        lambda sql, params=None: statements.append(("execute", sql, params or {})))
+    executed = []
+    def execute_batch(**kwargs):
+        executed.append(kwargs)
+        return {"run_id": "run-1", "status": "succeeded"}
+    monkeypatch.setattr(IB, "execute_approved_dataset", execute_batch)
+
+    result = IB.execute_approved_dataset_stream(
+        tenant_id="tenant-a", mapping_set_id="mapping-1",
+        rows=[{"id": "C-1"}], source_name="crm customers",
+        snapshot_id="snapshot-1", actor="tester",
+        sync_mode="upsert", source_id_column="id", batch_size=10,
+        reconcile_missing=True, source_namespace=namespace,
+    )
+    assert result["source_namespace"] == namespace
+    assert executed[0]["source_namespace"] == namespace
+    relevant = [entry for entry in statements if "source_namespace" in entry[1]]
+    assert relevant
+    assert all(entry[2].get("ns") == namespace for entry in relevant)
+
+
+def test_empty_snapshot_cannot_reconcile_all_source_records(monkeypatch):
+    import pytest
+    from app.modules.ontology import ingestion_batches as IB
+    monkeypatch.setattr(IB, "ensure_schema", lambda: None)
+    monkeypatch.setattr(IB.mapping_registry, "get", lambda *a, **k: {
+        "status": "approved", "name": "customer-map", "checksum": "sum-1"
+    })
+    monkeypatch.setattr(IB.db, "fetch_one", lambda *a, **k: None)
+    with pytest.raises(ValueError, match="空快照"):
+        IB.execute_approved_dataset_stream(
+            tenant_id="tenant-a", mapping_set_id="mapping-1",
+            rows=[], source_name="crm customers", snapshot_id="empty-snapshot",
+            actor="tester", sync_mode="upsert", source_id_column="id",
+            reconcile_missing=True, source_namespace="db:crm:public.customers",
+        )
+
+
+def test_database_snapshot_passes_namespaced_source_to_batch_pipeline(monkeypatch):
+    from app.modules.ontology import database_connector
+    from app.modules.ontology import ingestion_batches as IB
+    mapping_set = {
+        "status": "approved", "checksum": "sum-1",
+        "definition": {"mappings": [{"source": "name", "entity_type": "customer", "property": "name"}]},
+    }
+    monkeypatch.setattr(IB.mapping_registry, "get", lambda *a, **k: mapping_set)
+    monkeypatch.setattr(database_connector, "stream_table_rows",
+                        lambda **kwargs: iter([{"id": "C-1", "name": "Alice"}]))
+    captured = {}
+    def execute_stream(**kwargs):
+        captured.update(kwargs)
+        return {"status": "succeeded"}
+    monkeypatch.setattr(IB, "execute_approved_dataset_stream", execute_stream)
+    result = IB.execute_approved_database_snapshot(
+        tenant_id="tenant-a", mapping_set_id="mapping-1",
+        profile_name="crm", schema_name="public", table_name="customers",
+        primary_key="id", snapshot_id="snapshot-1", actor="tester",
+    )
+    assert result["status"] == "succeeded"
+    assert captured["source_namespace"] == "db:crm:public.customers"
+    assert captured["source_name"] == "db:crm:public.customers"
+    assert captured["snapshot_id"] == "snapshot-1"

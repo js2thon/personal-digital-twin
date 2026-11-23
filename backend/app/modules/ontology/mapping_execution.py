@@ -59,6 +59,7 @@ def ensure_schema() -> None:
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id VARCHAR(120) NOT NULL,
         mapping_name VARCHAR(200) NOT NULL,
+        source_namespace VARCHAR(500) NOT NULL DEFAULT 'default',
         source_record_id VARCHAR(500) NOT NULL,
         entity_type VARCHAR(200) NOT NULL,
         instance_id UUID,
@@ -66,8 +67,38 @@ def ensure_schema() -> None:
         mapping_checksum VARCHAR(64) NOT NULL,
         last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        UNIQUE (tenant_id, mapping_name, source_record_id, entity_type)
+        CONSTRAINT uq_dataset_source_records_source
+            UNIQUE (tenant_id, mapping_name, source_namespace, source_record_id, entity_type)
     )
+    """)
+    db.execute("""
+    ALTER TABLE ontology.dataset_source_records
+    ADD COLUMN IF NOT EXISTS source_namespace VARCHAR(500) NOT NULL DEFAULT 'default'
+    """)
+    db.execute("""
+    DO $migrate$
+    DECLARE old_constraint RECORD;
+    BEGIN
+        FOR old_constraint IN
+            SELECT conname FROM pg_constraint
+            WHERE conrelid = 'ontology.dataset_source_records'::regclass
+              AND contype = 'u'
+              AND pg_get_constraintdef(oid) =
+                  'UNIQUE (tenant_id, mapping_name, source_record_id, entity_type)'
+        LOOP
+            EXECUTE format('ALTER TABLE ontology.dataset_source_records DROP CONSTRAINT %I',
+                           old_constraint.conname);
+        END LOOP;
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = 'ontology.dataset_source_records'::regclass
+              AND conname = 'uq_dataset_source_records_source'
+        ) THEN
+            ALTER TABLE ontology.dataset_source_records
+            ADD CONSTRAINT uq_dataset_source_records_source
+            UNIQUE (tenant_id, mapping_name, source_namespace, source_record_id, entity_type);
+        END IF;
+    END $migrate$;
     """)
     db.execute("""
     CREATE INDEX IF NOT EXISTS idx_dataset_source_records_instance
@@ -113,6 +144,16 @@ def _digest(value) -> str:
     return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
 
 
+def _normalize_source_namespace(value: str | None) -> str:
+    """Return a bounded logical source identity; preserve legacy rows under 'default'."""
+    namespace = str(value or "default").strip()
+    if not namespace:
+        raise ValueError("source_namespace 不能为空")
+    if len(namespace) > 500:
+        raise ValueError("source_namespace 长度不能超过 500")
+    return namespace
+
+
 def _validated_source_ids(rows: list[dict], source_id_column: str | None) -> list[str]:
     """Validate a stable business key for every row in an upsert batch."""
     if not source_id_column or not str(source_id_column).strip():
@@ -155,7 +196,8 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                               source_sha256: str, actor: str,
                               max_rows: int = MAX_EXECUTION_ROWS,
                               sync_mode: str = "append",
-                              source_id_column: str | None = None) -> dict:
+                              source_id_column: str | None = None,
+                              source_namespace: str = "default") -> dict:
     """Atomically instantiate rows using a tenant-owned approved mapping set.
 
     Append mode uses source file hash + row number. Upsert mode requires a stable
@@ -168,6 +210,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
     cap = max(1, min(int(max_rows), MAX_EXECUTION_ROWS))
     if len(rows) > cap:
         raise ValueError(f"本次数据行数 {len(rows)} 超过执行上限 {cap}；请分批执行")
+    namespace = _normalize_source_namespace(source_namespace)
     if sync_mode not in {"append", "upsert"}:
         raise ValueError("sync_mode 仅支持 append 或 upsert")
     if sync_mode == "upsert":
@@ -227,21 +270,21 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                         source_state = db.fetch_one(
                             "SELECT id::text AS id, instance_id::text AS instance_id, "
                             "row_hash, mapping_checksum FROM ontology.dataset_source_records "
-                            "WHERE tenant_id=:t AND mapping_name=:mn AND source_record_id=:sid "
-                            "AND entity_type=:et FOR UPDATE",
+                            "WHERE tenant_id=:t AND mapping_name=:mn AND source_namespace=:ns "
+                            "AND source_record_id=:sid AND entity_type=:et FOR UPDATE",
                             {"t": tenant_id, "mn": str(mapping_set.get("name") or ""),
-                             "sid": stable_source_id, "et": entity},
+                             "ns": namespace, "sid": stable_source_id, "et": entity},
                         )
                         if not source_state:
                             created_state = db.fetch_one(
                                 "INSERT INTO ontology.dataset_source_records "
-                                "(tenant_id, mapping_name, source_record_id, entity_type, "
+                                "(tenant_id, mapping_name, source_namespace, source_record_id, entity_type, "
                                 " instance_id, row_hash, mapping_checksum) "
-                                "VALUES (:t, :mn, :sid, :et, NULL, :rh, :mc) "
-                                "ON CONFLICT (tenant_id, mapping_name, source_record_id, entity_type) "
+                                "VALUES (:t, :mn, :ns, :sid, :et, NULL, :rh, :mc) "
+                                "ON CONFLICT (tenant_id, mapping_name, source_namespace, source_record_id, entity_type) "
                                 "DO NOTHING RETURNING id::text AS id",
                                 {"t": tenant_id, "mn": str(mapping_set.get("name") or ""),
-                                 "sid": stable_source_id, "et": entity,
+                                 "ns": namespace, "sid": stable_source_id, "et": entity,
                                  "rh": row_hash, "mc": mapping_checksum},
                             )
                             if created_state:
@@ -252,10 +295,10 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                                 source_state = db.fetch_one(
                                     "SELECT id::text AS id, instance_id::text AS instance_id, "
                                     "row_hash, mapping_checksum FROM ontology.dataset_source_records "
-                                    "WHERE tenant_id=:t AND mapping_name=:mn AND source_record_id=:sid "
-                                    "AND entity_type=:et FOR UPDATE",
+                                    "WHERE tenant_id=:t AND mapping_name=:mn AND source_namespace=:ns "
+                                    "AND source_record_id=:sid AND entity_type=:et FOR UPDATE",
                                     {"t": tenant_id, "mn": str(mapping_set.get("name") or ""),
-                                     "sid": stable_source_id, "et": entity},
+                                     "ns": namespace, "sid": stable_source_id, "et": entity},
                                 )
                         if not source_state:
                             raise RuntimeError("无法锁定稳定源记录，事务已中止")
@@ -363,6 +406,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
         "instances_updated": updated_instances,
         "sync_mode": sync_mode,
         "source_id_column": source_id_column,
+        "source_namespace": namespace,
         "mapping_set_id": mapping_set_id,
         "mapping_version": mapping_set.get("version"),
         "ontology_version": mapping_set.get("ontology_version"),

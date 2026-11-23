@@ -2,10 +2,11 @@
 
 运行：cd backend && python -m pytest tests/test_automodel.py -q
 """
+import copy
 import pandas as pd
 import pytest
 
-from app.modules.ontology.automodel import connectors, metrics as mx, pipeline, qa
+from app.modules.ontology.automodel import connectors, mapper, metrics as mx, pipeline, qa
 from app.modules.ontology.automodel.materializer import render
 
 
@@ -75,6 +76,28 @@ def test_review_rename_and_reject(ctx):
     assert s["relation_types"]["owned_by"]["source"] == "Program"
     assert not job["draft"]["review"]
     assert job["status"] == "ready_to_publish"
+
+
+
+def test_relation_contract_rejects_wrong_foreign_key_endpoint(ctx):
+    job, schema, *_ = ctx
+    contract = copy.deepcopy(job["contract"])
+    profiles = job["profiles"]
+    relation = next(r for m in contract["mappings"] for r in m.get("relations", [])
+                    if r["type"] == "reports_to")
+    relation["column"] = "emp_no"  # exists, but is not an FK to the target table
+    issues = mapper.validate_contract(contract, schema, profiles)
+    assert any(x["code"] == "RELATION_FK_MISMATCH" for x in issues)
+
+
+def test_junction_contract_rejects_wrong_endpoint_column(ctx):
+    job, schema, *_ = ctx
+    contract = copy.deepcopy(job["contract"])
+    assert contract["links"], "fixture should infer at least one many-to-many link"
+    link = contract["links"][0]
+    link["target_column"] = link["source_column"]
+    issues = mapper.validate_contract(contract, schema, job["profiles"])
+    assert any(x["code"] == "JUNCTION_TARGET_FK_MISMATCH" for x in issues)
 
 
 # ---------------------------------------------------------------- 指标
