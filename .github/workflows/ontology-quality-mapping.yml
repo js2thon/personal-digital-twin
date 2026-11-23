@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "backend/app/modules/ontology/**"
+      - "backend/app/modules/evaluation/**"
+      - "backend/app/api/v1/evaluation.py"
+      - "backend/tests/evaluation/**"
       - "backend/app/api/v1/ontology_modelling.py"
       - "backend/app/api/v1/ontology.py"
       - "backend/app/api/v1/lineage.py"
@@ -136,6 +139,7 @@ jobs:
           tests/test_ontology_ingestion_batches.py
           tests/test_ontology_qa_provenance.py
           tests/test_fact_lineage_trace.py
+          tests/evaluation/test_ontology_qa_eval.py
       - name: Run relation mapping contract regression tests
         env:
           APP_ENV: dev
