@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .profiler import TableProfile
+from ..mapping_contract import to_binding
 
 
 def build_contract(source_id: str, draft: dict, profiles: dict[str, TableProfile]) -> dict:
@@ -51,8 +52,10 @@ def build_contract(source_id: str, draft: dict, profiles: dict[str, TableProfile
                               "source_column": a["column"], "source_table": a["ref_table"],
                               "target_column": b["column"], "target_table": b["ref_table"],
                               "by": "external_id"})
-    return {"contract_version": "1", "source": source_id,
-            "schema_version": schema["schema_version"], "mappings": mappings, "links": links}
+    contract = {"contract_version": "1", "source": source_id,
+                "schema_version": schema["schema_version"], "mappings": mappings, "links": links}
+    contract["ontology_binding"] = to_binding(contract)
+    return contract
 
 
 def validate_contract(contract: dict, schema: dict,
