@@ -16,7 +16,7 @@ _OBJECT_NAME = re.compile(r"^[A-Z][A-Za-z0-9]*$")
 # Chinese business object names are valid localized identifiers when a source system
 # or business owner has not supplied an English technical identifier. Keep the
 # original key intact so mappings and relationship references remain stable.
-_LOCALIZED_OBJECT_NAME = re.compile(r"^[\\u3400-\\u9fff][\\u3400-\\u9fff0-9]*$")
+_LOCALIZED_OBJECT_NAME = re.compile(r"^[\u3400-\u9fff][\u3400-\u9fff0-9]*$")
 _MEMBER_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 _CARDINALITIES = {"one_to_one", "one_to_many", "many_to_one", "many_to_many"}
 _KINDS = {"entity", "event", "transaction", "reference", "association"}
