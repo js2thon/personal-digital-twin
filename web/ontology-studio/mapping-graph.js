@@ -9,7 +9,7 @@ function render(job){
  const mappings=contract.mappings||[],links=contract.links||[];
  const graph=$('semanticMappingSvg'),detail=$('semanticMappingDetail'),summary=$('semanticMappingSummary');
  graph.replaceChildren();
- if(!mappings.length&&!links.length){summary.textContent='当前任务没有映射契约；请先运行 Pipeline 的映射阶段。';detail.textContent='暂无映射节点';return}
+ if(!mappings.length&&!links.length&&!Object.keys(schema.relation_types||{}).length&&!Object.keys(job.profiles||{}).length){summary.textContent='当前任务尚无源数据画像或关系定义；请先运行本体构建与数据发现阶段。';detail.textContent='暂无可配置的关系映射';return}
  const sourceTables=new Map(),sourceFields=new Map(),targetObjects=new Map(),targetProps=new Map(),targetRels=new Map(),edges=[];
  const add=(map,id,node)=>{if(!map.has(id))map.set(id,node);return map.get(id)};
  for(const m of mappings){
