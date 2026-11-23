@@ -147,6 +147,12 @@ def ontology_eval_suites(request: Request):
     return {"items": _call(oq_eval.list_suites, tenant)}
 
 
+@router.get("/evaluation/ontology/suites/{suite_id}")
+def ontology_eval_suite_detail(suite_id: str, request: Request):
+    tenant, _ = _tenant_actor(request)
+    return _call(oq_eval.get_suite, tenant, suite_id)
+
+
 @router.post("/evaluation/ontology/suites/{suite_id}/run")
 def ontology_eval_run(suite_id: str, body: OntologyRunIn, request: Request):
     tenant, actor = _tenant_actor(request)
