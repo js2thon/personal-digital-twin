@@ -65,7 +65,7 @@ def ensure_schema() -> None:
     ADD COLUMN IF NOT EXISTS source_namespace VARCHAR(500) NOT NULL DEFAULT 'default'
     """)
     db.execute("""
-    DO $
+    DO $migrate$
     DECLARE old_constraint RECORD;
     BEGIN
         FOR old_constraint IN
@@ -87,7 +87,7 @@ def ensure_schema() -> None:
             ADD CONSTRAINT uq_dataset_ingestion_checkpoints_source
             UNIQUE (tenant_id, mapping_set_id, source_namespace, snapshot_id, batch_index);
         END IF;
-    END $;
+    END $migrate$;
     """)
     db.execute("""
     ALTER TABLE ontology.dataset_source_records
