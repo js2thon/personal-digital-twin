@@ -48,7 +48,7 @@ def ensure_schema() -> None:
             id UUID PRIMARY KEY, run_id UUID NOT NULL REFERENCES ontology.eval_runs(id) ON DELETE CASCADE,
             tenant_id VARCHAR(128) NOT NULL, question_id UUID NOT NULL,
             passed BOOLEAN NOT NULL, latency_ms DOUBLE PRECISION NOT NULL,
-            engine VARCHAR(40), sparql TEXT, rows JSONB NOT NULL DEFAULT '[]'::jsonb,
+            engine VARCHAR(40), sparql TEXT, result_rows JSONB NOT NULL DEFAULT '[]'::jsonb,
             answer_text TEXT, attempts JSONB NOT NULL DEFAULT '[]'::jsonb,
             expected JSONB NOT NULL, actual JSONB NOT NULL, error TEXT)""",
         "CREATE INDEX IF NOT EXISTS ix_eval_suites_tenant ON ontology.eval_suites(tenant_id, created_at DESC)",
@@ -218,7 +218,7 @@ def run_suite(tenant_id: str, actor: str, suite_id: str, spec: dict,
         for r in results:
             db.execute(
                 """INSERT INTO ontology.eval_results
-                   (id,run_id,tenant_id,question_id,passed,latency_ms,engine,sparql,rows,
+                   (id,run_id,tenant_id,question_id,passed,latency_ms,engine,sparql,result_rows,
                     answer_text,attempts,expected,actual,error)
                    VALUES (CAST(:id AS uuid),CAST(:run AS uuid),:tenant,CAST(:question AS uuid),
                     :passed,:latency,:engine,:sparql,CAST(:rows AS jsonb),:answer,
@@ -261,7 +261,7 @@ def get_run(tenant_id: str, run_id: str) -> dict:
         raise LookupError("评测运行不存在或不属于当前租户")
     rows = db.fetch_all(
         """SELECT r.question_id::text AS question_id,q.question,r.passed,r.latency_ms,
-                  r.engine,r.sparql,r.rows,r.answer_text,r.attempts,
+                  r.engine,r.sparql,r.result_rows AS rows,r.answer_text,r.attempts,
                   r.expected,r.actual,r.error
            FROM ontology.eval_results r LEFT JOIN ontology.eval_questions q
              ON q.id=r.question_id AND q.tenant_id=r.tenant_id
