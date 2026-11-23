@@ -412,7 +412,10 @@ function bindMappingExecution(){
  $('btnIngestExecute').onclick=function(){busy(this,async()=>{
   if(!MAPSET||MAPSET.status!=='approved')throw new Error('必须先批准映射版本');
   const file=$('ingFile').files[0];if(!file)throw new Error('请选择完整正式数据文件');if(file.size>10*1024*1024)throw new Error('当前接口单文件限制为 10 MiB，请先拆分数据文件');
-  const mode=$('ingMode').value,key=$('ingKey').value||null;if(mode==='upsert'&&!key)throw new Error('Upsert 必须选择稳定源主键');
+  const mode=$('ingMode').value,key=$('ingKey').value||null;
+  const selectedMapping=(JOB.contract&&JOB.contract.mappings||[]).find(x=>x.table===$('ingTable').value)||{};
+  if(mode==='upsert'&&(selectedMapping.primary_key||[]).length!==1)throw new Error('Upsert 当前只支持单列稳定主键；复合主键请先选择 Append。');
+  if(mode==='upsert'&&!key)throw new Error('Upsert 必须选择稳定源主键');
   if($('ingReconcile').checked&&mode!=='upsert')throw new Error('软停用对账仅支持 Upsert');
   const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=0x8000)binary+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
   const content_base64=btoa(binary);INGEST_SNAPSHOT=INGEST_SNAPSHOT||('automodel-'+JOB.id+'-'+Date.now());
