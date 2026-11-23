@@ -12,6 +12,7 @@ from datetime import datetime
 from app.db import session as db
 from app.modules.ontology import mapping_registry
 from app.modules.ontology.mapping_pipeline import _coerce_value, _schema_parts, validate_mappings
+from app.modules.ontology.mapping_contract import execution_mappings
 from app.modules.ontology.semantic.service import OntologyService
 
 MAX_EXECUTION_ROWS = 500
@@ -226,7 +227,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
         raise PermissionError("只有 approved 状态的映射版本可以执行")
     definition = mapping_set.get("definition") or {}
     schema = definition.get("ontology_schema") or {}
-    mappings = definition.get("mappings") or []
+    mappings = execution_mappings(definition)
     validation = validate_mappings(mappings, schema)
     if not validation["valid"]:
         raise ValueError("映射版本当前未通过结构校验")
