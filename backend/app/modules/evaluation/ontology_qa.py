@@ -228,3 +228,40 @@ def run_suite(tenant_id: str, actor: str, suite_id: str, spec: dict,
     return {"run_id": run_id, "suite": suite, "snapshot": snap,
             "metrics": metrics, "results": results,
             "created_at": datetime.now(timezone.utc).isoformat()}
+
+ 
+def list_runs(tenant_id: str, limit: int = 30) -> list[dict]:
+    ensure_schema()
+    limit = max(1, min(int(limit), 100))
+    return db.fetch_all(
+        """SELECT r.id::text AS run_id,r.suite_id::text AS suite_id,
+                  s.name AS suite_name,s.version AS suite_version,
+                  r.snapshot,r.metrics,r.status,r.created_at
+           FROM ontology.eval_runs r JOIN ontology.eval_suites s
+             ON s.id=r.suite_id AND s.tenant_id=r.tenant_id
+           WHERE r.tenant_id=:tenant ORDER BY r.created_at DESC LIMIT :limit""",
+        {"tenant": tenant_id, "limit": limit})
+
+
+def get_run(tenant_id: str, run_id: str) -> dict:
+    ensure_schema()
+    run = db.fetch_one(
+        """SELECT r.id::text AS run_id,r.suite_id::text AS suite_id,
+                  s.name AS suite_name,s.version AS suite_version,
+                  r.snapshot,r.metrics,r.status,r.created_at
+           FROM ontology.eval_runs r JOIN ontology.eval_suites s
+             ON s.id=r.suite_id AND s.tenant_id=r.tenant_id
+           WHERE r.id=CAST(:id AS uuid) AND r.tenant_id=:tenant""",
+        {"id": run_id, "tenant": tenant_id})
+    if not run:
+        raise LookupError("评测运行不存在或不属于当前租户")
+    rows = db.fetch_all(
+        """SELECT r.question_id::text AS question_id,q.question,r.passed,r.latency_ms,
+                  r.engine,r.sparql,r.rows,r.answer_text,r.attempts,
+                  r.expected,r.actual,r.error
+           FROM ontology.eval_results r LEFT JOIN ontology.eval_questions q
+             ON q.id=r.question_id AND q.tenant_id=r.tenant_id
+           WHERE r.run_id=CAST(:id AS uuid) AND r.tenant_id=:tenant
+           ORDER BY q.created_at,q.id""",
+        {"id": run_id, "tenant": tenant_id})
+    return {"run": run, "results": rows}
