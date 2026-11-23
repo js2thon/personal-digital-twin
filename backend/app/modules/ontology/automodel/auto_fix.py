@@ -15,7 +15,7 @@ _SNAKE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 def _token(value: str) -> str:
-    value = re.sub(r"([a-z0-9])([A-Z])", r"\\1_\\2", str(value or ""))
+    value = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(value or ""))
     value = re.sub(r"[^A-Za-z0-9]+", "_", value).strip("_")
     return value.lower()
 
