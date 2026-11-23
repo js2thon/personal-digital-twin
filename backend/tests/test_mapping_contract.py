@@ -1,4 +1,4 @@
-from app.modules.ontology.mapping_contract import to_binding, validate_binding
+from app.modules.ontology.mapping_contract import execution_mappings, to_binding, validate_binding
 
 
 def test_automodel_contract_projects_object_properties_and_links():
@@ -71,3 +71,38 @@ def test_binding_validation_reports_duplicate_source_columns():
     assert "DUPLICATE_SOURCE_COLUMN" in {
         issue["code"] for issue in validate_binding(binding)
     }
+
+
+def test_execution_rows_are_derived_from_canonical_binding():
+    contract = {
+        "source": "hr",
+        "mappings": [
+            {"source": "emp_name", "entity_type": "Employee", "property": "employeeName"},
+            {"source": "emp_email", "entity_type": "Employee", "property": "email"},
+        ],
+    }
+
+    assert execution_mappings(contract) == [
+        {"entity_type": "Employee", "property": "employeeName", "source": "emp_name"},
+        {"entity_type": "Employee", "property": "email", "source": "emp_email"},
+    ]
+
+
+def test_execution_prefers_stored_binding_projection():
+    contract = {
+        "mappings": [{"source": "old_name", "entity_type": "Employee", "property": "name"}],
+        "ontology_binding": {
+            "binding_version": 1,
+            "object_bindings": [{
+                "object_type": "Employee",
+                "property_maps": [{
+                    "source_column": "preferred_name",
+                    "target_property": "displayName",
+                }],
+            }],
+        },
+    }
+
+    assert execution_mappings(contract) == [
+        {"entity_type": "Employee", "property": "displayName", "source": "preferred_name"}
+    ]
