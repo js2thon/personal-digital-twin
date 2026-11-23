@@ -15,6 +15,8 @@ def to_binding(contract: dict | None, *, ontology_version: str | None = None) ->
     """Project legacy Automodel or dataset mappings into one binding structure."""
     data = deepcopy(contract or {})
     if data.get("binding_version") == BINDING_VERSION:
+        if ontology_version and not data.get("ontology_version"):
+            data["ontology_version"] = ontology_version
         return data
 
     objects: dict[str, dict[str, Any]] = {}
