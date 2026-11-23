@@ -16,7 +16,7 @@ if (missing.length) throw new Error("Missing DOM ids: " + missing.join(", "));
 for (const endpoint of ["/kg/sessions", "/automodel/jobs", "/ontology/metrics", "/studio/schema-graph", "/studio/instance-graph", "/studio/quality", "/studio/governance", "/studio/provenance", "/studio/provenance/source", "/automodel/versions/diff", "/automodel/jobs/", "/mapping-contract", "/pipeline"]) {
   if (!html.includes(endpoint)) throw new Error("Missing expected API integration: " + endpoint);
 }
-for (const id of ["schemaMode", "instanceMode", "graphZoomIn", "graphZoomOut", "graphFit", "traceEntity", "traceButton", "sourceTable", "sourceColumn", "reverseTraceButton", "versionA", "versionB", "compareVersions", "governanceSummary", "lineageDetails", "semanticMappingSvg", "semanticMappingDetail", "semanticMappingSummary", "mappingValidate", "mappingSave"]) {
+for (const id of ["schemaMode", "instanceMode", "graphZoomIn", "graphZoomOut", "graphFit", "traceEntity", "traceButton", "sourceTable", "sourceColumn", "reverseTraceButton", "versionA", "versionB", "compareVersions", "governanceSummary", "lineageDetails", "semanticMappingSvg", "semanticMappingDetail", "semanticMappingSummary", "mappingValidate", "mappingSave", "mappingPublish"]) {
   if (!ids.has(id)) throw new Error("Missing expected workbench control: " + id);
 }
 console.log("Ontology Studio V2 static validation passed");
