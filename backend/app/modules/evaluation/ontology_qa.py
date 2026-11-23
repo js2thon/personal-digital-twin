@@ -112,15 +112,16 @@ def list_suites(tenant_id: str) -> list[dict]:
 
 def _actual(out: dict) -> dict:
     result = out.get("result") or {}
-    return {"kind": result.get("kind") or "SELECT",
+    return {"ok": bool(out.get("ok")), "kind": result.get("kind") or "SELECT",
             "vars": result.get("vars") or [], "rows": result.get("rows") or [],
             "boolean": result.get("boolean"), "answer": out.get("answer") or ""}
 
 
 def _cell(row: Any) -> list:
-    if isinstance(row, dict):
-        return [row[k] for k in sorted(row)]
-    return list(row) if isinstance(row, (list, tuple)) else [row]
+    cells = list(row.values()) if isinstance(row, dict) else (
+        list(row) if isinstance(row, (list, tuple)) else [row])
+    return [cell.get("v") if isinstance(cell, dict) and "v" in cell else cell
+            for cell in cells]
 
 
 def _compare(expect: dict, actual: dict) -> bool:
@@ -197,7 +198,7 @@ def run_suite(tenant_id: str, actor: str, suite_id: str, spec: dict,
     run_id = str(uuid.uuid4())
     metrics = {"total": total, "passed": passed, "failed": total - passed,
                "accuracy": round(passed / total, 6), "latency_ms": elapsed,
-               "executable_rate": round(sum(bool(r["actual"]["kind"]) for r in results) / total, 6)}
+               "executable_rate": round(sum(bool(r["actual"]["ok"]) for r in results) / total, 6)}
     with db.transaction():
         db.execute(
             """INSERT INTO ontology.eval_runs(id,tenant_id,suite_id,snapshot,metrics,status,created_by)
