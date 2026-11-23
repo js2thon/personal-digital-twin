@@ -52,3 +52,22 @@ def test_compare_mapping_versions_detects_link_change():
         "target": {"object_type": "Employee", "table": "employee"},
     }]}}
     assert compare_mappings(old, new)["changed_links"] == 1
+
+
+def test_compare_mapping_versions_detects_ontology_schema_changes():
+    old = {
+        "ontology_binding": {"object_bindings": [], "link_maps": []},
+        "ontology_schema": {"entity_types": {"Employee": {"label": "Employee"}},
+                            "attributes": {"name": {"range": "string"}},
+                            "relation_types": {}},
+    }
+    new = {
+        "ontology_binding": {"object_bindings": [], "link_maps": []},
+        "ontology_schema": {"entity_types": {"Employee": {"label": "Staff"}},
+                            "attributes": {"name": {"range": "string"},
+                                           "email": {"range": "string"}},
+                            "relation_types": {}},
+    }
+    changes = compare_mappings(old, new)["ontology_schema_changes"]
+    assert changes["entity_types"] == [{"name": "Employee", "change": "changed"}]
+    assert changes["attributes"] == [{"name": "email", "change": "added"}]
