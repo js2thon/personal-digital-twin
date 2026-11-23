@@ -30,7 +30,7 @@ def to_binding(contract: dict | None, *, ontology_version: str | None = None) ->
             continue
         table = item.get("table") or item.get("source_table")
         object_type = item.get("class") or item.get("entity_type") or item.get("target_object_type")
-        if not table or not object_type:
+        if not object_type:
             continue
         obj = object_binding(str(object_type))
         source = {
@@ -56,7 +56,7 @@ def to_binding(contract: dict | None, *, ontology_version: str | None = None) ->
         for pair in pairs:
             if pair.get("source_column") and pair.get("target_property"):
                 obj["property_maps"].append({
-                    **pair, "source_table": str(table),
+                    **pair, "source_table": str(table) if table else None,
                     "status": "approved" if data.get("status") == "approved" else "draft",
                 })
 
