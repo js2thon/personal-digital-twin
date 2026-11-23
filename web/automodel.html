@@ -193,6 +193,7 @@ tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
     <div class="graph" id="sg"></div><div class="legend" id="sgLegend"></div>
     <div id="edBox" class="edit hidden"></div></div>
   <div class="card"><h2>审核队列 <span class="hint" id="reviewHint"></span></h2><div class="scroll" id="review"></div>
+    <div id="autoFixBox" style="margin-top:12px"></div>
     <div class="row" style="margin-top:10px"><button class="primary auto" id="btnReview">提交审核</button></div></div>
   <div class="cols">
     <div class="card"><h2>主键配置 <span class="hint">已自动推断，可修改</span></h2><div id="pkBox" class="row"></div></div>
@@ -435,8 +436,17 @@ function renderConfig(){const P=JOB.profiles||{};
  renderML();
  const rv=JOB.draft.review||[];$('reviewHint').textContent=rv.length?`${rv.length} 项待审核（置信度 < 0.8）`:'无待审核项';
  $('review').innerHTML=rv.length?`<table><tr><th>类型</th><th>对象</th><th class="num">置信度</th><th>依据</th><th>决定</th><th>新名称</th><th>中文标签</th></tr>${rv.map((r,i)=>`<tr data-i="${i}"><td>${tag(r.kind)}</td><td>${esc(r.ref)}</td><td class="num">${r.confidence}</td><td class="muted">${esc(r.reason)}</td><td><select class="act"><option value="accept">接受</option><option value="reject">拒绝</option><option value="rename">改名</option></select></td><td><input class="nn"></td><td><input class="lb"></td></tr>`).join('')}</table>`:'<span class="muted">—</span>';
+  const fix=JOB.auto_fix_report||{applied:[],count:0};
+  const objects=JOB.draft.schema.entity_types||{};
+  $('autoFixBox').innerHTML=`<div class="card" style="border:1px solid var(--ax-border);margin:8px 0">
+   <b>规范自动修正</b> <span class="muted">本轮自动修正 ${fix.count||0} 项；业务中文名称和源字段名保留</span>
+   <div class="muted" style="margin:6px 0">${(fix.applied||[]).map(x=>esc(x.ref)+'：'+esc(x.before)+' → <b>'+esc(x.after)+'</b>').join('<br>')||'本轮没有自动修正项'}</div>
+   <b>人工调整技术标识（可选）</b>
+   <div class="muted">可为对象填写 PascalCase 技术标识；不修改中文展示名及源字段名。提交后会重新构建映射契约并重新校验。</div>
+   ${Object.entries(objects).map(([name,obj])=>`<div class="row" style="margin:5px 0;align-items:center"><span style="min-width:150px">${esc(obj.label||name)}</span><input class="tn" data-ref="${esc(name)}" placeholder="例如 DataManagementDepartmentPersonnel" value="${esc(obj.technical_name||'')}" style="flex:1"></div>`).join('')}
+  </div>`;
   renderMeta()}
-// ---------------- 元数据可视化与编辑（Recharts）
+ // ---------------- 元数据可视化与编辑（Recharts）
 let META_EDITS={},META_TABLES={},META_SEL=null;
 const ROLE_OPTS=['identifier','name','enum','measure','temporal','text','boolean'],ROLE_CN={identifier:'标识',name:'名称',enum:'枚举',measure:'度量',temporal:'时间',text:'文本',boolean:'布尔'};
 function attrOf(t,c){const cls=(JOB.draft.class_map||{})[t];return Object.values(JOB.draft.schema.attributes||{}).find(a=>a.owner===cls&&a.column===c)}
@@ -479,7 +489,9 @@ $('btnAddML').onclick=()=>{const t=Object.keys(JOB.profiles||{});ML.push({name:`
 $('btnRegen').onclick=function(){busy(this,async()=>{const pk={};$('pkBox').querySelectorAll('select').forEach(s=>pk[s.dataset.t]=s.value);
  const s=await post(J()+'/configure',{primary_keys:pk,manual_links:ML});note('本体已按配置重新生成：'+s.stats.classes+' 类 / '+s.stats.relations+' 关系');await openJob(JOB.id);show('model')})};
 $('btnReview').onclick=function(){busy(this,async()=>{const rv=JOB.draft.review||[];const ds=[...document.querySelectorAll('#review tr[data-i]')].map(tr=>{const r=rv[+tr.dataset.i],d={kind:r.kind,ref:r.ref,action:tr.querySelector('.act').value};
- const nn=tr.querySelector('.nn').value.trim(),lb=tr.querySelector('.lb').value.trim();if(nn)d.new_name=nn;if(lb)d.label=lb;return d});await post(J()+'/review',{decisions:ds});await openJob(JOB.id);note('审核已提交')})};
+ const nn=tr.querySelector('.nn').value.trim(),lb=tr.querySelector('.lb').value.trim();if(nn)d.new_name=nn;if(lb)d.label=lb;return d});
+ $('autoFixBox').querySelectorAll('.tn').forEach(input=>{const value=input.value.trim(),obj=(JOB.draft.schema.entity_types||{})[input.dataset.ref];if(value&&value!==(obj.technical_name||''))ds.push({kind:'class',ref:input.dataset.ref,action:'accept',technical_name:value,comment:'人工调整对象技术标识'})});
+ await post(J()+'/review',{decisions:ds});await openJob(JOB.id);note('审核已提交')})};
 
 // ---------------- 概览
 function renderOverview(){if(!OV)return;
