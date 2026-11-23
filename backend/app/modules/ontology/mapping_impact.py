@@ -11,13 +11,31 @@ def _property_maps(definition: dict) -> dict[tuple, dict]:
         entity = obj.get("object_type")
         for item in obj.get("property_maps") or []:
             key = (entity, item.get("target_property"))
-            result.setdefault(key, set()).add((
-                item.get("source_table"), item.get("source_column")))
+            result.setdefault(key, set()).add(json.dumps({
+                "source_table": item.get("source_table"),
+                "source_column": item.get("source_column"),
+                "transform": item.get("transform"),
+                "status": item.get("status"),
+            }, sort_keys=True, ensure_ascii=False))
+    return result
+
+
+def _schema_diff(old: dict, new: dict) -> dict:
+    result = {}
+    for section in ("entity_types", "attributes", "relation_types"):
+        before, after = old.get(section) or {}, new.get(section) or {}
+        keys = before.keys() | after.keys()
+        result[section] = [
+            {"name": key, "change": "added" if key not in before else
+             "removed" if key not in after else "changed"}
+            for key in sorted(keys)
+            if before.get(key) != after.get(key)
+        ]
     return result
 
 
 def compare_mappings(old: dict, new: dict) -> dict:
-    """Compare stable binding semantics; never infer or backfill missing versions."""
+    """Compare mapping and ontology schema semantics without mutating either version."""
     before, after = _property_maps(old), _property_maps(new)
     changed = sorted(
         (entity, prop) for entity, prop in before.keys() | after.keys()
@@ -43,6 +61,9 @@ def compare_mappings(old: dict, new: dict) -> dict:
             (old.get("ontology_binding") or {}).get("schema_version")
             != (new.get("ontology_binding") or {}).get("schema_version")
         ),
+        "ontology_schema_changes": _schema_diff(
+            old.get("ontology_schema") or {}, new.get("ontology_schema") or {}),
+
     }
 
 
