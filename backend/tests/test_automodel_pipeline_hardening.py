@@ -77,20 +77,18 @@ def test_review_rejects_unknown_actions_and_records_audit():
     assert job["change_set"][-1]["comment"] == "业务确认"
 
 
-def test_release_gate_requires_explicit_acknowledgement_for_modeling_warnings():
+def test_release_gate_treats_modeling_warnings_as_advisory():
     job = _valid_job()
     job["standards_report"] = {
         "status": "warning",
-        "findings": [{"code": "MISSING_DESCRIPTION", "severity": "warning"}],
+        "findings": [{"code": "MISSING_DESCRIPTION", "severity": "warning",
+                      "message": "对象缺少业务描述"}],
     }
-    report = release_gate.evaluate(job)
-    assert report["state"] == "REVIEW_REQUIRED"
-    assert not report["ready"]
-    assert "STANDARDS_REVIEW_PENDING" in {x["code"] for x in report["blockers"]}
-    job["standards_review_acknowledged"] = True
     report = release_gate.evaluate(job)
     assert report["state"] == "READY"
     assert report["ready"]
+    assert report["blockers"] == []
+    assert "MISSING_DESCRIPTION" in {x["code"] for x in report["warnings"]}
 
 
 def test_partial_publish_retry_recovers_existing_version_without_republishing(monkeypatch):

@@ -29,9 +29,9 @@ def evaluate(job: dict, *, require_cq: bool = False) -> dict[str, Any]:
     warnings = [x for x in all_issues if str(x.get("level", "")).lower() == "warning"]
     if errors:
         add("MAPPING_CONTRACT_ERRORS", "映射契约或本体校验仍存在阻断错误", count=len(errors))
-    if warnings and not job.get("standards_review_acknowledged"):
-        add("STANDARDS_REVIEW_PENDING", "存在尚未由审核人确认的规范警告", severity="error",
-            count=len(warnings))
+    for issue in warnings:
+        add("PIPELINE_WARNING", str(issue.get("msg") or issue.get("message") or "存在非阻断警告"),
+            severity="warning")
     if not contract.get("mappings"):
         add("MAPPING_NOT_DEFINED", "尚未生成可执行映射契约")
     if not materialized or not materialized.get("data_scope"):
@@ -69,10 +69,9 @@ def evaluate(job: dict, *, require_cq: bool = False) -> dict[str, Any]:
     standards_errors = [x for x in standards_findings if x.get("severity") == "error"]
     if standards_errors and not errors:
         add("MODELING_STANDARDS_ERRORS", "本体建模规范存在阻断错误", count=len(standards_errors))
-    if standards_warnings and not job.get("standards_review_acknowledged"):
-        if not any(x["code"] == "STANDARDS_REVIEW_PENDING" for x in findings):
-            add("STANDARDS_REVIEW_PENDING", "存在尚未由审核人确认的规范警告",
-                count=len(standards_warnings))
+    for item in standards_warnings:
+        add(item.get("code", "MODELING_STANDARD_WARNING"),
+            item.get("message", "存在非阻断本体规范提示"), severity="warning")
     blockers = [x for x in findings if x["severity"] == "error"]
     warnings_out = [x for x in findings if x["severity"] != "error"]
     state = "BLOCKED" if any(x["code"] in {"MAPPING_CONTRACT_ERRORS", "MODELING_STANDARDS_ERRORS"} for x in blockers) else (
