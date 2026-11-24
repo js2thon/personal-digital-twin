@@ -97,6 +97,13 @@ NODE_TYPES: dict[str, dict[str, Any]] = {
             "attributes": {"type": "string", "title": "属性定义（每行 名称:类型[:必填][:枚举/正则]）"},
             "type_system": {"type": "string", "title": "类型系统（父类型 / 约束）"},
             "source_object": {"type": "string", "title": "对应真实实体"},
+            "business_role": {"type": "string", "enum": ["master", "event", "derived", "reference"], "title": "业务对象角色"},
+            "business_definition": {"type": "string", "title": "业务定义"},
+            "business_grain": {"type": "string", "title": "业务粒度 / 统计粒度"},
+            "event_time": {"type": "string", "title": "业务发生时间属性"},
+            "lifecycle": {"type": "string", "title": "对象生命周期"},
+            "source_system": {"type": "string", "title": "来源业务系统"},
+            "identity_strategy": {"type": "string", "enum": ["single", "composite", "natural", "surrogate"], "title": "对象身份策略"},
             "aliases": {"type": "string", "title": "别名（逗号分隔）"},
             # —— 内化的 Schema 映射字段（旧 schema_mapping 节点的能力）——
             "source_field": {"type": "string", "title": "来源字段（属性级：本属性来自哪个源字段）"},
@@ -116,6 +123,8 @@ NODE_TYPES: dict[str, dict[str, Any]] = {
             "cardinality": {"type": "string", "enum": ["1:1", "1:N", "N:M"], "title": "基数"},
             "directed": {"type": "boolean", "title": "有向", "default": True},
             "edge_properties": {"type": "string", "title": "属性边（逗号分隔）"},
+            "semantic_kind": {"type": "string", "enum": ["belongs_to", "contains", "uses", "provides", "associates", "derived_from"], "title": "业务关系语义"},
+            "inverse_name": {"type": "string", "title": "反向关系名"},
         },
     },
     "constraint": {
