@@ -305,6 +305,21 @@ def mapping_set_get(mapping_id: str, request: Request):
     return result
 
 
+@router.get("/ontology/modelling/mapping-sets/{mapping_id}/impact/{target_mapping_id}")
+def mapping_set_impact(mapping_id: str, target_mapping_id: str, request: Request):
+    """比较两个映射版本的影响范围；只读 Dry-run，不执行重投影。"""
+    from app.modules.ontology import mapping_registry as MR
+    from app.modules.ontology.mapping_impact import analyze
+    tenant_id = str(_principal(request).get("tenant_id") or "default")
+    old = MR.get(mapping_id, tenant_id=tenant_id)
+    new = MR.get(target_mapping_id, tenant_id=tenant_id)
+    if not old or not new:
+        raise HTTPException(404, "映射版本不存在或不属于当前租户")
+    if old.get("name") != new.get("name"):
+        raise HTTPException(400, "只能比较同一映射方案的不同版本")
+    return analyze(tenant_id=tenant_id, old_mapping=old, new_mapping=new)
+
+
 @router.post("/ontology/modelling/dataset/execute")
 def dataset_execute(payload: DatasetExecuteIn, request: Request):
     """以已批准映射版本原子化写入本体实例，并持久化字段级血缘。"""

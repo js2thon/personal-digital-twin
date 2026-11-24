@@ -2,7 +2,9 @@
 
 数据源 → 蒸馏任务 → 切片/证据 → 候选知识 → 事实 → 本体/认知 → 决策 → 审计
 """
-from fastapi import APIRouter, HTTPException
+import json
+
+from fastapi import APIRouter, HTTPException, Request
 
 from app.db import session as db
 
@@ -234,4 +236,68 @@ def trace(document_id: str):
         "facts": sum(int(c.get("fact_count") or 0) for c in claims),
         "relations": sum(int(c.get("relation_count") or 0) for c in claims),
         "decisions": decisions,
+    }
+
+
+def _fact_traceability(claims: list[dict], evidences: list[dict], source_ref: dict) -> str:
+    """区分 Claim 证据链与结构化数据源链，不把缺失来源伪装成完整血缘。"""
+    if evidences:
+        return "claim_and_evidence"
+    if claims:
+        return "claim_without_evidence"
+    required = ("table", "pk", "row_hash", "batch_id", "mapping_version", "idempotency_key")
+    if source_ref.get("channel") == "structured_sync" and all(source_ref.get(k) for k in required):
+        return "structured_source"
+    return "unlinked"
+
+
+@router.get("/lineage/facts/{fact_id}")
+def trace_fact(fact_id: str, request: Request):
+    """从当前租户 Fact 下钻到 Claim、原始证据及结构化来源信息。"""
+    import uuid
+
+    try:
+        fid = str(uuid.UUID(fact_id))
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(400, "invalid fact id")
+
+    principal = getattr(request.state, "principal", {}) or {}
+    tenant_id = str(principal.get("tenant_id") or "default")
+    fact = db.fetch_one(
+        "SELECT id::text AS id, claim_id::text AS claim_id, predicate, object_value, "
+        " status, to_jsonb(f)->'source_ref' AS source_ref, ontology_version, source_id, valid_from, valid_to, recorded_at "
+        "FROM knowledge.facts f WHERE id=CAST(:id AS uuid) AND tenant_id=:tenant_id",
+        {"id": fid, "tenant_id": tenant_id},
+    )
+    if not fact:
+        raise HTTPException(404, "fact not found")
+
+    source_ref = fact.get("source_ref") if isinstance(fact.get("source_ref"), dict) else {}
+    claims = db.fetch_all(
+        "SELECT c.id::text AS id, c.claim_type, c.predicate, c.status AS claim_status "
+        "FROM knowledge.claims c WHERE c.id=CAST(:claim_id AS uuid) "
+        "OR EXISTS (SELECT 1 FROM jsonb_array_elements_text("
+        "COALESCE(CAST(:corroborating_claims AS jsonb), '[]'::jsonb)) x(value) "
+        "WHERE x.value=c.id::text) ORDER BY c.predicate",
+        {"claim_id": fact.get("claim_id") or "00000000-0000-0000-0000-000000000000",
+         "corroborating_claims": json.dumps(source_ref.get("corroborating_claims") or [])},
+    ) if fact.get("claim_id") or source_ref.get("corroborating_claims") else []
+    claim_ids = [c["id"] for c in claims]
+    evidences = db.fetch_all(
+        "SELECT DISTINCT ce.claim_id::text AS claim_id, es.id::text AS evidence_id, "
+        " es.document_id::text AS document_id, d.title AS document_title, "
+        " to_jsonb(es) AS evidence "
+        "FROM knowledge.claim_evidence ce "
+        "JOIN knowledge.evidence_spans es ON es.id=ce.evidence_id "
+        "LEFT JOIN source.documents d ON d.id=es.document_id "
+        "WHERE ce.claim_id = ANY(CAST(:claim_ids AS uuid[])) "
+        "ORDER BY d.title, es.created_at, es.id LIMIT 200",
+        {"claim_ids": claim_ids},
+    ) if claim_ids else []
+    return {
+        "fact": fact,
+        "claims": claims,
+        "evidences": evidences,
+        "source_ref": source_ref,
+        "traceability_status": _fact_traceability(claims, evidences, source_ref),
     }

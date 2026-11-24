@@ -320,6 +320,60 @@ class MappingContractEditIn(BaseModel):
     validate_only: bool = False
 
 
+@router.post("/automodel/jobs/{job_id}/mapping-contract/preview")
+def preview_mapping_contract(job_id: str, payload: MappingContractEditIn, request: Request):
+    """在 Discovery 样本上预览候选映射；不保存契约、不写入实例库。"""
+    job = _job(job_id, request)
+    contract = payload.contract
+    if not isinstance(contract, dict) or not isinstance(contract.get("mappings"), list) or not isinstance(contract.get("links", []), list):
+        raise HTTPException(400, "映射契约结构无效")
+    if str(contract.get("source") or "") != str(job.get("source") or ""):
+        raise HTTPException(400, "映射契约数据源与当前任务不一致")
+    schema = (job.get("draft") or {}).get("schema") or {}
+    if str(contract.get("schema_version") or "") != str(schema.get("schema_version") or ""):
+        raise HTTPException(409, "映射契约本体版本已变化，请刷新任务后重试")
+    from app.modules.ontology.automodel import profiler, materializer
+    from app.modules.ontology.automodel.connectors import TableSet
+    ts = _source(job_id)
+    profiles = profiler.profile(ts)
+    try:
+        issues = mapper.validate_contract(contract, schema, profiles)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise HTTPException(400, f"映射契约结构无效：{type(exc).__name__}") from exc
+    known_tables = set(profiles)
+    for item in contract.get("mappings", []):
+        if item.get("table") not in known_tables:
+            issues.append({"level": "error", "code": "UNKNOWN_SOURCE_TABLE",
+                           "table": item.get("table"), "msg": f"来源表不存在：{item.get('table')}"})
+    for item in contract.get("links", []):
+        if item.get("table") not in known_tables:
+            issues.append({"level": "error", "code": "UNKNOWN_JUNCTION_TABLE",
+                           "table": item.get("table"), "msg": f"关联表不存在：{item.get('table')}"})
+    if not contract.get("mappings"):
+        issues.append({"level": "error", "code": "MISSING_MAPPING_TABLES",
+                       "table": None, "msg": "至少需要一个源表映射"})
+    blockers = [item for item in issues if item.get("level") == "error"]
+    if blockers:
+        return {"valid": False, "issues": issues, "stats": None, "entities": [], "facts": [],
+                "data_scope": materializer.DISCOVERY_DATA_SCOPE}
+    try:
+        sample_limit = 100
+        preview_ts = TableSet(source_id=ts.source_id, kind=ts.kind)
+        for name, table in ts.tables.items():
+            cloned = copy.copy(table)
+            cloned.df = table.df.head(sample_limit).copy()
+            cloned.row_count = len(cloned.df)
+            preview_ts.tables[name] = cloned
+        result = materializer.materialize(preview_ts, contract)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(400, f"映射预览失败：{type(exc).__name__}: {str(exc)[:160]}") from exc
+    return {"valid": not result.get("errors") and not result.get("dangling"),
+            "issues": issues, "stats": result.get("stats"),
+            "entities": result.get("entities", [])[:30], "facts": result.get("facts", [])[:60],
+            "errors": result.get("errors", [])[:30], "dangling": result.get("dangling", [])[:30],
+            "data_scope": result.get("data_scope"), "sample_limit_per_table": sample_limit}
+
+
 @router.post("/automodel/jobs/{job_id}/mapping-contract")
 def edit_mapping_contract(job_id: str, payload: MappingContractEditIn, request: Request):
     tenant, actor = _tenant(request)

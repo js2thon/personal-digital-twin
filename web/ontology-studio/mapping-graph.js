@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const svg=(tag,attrs={},label='')=>{const n=document.createElementNS('http://www.w3.org/2000/svg',tag);Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,String(v)));if(label){if(tag==='text')n.textContent=label;else{const t=document.createElementNS('http://www.w3.org/2000/svg','title');t.textContent=label;n.append(t)}}return n};
 const norm=(table,column)=>table+'.'+column;
-function cardinalityOf(spec){const raw=String(spec?.cardinality||spec?.relation_cardinality||spec?.mapping_type||spec?.kind||'').toLowerCase().replace(/[\s-]/g,'_');if(['many_to_many','n_to_n','n:n','*:*','m:n'].includes(raw)||spec?.via_table||spec?.junction_table)return'many_to_many';if(['many_to_one','n_to_one','n:1','* : 1','m:1'].includes(raw))return'many_to_one';if(['one_to_many','1:n','1:*'].includes(raw))return'many_to_one';return'';}
+function cardinalityOf(spec){const raw=String(spec?.cardinality||spec?.relation_cardinality||spec?.mapping_type||spec?.kind||'').toLowerCase().replace(/[\s-]/g,'_');if(['many_to_many','n_to_n','n:n','*:*','m:n'].includes(raw)||spec?.via_table||spec?.junction_table)return'many_to_many';if(['many_to_one','n_to_one','n:1','* : 1','m:1'].includes(raw))return'many_to_one';if(['one_to_many','1:n','1:*'].includes(raw))return'one_to_many';return'';}
 function render(job){
  const root=$('semanticMappingGraph');if(!root)return;
  const contract=job?.contract||{},schema=job?.draft?.schema||job?.schema||{};
@@ -49,30 +49,103 @@ function render(job){
    edges.push({from:fid,to:rid,label:role});
   }
  }
+ // Include schema object types even before any source table has been mapped.
+ for(const [cls,entity] of Object.entries(schema.entity_types||{})){
+  add(targetObjects,cls,{id:'class:'+cls,label:entity.label||cls,kind:'ontology-class',meta:{class:cls,technical_name:entity.technical_name||cls}});
+ }
  // Keep schema relations selectable even when their contract mapping is missing.
  for(const [rn,spec] of Object.entries(schema.relation_types||{})){
   add(targetRels,'relation:'+rn,{id:'relation:'+rn,label:(spec.label||rn),kind:'ontology-relation',
    meta:{relation:rn,source:spec.source,target:spec.target,table:spec.table,via_table:spec.via_table||spec.junction_table,cardinality:cardinalityOf(spec)}});
  }
- const W=1200,H=Math.max(560,Math.max(sourceTables.size+sourceFields.size,targetObjects.size+targetProps.size+targetRels.size)*74+80);
- graph.setAttribute('viewBox','0 0 '+W+' '+H);graph.setAttribute('height',String(Math.min(H,1100)));
- const left=[...sourceTables.values(),...sourceFields.values()],right=[...targetObjects.values(),...targetProps.values(),...targetRels.values()];
+ const columns=[
+  {title:'数据源对象',items:[...sourceTables.values()],x:145,color:'#f59e0b'},
+  {title:'源字段',items:[...sourceFields.values()],x:390,color:'#f59e0b'},
+  {title:'数据类型',items:[],x:625,color:'#94a3b8'},
+  {title:'映射规则',items:[],x:860,color:'#eab308'},
+  {title:'本体属性 / 关系',items:[...targetProps.values(),...targetRels.values()],x:1110,color:'#38bdf8'},
+  {title:'本体对象',items:[...targetObjects.values()],x:1370,color:'#3b82f6'}
+ ];
+ const allNodes=new Map(),drawEdges=[];
+ const pushNode=(col,node)=>{if(!allNodes.has(node.id)){allNodes.set(node.id,{...node,column:col});columns[col].items.push(allNodes.get(node.id))}return allNodes.get(node.id)};
+ // Existing source and ontology nodes are placed into their semantic columns.
+ columns[0].items.forEach(n=>allNodes.set(n.id,{...n,column:0}));
+ columns[1].items.forEach(n=>allNodes.set(n.id,{...n,column:1}));
+ columns[4].items.forEach(n=>allNodes.set(n.id,{...n,column:4}));
+ columns[5].items.forEach(n=>allNodes.set(n.id,{...n,column:5}));
+ // A field-level data type and mapping-rule node makes the mapping path explicit.
+ for(const field of [...sourceFields.values()]){
+  const typeId='type:'+field.id;
+  const profile=job.profiles?.[field.meta?.table]?.columns?.[field.meta?.column]||{};
+  const typeLabel=profile.dtype||field.meta?.data_type||'待识别';
+  pushNode(2,{id:typeId,label:typeLabel,kind:'data-type',meta:{data_type:typeLabel,table:field.meta?.table,column:field.meta?.column}});
+  drawEdges.push({from:field.id,to:typeId,style:'solid'});
+ }
+ const propertyEdges=edges.filter(e=>e.to.startsWith('property:'));
+ const relationEdges=edges.filter(e=>e.to.startsWith('relation:'));
+ for(const e of propertyEdges){
+  const ruleId='rule:'+e.from+':'+e.to;
+  pushNode(3,{id:ruleId,label:'字段映射',kind:'mapping-rule',meta:{rule:'字段映射',source:e.from,target:e.to}});
+  drawEdges.push({from:e.from,to:'type:'+e.from,style:'solid'},{from:'type:'+e.from,to:ruleId,style:'dashed'},{from:ruleId,to:e.to,style:'dashed'});
+ }
+ for(const e of relationEdges){
+  const ruleId='rule:'+e.from+':'+e.to;
+  const relation=targetRels.get(e.to.replace('relation:',''));
+  const relName=relation?.label||'关系';
+  pushNode(3,{id:ruleId,label:e.label||'关系映射',kind:'mapping-rule',meta:{rule:e.label||'关系映射',relation:relName}});
+  drawEdges.push({from:e.from,to:'type:'+e.from,style:'solid'},{from:'type:'+e.from,to:ruleId,style:'dashed'},{from:ruleId,to:e.to,style:'dashed'});
+ }
+ for(const e of edges.filter(e=>e.from.startsWith('table:')&&e.to.startsWith('class:'))){
+  const ruleId='rule:'+e.from+':'+e.to;
+  pushNode(3,{id:ruleId,label:'对象映射',kind:'mapping-rule',meta:{rule:'数据表 → 本体对象'}});
+  drawEdges.push({from:e.from,to:ruleId,style:'dashed'},{from:ruleId,to:e.to,style:'dashed'});
+ }
+ // Connect ontology properties to their owning object type and relations to their target object.
+ for(const p of targetProps.values()){
+  const cls=p.meta?.class;if(cls&&targetObjects.has(cls))drawEdges.push({from:p.id,to:'class:'+cls,style:'solid'});
+ }
+ for(const r of targetRels.values()){
+  const source=r.meta?.source,target=r.meta?.target;
+  if(source&&targetObjects.has(source))drawEdges.push({from:r.id,to:'class:'+source,style:'relation'});
+  if(target&&targetObjects.has(target))drawEdges.push({from:r.id,to:'class:'+target,style:'relation'});
+ }
+ // Table-to-field hierarchy is explicit and remains visible even before mappings exist.
+ for(const field of sourceFields.values()){
+  const table='table:'+field.meta?.table;
+  if(allNodes.has(table))drawEdges.push({from:table,to:field.id,style:'solid'});
+ }
+ const maxRows=Math.max(1,...columns.map(c=>c.items.length));
+ const H=Math.max(650,maxRows*76+150),W=1530;
+ graph.setAttribute('viewBox','0 0 '+W+' '+H);graph.setAttribute('height',String(Math.min(H,1250)));
  const positions=new Map();
- const place=(items,x)=>items.forEach((n,i)=>positions.set(n.id,{x:x,y:45+i*(H-90)/Math.max(1,items.length-1),node:n}));
- place(left,235);place(right,965);
- const edgeLayer=svg('g'),nodeLayer=svg('g');
- for(const e of edges){const a=positions.get(e.from),b=positions.get(e.to);if(!a||!b)continue;const mid=(a.x+b.x)/2;edgeLayer.append(svg('path',{d:'M '+(a.x+95)+' '+a.y+' C '+mid+' '+a.y+', '+mid+' '+b.y+', '+(b.x-105)+' '+b.y,fill:'none',stroke:'#8293a8','stroke-width':1.5,opacity:.75}))}
- const palette={'source-table':'#0f766e','source-field':'#0d9488','ontology-class':'#2563eb','ontology-property':'#4f46e5','ontology-relation':'#9333ea'};
+ columns.forEach((col,ci)=>{
+  col.items.forEach((n,i)=>positions.set(n.id,{x:col.x,y:105+i*(H-155)/Math.max(1,col.items.length-1),node:n,column:ci}));
+ });
+ const headerLayer=svg('g'),edgeLayer=svg('g'),nodeLayer=svg('g');
+ columns.forEach(col=>{
+  headerLayer.append(svg('text',{x:col.x,y:35,'text-anchor':'middle',fill:'#cbd5e1','font-size':15,'font-weight':700},col.title));
+  headerLayer.append(svg('line',{x1:col.x-88,y1:49,x2:col.x+88,y2:49,stroke:col.color,'stroke-width':2,opacity:.85}));
+  if(!col.items.length)headerLayer.append(svg('text',{x:col.x,y:88,'text-anchor':'middle',fill:'#64748b','font-size':11},'暂无节点'));
+ });
+ for(const e of drawEdges){
+  const a=positions.get(e.from),b=positions.get(e.to);if(!a||!b)continue;
+  const sx=a.x+91,tx=b.x-91,mid=(sx+tx)/2;
+  const stroke=e.style==='relation'?'#34d399':e.style==='dashed'?'#60a5fa':'#64748b';
+  edgeLayer.append(svg('path',{d:'M '+sx+' '+a.y+' C '+mid+' '+a.y+', '+mid+' '+b.y+', '+tx+' '+b.y,fill:'none',stroke,'stroke-width':e.style==='relation'?2.4:1.6,'stroke-dasharray':e.style==='dashed'?'7 6':'none',opacity:.78}));
+ }
+ const palette={'source-table':'#f59e0b','source-field':'#fb923c','data-type':'#94a3b8','mapping-rule':'#eab308','ontology-class':'#2563eb','ontology-property':'#38bdf8','ontology-relation':'#34d399'};
  for(const [id,p] of positions){
-  const n=p.node,g=svg('g',{class:'smg-node',tabindex:0,role:'button','data-node':id});
-  g.append(svg('rect',{x:p.x-94,y:p.y-22,width:188,height:44,rx:9,fill:palette[n.kind]+'18',stroke:palette[n.kind],'stroke-width':1.6}));
-  const label=String(n.label||id);g.append(svg('text',{x:p.x,y:p.y+4,'text-anchor':'middle',fill:'currentColor','font-size':12},label.length>24?label.slice(0,22)+'…':label));
+  const n=p.node,color=palette[n.kind]||'#64748b',g=svg('g',{class:'smg-node',tabindex:0,role:'button','data-node':id});
+  g.append(svg('rect',{x:p.x-91,y:p.y-23,width:182,height:46,rx:8,fill:'#111c2e',stroke:color,'stroke-width':1.6}));
+  g.append(svg('rect',{x:p.x-91,y:p.y-23,width:5,height:46,rx:3,fill:color,stroke:'none'}));
+  const label=String(n.label||id);g.append(svg('text',{x:p.x-78,y:p.y+4,'text-anchor':'start',fill:'#e2e8f0','font-size':12},label.length>22?label.slice(0,20)+'…':label));
+  g.append(svg('title',{},label+' · '+n.kind));
   g.addEventListener('click',()=>inspect(n,edges));
   g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();inspect(n,edges)}});
   nodeLayer.append(g);
  }
- graph.append(edgeLayer,nodeLayer);
- summary.textContent=sourceTables.size+' 张源表 · '+sourceFields.size+' 个源字段 · '+targetObjects.size+' 个本体对象 · '+targetProps.size+' 个属性映射 · '+targetRels.size+' 个关系映射';
+ graph.append(headerLayer,edgeLayer,nodeLayer);
+ summary.textContent=columns[0].items.length+' 个数据源对象 · '+columns[1].items.length+' 个源字段 · '+columns[2].items.length+' 个类型 · '+columns[3].items.length+' 条映射规则 · '+columns[4].items.length+' 个本体属性/关系 · '+columns[5].items.length+' 个本体对象';
  function inspect(n,allEdges){
   const connected=allEdges.filter(e=>e.from===n.id||e.to===n.id),m=n.meta||{};
   detail.innerHTML='<b>'+esc(n.label)+'</b><p class="smg-kind">'+esc(n.kind)+'</p><dl>'+
@@ -80,12 +153,15 @@ function render(job){
    '</dl><p class="smg-kind">关联映射：'+connected.length+'</p>';
   if(n.kind==='source-field'){
    const mapping=(job.contract?.mappings||[]).find(x=>String(x.table)===String(m.table));
-   const attrs=Object.entries(schema.attributes||{}).filter(([key,a])=>a.owner===mapping?.class);
+   const classes=Object.entries(schema.entity_types||{});
+   const currentClass=mapping?.class||'';
+   const attrsFor=cls=>Object.entries(schema.attributes||{}).filter(([key,a])=>a.owner===cls);
    const current=Object.entries(mapping?.attributes||{}).find(([key,col])=>String(col)===String(m.column))?.[0]||'';
-   if(mapping){
-    detail.insertAdjacentHTML('beforeend','<hr><p class="smg-kind">调整字段对应的本体属性（仅修改当前草稿）</p><label for="smgProperty">目标属性</label><select id="smgProperty" style="width:100%;margin:6px 0"><option value="">不映射</option>'+attrs.map(([key,a])=>'<option value="'+esc(key)+'" '+(key===current?'selected':'')+'>'+esc(a.label||key)+' · '+esc(key)+'</option>').join('')+'</select><button id="smgApply" class="primary" style="width:100%">应用到草稿</button>');
-    $('smgApply').onclick=()=>{if(window.applySemanticMappingEdit)window.applySemanticMappingEdit({table:m.table,column:m.column,property:$('smgProperty').value});};
-   }
+   const classControl=mapping?'<input type="hidden" id="smgTargetClass" value="'+esc(currentClass)+'">':'<label for="smgTargetClass">目标本体对象</label><select id="smgTargetClass" style="width:100%;margin:6px 0"><option value="">请选择对象类型</option>'+classes.map(([key,v])=>'<option value="'+esc(key)+'">'+esc(v.label||key)+'</option>').join('')+'</select>';
+   detail.insertAdjacentHTML('beforeend','<hr><p class="smg-kind">将源字段映射到本体属性；尚未建立对象映射的源表也可在此创建草稿。</p>'+classControl+'<label for="smgProperty">目标属性</label><select id="smgProperty" style="width:100%;margin:6px 0"><option value="">不映射</option>'+attrsFor(currentClass).map(([key,a])=>'<option value="'+esc(key)+'" '+(key===current?'selected':'')+'>'+esc(a.label||key)+' · '+esc(key)+'</option>').join('')+'</select><button id="smgApply" class="primary" style="width:100%">应用到草稿</button>');
+   const fillProperties=()=>{const cls=$('smgTargetClass').value,items=attrsFor(cls);$('smgProperty').innerHTML='<option value="">不映射</option>'+items.map(([key,a])=>'<option value="'+esc(key)+'">'+esc(a.label||key)+' · '+esc(key)+'</option>').join('')};
+   if(!mapping)$('smgTargetClass').onchange=fillProperties;
+   $('smgApply').onclick=()=>{if(window.applySemanticMappingEdit)window.applySemanticMappingEdit({table:m.table,column:m.column,property:$('smgProperty').value,class:$('smgTargetClass').value});};
   }else if(n.kind==='ontology-relation'){
    const spec=schema.relation_types?.[m.relation]||{},profiles=job.profiles||{},maps=job.contract?.mappings||[];
    const option=(value,label)=>'<option value="'+esc(value)+'">'+esc(label)+'</option>';
@@ -130,7 +206,8 @@ function render(job){
    }
   }
  }
- inspect(left.find(x=>x.kind==='source-field')||right.find(x=>x.kind==='ontology-relation')||left[0]||right[0],edges);
+ const first=[...sourceFields.values()][0]||[...targetRels.values()][0]||[...sourceTables.values()][0]||[...targetObjects.values()][0];
+ if(first)inspect(first,edges);else detail.textContent='暂无可选择的映射节点';
 }
 window.renderSemanticMappingGraph=render;
 })();

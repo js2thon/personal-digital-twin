@@ -6,8 +6,12 @@ on:
       - "backend/app/modules/ontology/**"
       - "backend/app/api/v1/ontology_modelling.py"
       - "backend/app/api/v1/ontology.py"
+      - "backend/app/api/v1/lineage.py"
+      - "backend/tests/test_fact_lineage_trace.py"
       - "backend/tests/test_rdf_quality.py"
       - "backend/tests/test_ontology_mapping_*.py"
+      - "backend/tests/test_mapping_contract.py"
+      - "backend/tests/test_ontology_mapping_impact.py"
       - "backend/tests/test_ontology_dataset_preview.py"
       - "backend/tests/test_database_connector.py"
       - "backend/tests/test_database_connector_integration.py"
@@ -118,6 +122,8 @@ jobs:
           python -m pytest -q
           tests/test_rdf_quality.py
           tests/test_ontology_mapping_pipeline.py
+          tests/test_mapping_contract.py
+          tests/test_ontology_mapping_impact.py
           tests/test_ontology_dataset_preview.py
           tests/test_ontology_mapping_execution.py
           tests/test_database_connector.py
@@ -129,6 +135,7 @@ jobs:
           tests/test_automodel_metadata_overrides.py
           tests/test_ontology_ingestion_batches.py
           tests/test_ontology_qa_provenance.py
+          tests/test_fact_lineage_trace.py
       - name: Run relation mapping contract regression tests
         env:
           APP_ENV: dev
