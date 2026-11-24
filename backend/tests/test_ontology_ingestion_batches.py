@@ -92,6 +92,7 @@ def test_empty_snapshot_cannot_reconcile_all_source_records(monkeypatch):
             return {"started_at": datetime(2026, 1, 1, tzinfo=timezone.utc)}
         return None
     monkeypatch.setattr(IB.db, "fetch_one", fetch_one)
+    monkeypatch.setattr(IB.db, "execute", lambda *a, **k: None)
     with pytest.raises(ValueError, match="空快照"):
         IB.execute_approved_dataset_stream(
             tenant_id="tenant-a", mapping_set_id="mapping-1",
