@@ -810,3 +810,29 @@ def selftest(request: Request):
         "node_types": len(NS.WORKFLOW_ORDER),
         "sample": {"complete": S.run_sample()["report"]["complete"]},
     }
+
+
+class BusinessObjectSpecIn(BaseModel):
+    """业务对象图分析与校验；只读纯计算，不写生产本体或映射。"""
+    spec: dict
+
+
+@router.post("/ontology/modelling/business-objects/analyze")
+def business_objects_analyze(payload: BusinessObjectSpecIn):
+    """从既有建模 spec 投影业务对象、业务关系与待确认语义。"""
+    from app.modules.ontology.modelling.business_objects import analyze_business_objects
+    return analyze_business_objects(payload.spec)
+
+
+@router.post("/ontology/modelling/business-objects/validate")
+def business_objects_validate(payload: BusinessObjectSpecIn):
+    """校验业务对象身份、关系端点和业务语义。"""
+    from app.modules.ontology.modelling.business_objects import analyze_business_objects
+    report = analyze_business_objects(payload.spec)
+    return {
+        "valid": report["valid"],
+        "summary": report["summary"],
+        "issues": report["issues"],
+        "blocking": [x for x in report["issues"] if x["level"] == "error"],
+        "warnings": [x for x in report["issues"] if x["level"] == "warning"],
+    }
