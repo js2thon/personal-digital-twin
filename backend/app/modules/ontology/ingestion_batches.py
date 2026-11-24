@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
 from typing import Iterable, Iterator
 
 from app.db import session as db
@@ -137,7 +136,12 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
     if not mapping_set or mapping_set.get("status") != "approved":
         raise PermissionError("只有当前租户已审核的映射版本可以执行")
     mapping_name = str(mapping_set.get("name") or "")
-    snapshot_started = datetime.now(timezone.utc)
+    snapshot_started = None
+    if reconcile_missing:
+        started = db.fetch_one("SELECT clock_timestamp() AS started_at")
+        if not started or not started.get("started_at"):
+            raise RuntimeError("无法读取目标数据库时间，拒绝执行缺失记录对账")
+        snapshot_started = started["started_at"]
     base_sha = source_sha256 or _digest({"source": source_name, "snapshot": snapshot_id})
     manifest = db.fetch_one(
         "SELECT source_sha256, batch_count, status FROM ontology.dataset_ingestion_snapshots "
