@@ -45,6 +45,9 @@ def test_snapshot_checkpoints_and_reconciliation_are_namespace_scoped(monkeypatc
 
     def fetch_one(sql, params=None):
         statements.append(("fetch", sql, params or {}))
+        if "clock_timestamp" in sql:
+            from datetime import datetime, timezone
+            return {"started_at": datetime(2026, 1, 1, tzinfo=timezone.utc)}
         if "WITH stale AS" in sql:
             return {"n": 0}
         if "FROM ontology.dataset_ingestion_snapshots" in sql:
@@ -83,7 +86,12 @@ def test_empty_snapshot_cannot_reconcile_all_source_records(monkeypatch):
     monkeypatch.setattr(IB.mapping_registry, "get", lambda *a, **k: {
         "status": "approved", "name": "customer-map", "checksum": "sum-1"
     })
-    monkeypatch.setattr(IB.db, "fetch_one", lambda *a, **k: None)
+    def fetch_one(sql, params=None):
+        if "clock_timestamp" in sql:
+            from datetime import datetime, timezone
+            return {"started_at": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+        return None
+    monkeypatch.setattr(IB.db, "fetch_one", fetch_one)
     with pytest.raises(ValueError, match="空快照"):
         IB.execute_approved_dataset_stream(
             tenant_id="tenant-a", mapping_set_id="mapping-1",
@@ -133,6 +141,9 @@ def test_completed_snapshot_replay_rejects_truncated_batch_tail(monkeypatch):
     })
 
     def fetch_one(sql, params=None):
+        if "clock_timestamp" in sql:
+            from datetime import datetime, timezone
+            return {"started_at": datetime(2026, 1, 1, tzinfo=timezone.utc)}
         if "FROM ontology.dataset_ingestion_snapshots" in sql:
             return {"source_sha256": source_sha, "batch_count": 2, "status": "succeeded"}
         if "SELECT batch_sha256" in sql:
