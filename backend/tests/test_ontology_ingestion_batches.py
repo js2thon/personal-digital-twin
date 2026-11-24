@@ -47,6 +47,8 @@ def test_snapshot_checkpoints_and_reconciliation_are_namespace_scoped(monkeypatc
         statements.append(("fetch", sql, params or {}))
         if "WITH stale AS" in sql:
             return {"n": 0}
+        if "FROM ontology.dataset_ingestion_snapshots" in sql:
+            return None
         if "SELECT batch_sha256" in sql:
             return None
         raise AssertionError(f"unexpected query: {sql}")
@@ -115,3 +117,97 @@ def test_database_snapshot_passes_namespaced_source_to_batch_pipeline(monkeypatc
     assert captured["source_namespace"] == "db:crm:public.customers"
     assert captured["source_name"] == "db:crm:public.customers"
     assert captured["snapshot_id"] == "snapshot-1"
+
+
+
+def test_completed_snapshot_replay_rejects_truncated_batch_tail(monkeypatch):
+    from app.modules.ontology import ingestion_batches as IB
+
+    rows = [{"id": "C-1"}]
+    source_sha = "source-sha"
+    batch_sha = IB._digest({"base": source_sha, "index": 0, "rows": rows})
+    statements = []
+    monkeypatch.setattr(IB, "ensure_schema", lambda: None)
+    monkeypatch.setattr(IB.mapping_registry, "get", lambda *a, **k: {
+        "status": "approved", "name": "customer-map", "checksum": "sum-1"
+    })
+
+    def fetch_one(sql, params=None):
+        if "FROM ontology.dataset_ingestion_snapshots" in sql:
+            return {"source_sha256": source_sha, "batch_count": 2, "status": "succeeded"}
+        if "SELECT batch_sha256" in sql:
+            return {"batch_sha256": batch_sha, "status": "succeeded", "run_id": "run-1"}
+        raise AssertionError(f"unexpected query: {sql}")
+
+    monkeypatch.setattr(IB.db, "fetch_one", fetch_one)
+    monkeypatch.setattr(IB.db, "execute",
+                        lambda sql, params=None: statements.append((sql, params or {})))
+    monkeypatch.setattr(IB, "execute_approved_dataset",
+                        lambda **kwargs: (_ for _ in ()).throw(AssertionError("completed batch must be skipped")))
+
+    with pytest.raises(ValueError, match="批次数量发生变化"):
+        IB.execute_approved_dataset_stream(
+            tenant_id="tenant-a", mapping_set_id="mapping-1", rows=rows,
+            source_name="crm customers", snapshot_id="snapshot-1", source_sha256=source_sha,
+            actor="tester", sync_mode="upsert", source_id_column="id", batch_size=1,
+            reconcile_missing=True, source_namespace="db:crm:public.customers",
+        )
+
+    assert not any("WITH stale AS" in sql for sql, _ in statements)
+
+
+def test_completed_snapshot_replay_rejects_added_batch_before_ingesting_it(monkeypatch):
+    from app.modules.ontology import ingestion_batches as IB
+
+    rows = [{"id": "C-1"}, {"id": "C-2"}]
+    source_sha = "source-sha"
+    first_batch_sha = IB._digest({"base": source_sha, "index": 0, "rows": [rows[0]]})
+    checkpoint_reads = []
+    batch_executes = []
+    monkeypatch.setattr(IB, "ensure_schema", lambda: None)
+    monkeypatch.setattr(IB.mapping_registry, "get", lambda *a, **k: {
+        "status": "approved", "name": "customer-map", "checksum": "sum-1"
+    })
+
+    def fetch_one(sql, params=None):
+        if "FROM ontology.dataset_ingestion_snapshots" in sql:
+            return {"source_sha256": source_sha, "batch_count": 1, "status": "succeeded"}
+        if "SELECT batch_sha256" in sql:
+            checkpoint_reads.append(params["i"])
+            return {"batch_sha256": first_batch_sha, "status": "succeeded", "run_id": "run-1"}
+        raise AssertionError(f"unexpected query: {sql}")
+
+    monkeypatch.setattr(IB.db, "fetch_one", fetch_one)
+    monkeypatch.setattr(IB.db, "execute", lambda *a, **k: None)
+    monkeypatch.setattr(IB, "execute_approved_dataset",
+                        lambda **kwargs: batch_executes.append(kwargs))
+
+    with pytest.raises(ValueError, match="批次数量发生变化"):
+        IB.execute_approved_dataset_stream(
+            tenant_id="tenant-a", mapping_set_id="mapping-1", rows=rows,
+            source_name="crm customers", snapshot_id="snapshot-1", source_sha256=source_sha,
+            actor="tester", sync_mode="upsert", source_id_column="id", batch_size=1,
+            source_namespace="db:crm:public.customers",
+        )
+
+    assert checkpoint_reads == [0]
+    assert batch_executes == []
+
+
+def test_completed_snapshot_replay_rejects_changed_source_fingerprint(monkeypatch):
+    from app.modules.ontology import ingestion_batches as IB
+
+    monkeypatch.setattr(IB, "ensure_schema", lambda: None)
+    monkeypatch.setattr(IB.mapping_registry, "get", lambda *a, **k: {
+        "status": "approved", "name": "customer-map", "checksum": "sum-1"
+    })
+    monkeypatch.setattr(IB.db, "fetch_one", lambda *a, **k: {
+        "source_sha256": "old-source-sha", "batch_count": 1, "status": "succeeded"
+    })
+    with pytest.raises(ValueError, match="源快照指纹发生变化"):
+        IB.execute_approved_dataset_stream(
+            tenant_id="tenant-a", mapping_set_id="mapping-1", rows=[{"id": "C-1"}],
+            source_name="crm customers", snapshot_id="snapshot-1", source_sha256="new-source-sha",
+            actor="tester", sync_mode="upsert", source_id_column="id",
+            source_namespace="db:crm:public.customers",
+        )
