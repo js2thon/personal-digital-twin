@@ -192,3 +192,31 @@ def test_manual_technical_name_override_is_audited():
     }], actor="reviewer-1")
     assert job["draft"]["schema"]["entity_types"]["Person"]["technical_name"] == "EmployeePerson"
     assert job["change_set"][-1]["actor"] == "reviewer-1"
+
+
+
+def test_release_gate_rejects_empty_or_malformed_cq_result():
+    job = _valid_job()
+    job["cq_results"] = {}
+    report = release_gate.evaluate(job, require_cq=True)
+    assert report["ready"] is False
+    assert "CQ_INVALID_RESULT" in {x["code"] for x in report["blockers"]}
+
+    job["cq_results"] = {"accuracy": "0.99", "failed": 0}
+    report = release_gate.evaluate(job, require_cq=True)
+    assert report["ready"] is False
+    assert "CQ_INVALID_RESULT" in {x["code"] for x in report["blockers"]}
+
+
+def test_release_gate_derives_cq_metrics_from_items_and_checks_summary_consistency():
+    job = _valid_job()
+    job["cq_results"] = {"items": [{"pass": True}, {"pass": True}]}
+    assert release_gate.evaluate(job, require_cq=True)["ready"] is True
+
+    job["cq_results"] = {
+        "failed": 0, "accuracy": 1.0,
+        "items": [{"pass": True}, {"pass": False}],
+    }
+    report = release_gate.evaluate(job, require_cq=True)
+    assert report["ready"] is False
+    assert "CQ_INVALID_RESULT" in {x["code"] for x in report["blockers"]}
