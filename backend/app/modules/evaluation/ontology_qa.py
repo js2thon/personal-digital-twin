@@ -11,6 +11,7 @@ from typing import Any
 
 from app.db import session as db
 from app.modules.ontology.modelling import ontology_qa
+from app.modules.evaluation.attribution import attribute
 
 
 def _json(value: Any) -> str:
@@ -55,6 +56,15 @@ def ensure_schema() -> None:
         "CREATE INDEX IF NOT EXISTS ix_eval_questions_suite ON ontology.eval_questions(tenant_id, suite_id, active)",
         "CREATE INDEX IF NOT EXISTS ix_eval_runs_tenant ON ontology.eval_runs(tenant_id, created_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_eval_results_run ON ontology.eval_results(tenant_id, run_id)",
+        """CREATE TABLE IF NOT EXISTS ontology.eval_failures (
+            id UUID PRIMARY KEY, run_id UUID NOT NULL REFERENCES ontology.eval_runs(id) ON DELETE CASCADE,
+            tenant_id VARCHAR(128) NOT NULL, question_id UUID NOT NULL,
+            primary_code VARCHAR(20) NOT NULL, secondary_codes JSONB NOT NULL DEFAULT '[]'::jsonb,
+            confidence DOUBLE PRECISION NOT NULL, evidence JSONB NOT NULL DEFAULT '[]'::jsonb,
+            status VARCHAR(20) NOT NULL DEFAULT 'open',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE (run_id, question_id))""",
+        "CREATE INDEX IF NOT EXISTS ix_eval_failures_tenant_code ON ontology.eval_failures(tenant_id, primary_code, created_at DESC)",
     ]
     for statement in statements:
         db.execute(statement)
@@ -119,7 +129,8 @@ def _actual(out: dict) -> dict:
     result = out.get("result") or {}
     return {"ok": bool(out.get("ok")), "kind": result.get("kind") or "SELECT",
             "vars": result.get("vars") or [], "rows": result.get("rows") or [],
-            "boolean": result.get("boolean"), "answer": out.get("answer") or ""}
+            "boolean": result.get("boolean"), "answer": out.get("answer") or "",
+            "intent": out.get("intent") or ""}
 
 
 def _cell(row: Any) -> list:
@@ -180,7 +191,8 @@ def run_suite(tenant_id: str, actor: str, suite_id: str, spec: dict,
         expect = q["expect"] if isinstance(q["expect"], dict) else json.loads(q["expect"])
         passed = bool(out.get("ok")) and _compare(expect, actual)
         results.append({
-            "question_id": q["id"], "question": q["question"], "passed": passed,
+            "question_id": q["id"], "question": q["question"],
+            "expected_intent": q.get("intent"), "passed": passed,
             "latency_ms": latency, "engine": out.get("engine"),
             "sparql": out.get("sparql") or "", "rows": actual["rows"],
             "answer_text": actual["answer"], "attempts": out.get("attempts") or [],
@@ -205,9 +217,12 @@ def run_suite(tenant_id: str, actor: str, suite_id: str, spec: dict,
         "split": suite["split"],
     }
     run_id = str(uuid.uuid4())
+    failures = [(r, attribute(r)) for r in results if not r["passed"]]
+    attributed = sum(item["primary_code"] != "unknown" for _, item in failures)
     metrics = {"total": total, "passed": passed, "failed": total - passed,
                "accuracy": round(passed / total, 6), "latency_ms": elapsed,
-               "executable_rate": round(sum(bool(r["actual"]["ok"] and r["sparql"]) for r in results) / total, 6)}
+               "executable_rate": round(sum(bool(r["actual"]["ok"] and r["sparql"]) for r in results) / total, 6),
+               "attribution_coverage": round(attributed / len(failures), 6) if failures else 1.0}
     with db.transaction():
         db.execute(
             """INSERT INTO ontology.eval_runs(id,tenant_id,suite_id,snapshot,metrics,status,created_by)
@@ -229,6 +244,17 @@ def run_suite(tenant_id: str, actor: str, suite_id: str, spec: dict,
                  "rows": _json(r["rows"]), "answer": r["answer_text"],
                  "attempts": _json(r["attempts"]), "expected": _json(r["expected"]),
                  "actual": _json(r["actual"]), "error": r["error"]})
+        for r, diagnosis in failures:
+            db.execute(
+                """INSERT INTO ontology.eval_failures
+                   (id,run_id,tenant_id,question_id,primary_code,secondary_codes,confidence,evidence)
+                   VALUES (CAST(:id AS uuid),CAST(:run AS uuid),:tenant,CAST(:question AS uuid),
+                   :code,CAST(:secondary AS jsonb),:confidence,CAST(:evidence AS jsonb))""",
+                {"id": str(uuid.uuid4()), "run": run_id, "tenant": tenant_id,
+                 "question": r["question_id"], "code": diagnosis["primary_code"],
+                 "secondary": _json(diagnosis["secondary_codes"]),
+                 "confidence": diagnosis["confidence"],
+                 "evidence": _json(diagnosis["evidence"])})
     return {"run_id": run_id, "suite": suite, "snapshot": snap,
             "metrics": metrics, "results": results,
             "created_at": datetime.now(timezone.utc).isoformat()}
@@ -285,3 +311,34 @@ def get_suite(tenant_id: str, suite_id: str) -> dict:
              AND tenant_id=:tenant ORDER BY created_at,id""",
         {"id": suite_id, "tenant": tenant_id})
     return {"suite": suite, "questions": questions}
+
+
+def list_failures(tenant_id: str, limit: int = 100,
+                  primary_code: str | None = None) -> list[dict]:
+    ensure_schema()
+    limit = max(1, min(int(limit), 500))
+    if primary_code and primary_code not in {"F1", "F2", "F3", "F4", "F5", "F6", "F7", "unknown"}:
+        raise ValueError("无效的 failure code")
+    return db.fetch_all(
+        """SELECT f.id::text AS failure_id,f.run_id::text AS run_id,
+                  f.question_id::text AS question_id,q.question,
+                  f.primary_code,f.secondary_codes,f.confidence,f.evidence,
+                  f.status,f.created_at
+           FROM ontology.eval_failures f
+           LEFT JOIN ontology.eval_questions q
+             ON q.id=f.question_id AND q.tenant_id=f.tenant_id
+           WHERE f.tenant_id=:tenant
+             AND (CAST(:code AS VARCHAR) IS NULL OR f.primary_code=:code)
+           ORDER BY f.created_at DESC LIMIT :limit""",
+        {"tenant": tenant_id, "code": primary_code, "limit": limit})
+
+
+def failure_summary(tenant_id: str) -> dict:
+    ensure_schema()
+    rows = db.fetch_all(
+        """SELECT primary_code,count(*)::int AS count,
+                  round(avg(confidence)::numeric,3)::float AS avg_confidence
+           FROM ontology.eval_failures WHERE tenant_id=:tenant
+           GROUP BY primary_code ORDER BY count DESC,primary_code""",
+        {"tenant": tenant_id})
+    return {"total": sum(row["count"] for row in rows), "by_code": rows}
