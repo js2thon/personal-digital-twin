@@ -7,12 +7,13 @@
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app.modules.evaluation import dataset as ds
 from app.modules.evaluation import service as ev
+from app.modules.evaluation import ontology_qa as oq_eval
 
 router = APIRouter()
 
@@ -112,3 +113,60 @@ def evaluation_baseline(body: BaselineIn):
 def evaluation_history():
     return {"runs": _call(ev.report_history),
             "baseline": _call(ev.load_baseline)}
+
+
+class OntologySuiteIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    version: str = Field(default="1", max_length=64)
+    split: str = Field(default="gold")
+    questions: list[dict] = Field(min_length=1, max_length=500)
+
+
+class OntologyRunIn(BaseModel):
+    spec: dict
+    data: dict | None = None
+    snapshot: dict = Field(default_factory=dict)
+    use_llm: bool = True
+
+
+def _tenant_actor(request: Request) -> tuple[str, str]:
+    principal = getattr(request.state, "principal", {}) or {}
+    return (str(principal.get("tenant_id") or "default"),
+            str(principal.get("user_id") or "anonymous"))
+
+
+@router.post("/evaluation/ontology/suites")
+def ontology_eval_suite_create(body: OntologySuiteIn, request: Request):
+    tenant, actor = _tenant_actor(request)
+    return _call(oq_eval.create_suite, tenant, actor, body.model_dump())
+
+
+@router.get("/evaluation/ontology/suites")
+def ontology_eval_suites(request: Request):
+    tenant, _ = _tenant_actor(request)
+    return {"items": _call(oq_eval.list_suites, tenant)}
+
+
+@router.get("/evaluation/ontology/suites/{suite_id}")
+def ontology_eval_suite_detail(suite_id: str, request: Request):
+    tenant, _ = _tenant_actor(request)
+    return _call(oq_eval.get_suite, tenant, suite_id)
+
+
+@router.post("/evaluation/ontology/suites/{suite_id}/run")
+def ontology_eval_run(suite_id: str, body: OntologyRunIn, request: Request):
+    tenant, actor = _tenant_actor(request)
+    return _call(oq_eval.run_suite, tenant, actor, suite_id, body.spec,
+                  body.data, body.snapshot, body.use_llm)
+
+
+@router.get("/evaluation/ontology/runs")
+def ontology_eval_runs(request: Request, limit: int = 30):
+    tenant, _ = _tenant_actor(request)
+    return {"items": _call(oq_eval.list_runs, tenant, limit)}
+
+
+@router.get("/evaluation/ontology/runs/{run_id}")
+def ontology_eval_run_detail(run_id: str, request: Request):
+    tenant, _ = _tenant_actor(request)
+    return _call(oq_eval.get_run, tenant, run_id)
