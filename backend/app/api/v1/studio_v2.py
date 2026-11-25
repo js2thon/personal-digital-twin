@@ -685,6 +685,10 @@ class SchemaEditOp(BaseModel):
     source: str = ""
     target: str = ""
     target_property: str = ""
+    cardinality: str = ""
+    junction_table: str = ""
+    junction_source_column: str = ""
+    junction_target_column: str = ""
 
 
 class SchemaEditRequest(BaseModel):
@@ -871,8 +875,20 @@ def schema_edit(session_id: str, body: SchemaEditRequest) -> Dict[str, Any]:
                 raise HTTPException(400, f"起点属性不存在：{o.source}.{o.source_property}")
             if o.target_property and o.target_property not in onto.object_types[o.target].get("properties", []):
                 raise HTTPException(400, f"终点属性不存在：{o.target}.{o.target_property}")
-            onto.add_link_type(name, o.source, o.target, o.description,
-                               source_property=o.source_property, target_property=o.target_property)
+            cardinality = o.cardinality or "many_to_one"
+            if cardinality not in {"one_to_one", "one_to_many", "many_to_one", "many_to_many"}:
+                raise HTTPException(400, f"不支持的关系基数：{cardinality}")
+            if cardinality == "many_to_many" and not (
+                o.junction_table and o.junction_source_column and o.junction_target_column
+            ):
+                raise HTTPException(400, "多对多关系必须配置关联表及两端外键字段")
+            onto.add_link_type(
+                name, o.source, o.target, o.description,
+                source_property=o.source_property, target_property=o.target_property,
+                cardinality=cardinality, junction_table=o.junction_table,
+                junction_source_column=o.junction_source_column,
+                junction_target_column=o.junction_target_column,
+            )
             done.append(f"新增关系 {name}")
         elif o.op == "update_relation":
             current = onto.link_types.get(o.ref)
@@ -896,6 +912,10 @@ def schema_edit(session_id: str, body: SchemaEditRequest) -> Dict[str, Any]:
                 new_name=o.new_name,
                 clear_source_property=o.clear_source_property,
                 clear_target_property=o.clear_target_property,
+                cardinality=o.cardinality,
+                junction_table=o.junction_table,
+                junction_source_column=o.junction_source_column,
+                junction_target_column=o.junction_target_column,
             ):
                 done.append(f"更新关系 {o.new_name or o.ref}")
         elif o.op == "delete_relation":
