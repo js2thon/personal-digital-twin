@@ -35,19 +35,8 @@ def run_task(task_type: str | None, initial_state: dict) -> dict:
     task = task_type or route_task(initial_state.get("input_message", ""))
     initial_state.setdefault("task_type", task)
     tr.start(initial_state)
-    # 认知中心 → 问答/回复/决策：把已确认的认知画像注入三张图，
-    # 此前各图只读 state，无人写入，Prompt 里恒为「个人认知画像：{}」。
-    if "cognitive_profile" not in initial_state:
-        try:
-            from app.db import session as db
-
-            row = db.fetch_one(
-                "SELECT profile FROM cognition.profile_versions "
-                "WHERE review_status = 'confirmed' ORDER BY version DESC LIMIT 1"
-            )
-            initial_state["cognitive_profile"] = (row or {}).get("profile") or {}
-        except Exception:  # noqa: BLE001  数据库不可用时仍可运行
-            initial_state["cognitive_profile"] = {}
+    # 认知模块已下线：不再注入 cognitive_profile
+    initial_state.setdefault("cognitive_profile", {})
     graph = _task_graphs.get(task, build_qa_graph)()
     final: TwinState = graph.invoke(initial_state)
     final.setdefault("task_type", task)

@@ -457,3 +457,47 @@ def test_mapping_contract_api_save_failure_restores_previous_draft(monkeypatch):
     assert exc.value.status_code == 500
     assert job["contract"] == original_contract
     assert job["materialized"] == original_materialized
+
+
+
+def test_review_api_exposes_relation_retarget_action(monkeypatch):
+    from app.api.v1 import automodel as api
+
+    job = {
+        "id": "job-review-retarget",
+        "status": "needs_review",
+        "draft": {
+            "schema": {
+                "entity_types": {"Person": {}, "Department": {}},
+                "relation_types": {
+                    "works_at": {"source": "Person", "target": "Department"}
+                },
+                "attributes": {},
+            },
+            "class_map": {},
+            "review": [],
+        },
+    }
+    monkeypatch.setattr(api, "_tenant", lambda request: ("tenant-a", "reviewer-1"))
+    monkeypatch.setattr(api, "_job", lambda job_id, request: job)
+    monkeypatch.setattr(api, "_source", lambda job_id: None)
+    monkeypatch.setattr(api.pipeline, "rebuild", lambda *args: None)
+    monkeypatch.setattr(api.jobs, "save", lambda *args: None)
+    monkeypatch.setattr(api, "_snap", lambda *args: None)
+    monkeypatch.setattr(api, "_summary", lambda current: current)
+
+    result = api.review(
+        "job-review-retarget",
+        api.ReviewIn(decisions=[{
+            "kind": "relation", "ref": "works_at", "action": "retarget",
+            "new_source": "Department", "new_target": "Person",
+        }]),
+        request=object(),
+    )
+
+    relation = result["draft"]["schema"]["relation_types"]["works_at"]
+    assert relation["source"] == "Department"
+    assert relation["target"] == "Person"
+    assert result["change_set"][-1]["actor"] == "reviewer-1"
+    assert result["change_set"][-1]["before"]["source"] == "Person"
+    assert result["change_set"][-1]["after"]["target"] == "Person"

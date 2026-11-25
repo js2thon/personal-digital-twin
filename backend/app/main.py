@@ -8,7 +8,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
 
 from app.api.v1 import (  # noqa: F401
-    cognition,
     cq_v2,
     documents,
     evaluation,
@@ -344,7 +343,6 @@ API = "/api/v1"
 app.include_router(sources.router, prefix=API, tags=["ingestion"])
 app.include_router(documents.router, prefix=API, tags=["ingestion"])
 app.include_router(knowledge.router, prefix=API, tags=["knowledge"])
-app.include_router(cognition.router, prefix=API, tags=["cognition"])
 app.include_router(ontology.router, prefix=API, tags=["ontology"])
 app.include_router(twin.router, prefix=API, tags=["twin"])
 app.include_router(workflow.router, prefix=API, tags=["workflow"])

@@ -2058,7 +2058,7 @@
   <div class="side-brand">
     <span class="side-logo"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="8" width="14" height="10" rx="2"/><circle cx="9.5" cy="13" r="1"/><circle cx="14.5" cy="13" r="1"/><path d="M12 8V5"/><circle cx="12" cy="4" r="1"/></svg></span>
     <h1>我的<span class="brand-txt">数字分身</span></h1>
-    <span class="sub">基于个人知识和认知模型的智能助手 · 私有化部署</span>
+    <span class="sub">基于个人知识的智能助手 · 私有化部署</span>
     <span class="hint side-status" id="svcStatus" style="margin:0">● 服务检测中…</span>
   </div>
   <button class="tab active" data-v="ops" style="--ic:var(--ax-info)" title="数字员工运营">
@@ -2082,11 +2082,6 @@
   <button class="tab" data-v="studio" style="--ic:var(--ax-info)" title="本体工作台（上传数据 → 自动建模 → Schema/实例图谱 → 关系分析 → 质量检测 → Action → 指标 → 基于本体的智能问答 → JSON/OWL 导出）">
     <span class="ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M11 7 6 16"/><path d="m13 7 5 9"/><path d="M7.2 18h9.6"/></svg></span>
     <span class="lbl">本体工作台</span><span class="tab-badge on" style="background:#0077b6" title="Ontology Studio V2">V2</span></button>
-  <div class="nav-group">认知与记忆</div>
-  <button class="tab" data-v="cognition" style="--ic:var(--ax-info)" title="认知">
-    <span class="ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1.2 2.1h4.6c.2-.9.6-1.6 1.2-2.1A6 6 0 0 0 12 3Z"/></svg></span>
-    <span class="lbl">认知</span><span class="tab-badge" id="badge-cognition"></span></button>
-
   <div class="nav-group">交互与决策</div>
   <button class="tab" data-v="twin" style="--ic:var(--ax-info)" title="智能问答">
     <span class="ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="8" width="14" height="10" rx="2"/><circle cx="9.5" cy="13" r="1"/><circle cx="14.5" cy="13" r="1"/><path d="M12 8V5"/><circle cx="12" cy="4" r="1"/></svg></span>
@@ -2227,7 +2222,7 @@
     </div>
     <div class="card">
       <h2><span id="factTitle">已发布事实</span>
-        <span class="hint" id="factTitleHint" style="margin:0">（由候选知识审核发布，同时写入个人记忆与认知候选）</span>
+        <span class="hint" id="factTitleHint" style="margin:0">（由候选知识审核发布，同时写入个人记忆）</span>
         <select id="factStatusSel" style="float:right;width:auto;padding:4px 8px;font-size:13px"
                 onchange="setFactStatus(this.value)">
           <option value="active">已发布事实</option>
@@ -2741,26 +2736,6 @@
             style="width:100%;height:calc(100vh - 24px);border:1px solid var(--ax-border);border-radius:var(--radius-container);background:var(--ax-bg);display:block"></iframe>
   </section>
 
-  <!-- 04 认知中心 -->
-  <section class="view" id="v-cognition">
-    <div class="card">
-      <h2>当前认知画像（版本 <span id="profileVersion">-</span>）</h2>
-      <pre id="profileJson" style="font-size:13px">加载中…</pre>
-      <p class="hint" id="profileEvidence"></p>
-      <p class="hint">已确认画像会注入问答、回复起草与决策分析三张图，作为个人偏好与判断依据。</p>
-    </div>
-    <div class="card">
-      <h2>待确认认知 <span class="hint" style="margin:0">（来源：知识库已审核通过的事实）</span></h2>
-      <div class="row" style="margin-bottom:10px">
-        <span class="hint" style="margin:0;flex:1">审核事实会自动生成候选；也可手动补齐历史数据</span>
-        <button class="ghost" onclick="generateProposals(this)">从已确认事实生成候选</button>
-      </div>
-      <table id="proposalsTable"><thead><tr>
-        <th>类型</th><th>认知结论</th><th>来源事实</th><th>证据数</th><th>操作</th>
-      </tr></thead><tbody></tbody></table>
-      <div class="row" id="pg_proposals" style="margin-top:10px;align-items:center;gap:8px"></div>
-    </div>
-  </section>
 
   <!-- 05 决策中心 -->
   <section class="view" id="v-decision">
@@ -2878,7 +2853,7 @@
         </div>
       </div>
       <div class="prod-merge">
-        <span class="grow">三条入径最终都写入 <b>knowledge.facts</b>；下游的实体画像、问答、决策与认知共用这一个事实底座。</span>
+        <span class="grow">三条入径最终都写入 <b>knowledge.facts</b>；下游的实体画像、问答、决策共用这一个事实底座。</span>
         <span class="hint" id="prodStats" style="margin:0">正在统计…</span>
         <button class="ghost" onclick="openTab('knowledge')">去知识库审核 / 看事实</button>
       </div>
@@ -3320,13 +3295,13 @@ async function resolve(id, action) {
   loadApprovals(); loadDecisions(); refreshBadges();
 }
 
-// 知识库：候选知识 → 证据/来源 → 审核 → 事实（并联动记忆与认知）
+// 知识库：候选知识 → 证据/来源 → 审核 → 事实（并联动记忆）
 // 后端默认 LIMIT 曾是 50/100，审核掉一条会由后面的行补位，分页条永远显示
 // 「共 50 / 共 100 条」，看起来就像没生效。这里显式拉全量再在浏览器端真分页。
 // active=已发布 / contested=争议通道 / withdrawn=已撤销（软删留痕，仍可查）
 const FACT_VIEWS = {
   active: { title: "已发布事实",
-            hint: "（由候选知识审核发布，同时写入个人记忆与认知候选）",
+            hint: "（由候选知识审核发布，同时写入个人记忆）",
             empty: "暂无已发布事实" },
   contested: { title: "争议事实",
                hint: "（与本人确认值冲突，需到「本体」裁决）",
@@ -16162,45 +16137,6 @@ function renderRelations() {
     , "<tr><td colspan=6>暂无关系</td></tr>");
 }
 
-// 认知中心：候选来自已确认事实，确认后画像版本注入问答/决策
-async function loadCognition() {
-  const p = await api("/cognition/profile");
-  document.getElementById("profileVersion").textContent = p.version ?? "-";
-  document.getElementById("profileJson").textContent = JSON.stringify(p.profile || {}, null, 2);
-  document.getElementById("profileEvidence").textContent = p.version
-    ? "画像依据：" + JSON.stringify(p.evidence_refs || {})
-    : "尚无已确认画像；确认认知候选后，画像会进入问答与决策推理。";
-  const props = await api("/cognition/proposals");
-  _lRows.proposals = props.error ? [] : props;
-  renderProposals();
-}
-function renderProposals() {
-  renderPaged("proposals", "#proposalsTable tbody", "pg_proposals", _lRows.proposals || [], x => {
-    const pr = x.proposal || {};
-    const claimId = pr.claim_id || (pr.claim_ids || [])[0] || "";
-    return `<tr><td>${esc(x.profile_type)}</td>
-      <td>${esc(pr.statement || JSON.stringify(pr).slice(0, 80))}</td>
-      <td>${claimId ? `<button class="linkbtn" onclick="showEvidences('${claimId}')">查看来源事实</button>` : "手工录入"}</td>
-      <td>${x.evidence_count || 0}</td>
-      <td><button class="ghost" onclick="approveProposal('${x.id}')">确认</button></td></tr>`;
-  }, "<tr><td colspan=5>暂无待确认认知，可点上方按钮从已确认事实生成</td></tr>");
-}
-async function approveProposal(id) {
-  const r = await post(`/cognition/proposals/${id}/approve`);
-  if (r.error) return showToast("确认失败：" + r.error, "err", 6500);
-  showToast("已确认该认知候选，画像已更新", "ok");
-  loadCognition(); refreshBadges();
-}
-async function generateProposals(btn) {
-  btn.disabled = true; btn.textContent = "生成中…";
-  try {
-    const r = await post("/cognition/proposals/generate");
-    if (r.error) return showToast("生成失败：" + r.error, "err", 6500);
-    showToast(`扫描 ${r.scanned} 条已确认事实，新增 ${r.created} 条认知候选`, "ok", 6000);
-    loadCognition();
-  } finally { btn.disabled = false; btn.textContent = "从已确认事实生成候选"; }
-}
-
 // 通用列表分页：每个模块列表每页默认 10 条，数据缓存后本地翻页，样式与生产流水线分页一致
 const LIST_PAGE_SIZE = 10;
 const LIST_SIZES = { pipeRuns: 5 };   // 个别列表自定义每页条数
@@ -16237,7 +16173,7 @@ function listGo(key, delta) {
 }
 Object.assign(LIST_RELOAD, {
   claims: renderClaims, facts: renderFacts, conflicts: renderConflicts,
-  entities: renderEntities, relations: renderRelations, proposals: renderProposals,
+  entities: renderEntities, relations: renderRelations,
   decisions: renderDecisions, approvals: renderApprovals
 });
 
@@ -19019,7 +18955,6 @@ function loadView(v) {
     const f = document.getElementById("studioFrame");
     if (f && !f.src) f.src = f.dataset.src + location.search.replace(/^\?/, "?_=1&");
   }   // 本体建模：初始化本地草稿，并自动从「本体设计」带出对象
-  if (v === "cognition") loadCognition();
   if (v === "decision") { loadApprovals(); loadDecisions(); }
   if (v === "messages") loadMessages();
   if (v === "pipeline") loadPipelineRuns();
@@ -19056,7 +18991,6 @@ const BADGE_QUERIES = {
   distill: async () => (await api("/documents/runs/needs-review")).count || 0,                  // 待人工复核的生产任务
   knowledge: async () => (await api("/knowledge/claims?status=candidate&limit=2000")).length,  // 待审核知识主张
   ontology: async () => (await api("/ontology/conflicts?limit=50")).length,                    // 待处理事实冲突
-  cognition: async () => (await api("/cognition/proposals")).length,                           // 待确认认知候选
   decision: async () => (await api("/workflow/approvals")).length,                             // 待审批决策
   messages: async () => (await api("/messages/replies?status=pending&limit=200")).length       // 待确认回复草稿
 };
@@ -19093,7 +19027,6 @@ const OPS_CHANNELS = [
   { v: "distill",   name: "知识生产", unit: "待复核" },
   { v: "knowledge", name: "知识库",   unit: "待审核主张" },
   { v: "ontology",  name: "本体",     unit: "待处理冲突" },
-  { v: "cognition", name: "认知",     unit: "待确认候选" },
   { v: "decision",  name: "决策",     unit: "待审批" },
   { v: "messages",  name: "消息",     unit: "待确认草稿" },
 ];

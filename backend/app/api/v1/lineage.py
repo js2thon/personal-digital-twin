@@ -1,6 +1,6 @@
 """关联总览与链路追踪：把五大中心串成一条可验证的数据链。
 
-数据源 → 蒸馏任务 → 切片/证据 → 候选知识 → 事实 → 本体/认知 → 决策 → 审计
+数据源 → 蒸馏任务 → 切片/证据 → 候选知识 → 事实 → 本体 → 决策 → 审计
 """
 import json
 
@@ -23,10 +23,6 @@ SELECT
  (SELECT count(*) FROM ontology.entities)                        AS entities,
  (SELECT count(*) FROM ontology.relations)                       AS relations,
  (SELECT count(*) FROM memory.memory_items)                      AS memories,
- (SELECT count(*) FROM cognition.profile_versions
-    WHERE review_status='confirmed')                             AS profile_versions,
- (SELECT count(*) FROM cognition.profile_proposals
-    WHERE status='pending')                                      AS profile_proposals,
  (SELECT count(*) FROM decision.decision_records)                AS decisions,
  (SELECT count(*) FROM workflow.approval_tasks
     WHERE approval_status='pending')                             AS approvals,
@@ -70,7 +66,6 @@ FLOW = [
     {"key": "claims", "label": "候选知识", "view": "knowledge", "desc": "人工审核前不得成为事实"},
     {"key": "facts", "label": "已发布事实", "view": "knowledge", "desc": "审核通过 → 版本化 Fact + 记忆"},
     {"key": "entities", "label": "本体实体", "view": "ontology", "desc": "主体消歧 + 关系"},
-    {"key": "profile_versions", "label": "认知画像", "view": "cognition", "desc": "由已确认事实生成候选 → 确认版本"},
     {"key": "decisions", "label": "决策记录", "view": "decision", "desc": "检索事实/记忆/文档 → 落库 + 证据 + 快照"},
     {"key": "approvals", "label": "人工审批", "view": "decision", "desc": "D0~D3 铁律：默认必须人工确认"},
 ]
@@ -131,10 +126,6 @@ def overview():
             AND EXISTS (SELECT 1 FROM memory.memory_items mi
                         WHERE f.claim_id = ANY(mi.source_claim_ids)))
              AS facts_with_memory,
-         (SELECT count(*) FROM knowledge.claims c WHERE c.status='approved'
-            AND EXISTS (SELECT 1 FROM cognition.profile_proposals p
-                        WHERE c.id = ANY(p.evidence_claim_ids)))
-             AS claims_with_proposal,
          (SELECT count(*) FROM ontology.relations
             WHERE status='active' AND source_entity_id <> target_entity_id)
              AS real_relations,
@@ -164,8 +155,6 @@ def overview():
         # 分母换成「参与记忆链路的事实」，分子与 0.8 阈值一律不变。
         "facts_to_memory": linkable > 0 and
             int(m.get("facts_with_memory") or 0) >= linkable * 0.8,
-        "claims_to_cognition": approved > 0 and
-            int(m.get("claims_with_proposal") or 0) >= approved * 0.8,
         "relations_active": int(m.get("real_relations") or 0) > 0,
         # 无结构化数据时为空链路，不算断链；数量在 link_details 公开，不刷绿。
         "structured_facts_traced": int(m.get("structured_untraced") or 0) == 0,
