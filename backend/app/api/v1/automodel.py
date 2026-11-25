@@ -567,6 +567,132 @@ def ask(job_id: str, payload: AskIn, request: Request):
                   llm=_llm() if payload.use_llm else None, contract=job.get("contract"))
 
 
+def _production_snapshot(job: dict, request: Request, limit: int = 5000) -> tuple[dict, dict]:
+    """Load complete, tenant-visible production instances for the exact published ontology version."""
+    from app.db import session as db
+    from app import policy as pol
+    from app.modules.ontology.semantic import store as semantic_store
+    from app.modules.ontology.semantic import service as semantic_service
+
+    tenant, _ = _tenant(request)
+    schema = (job.get("draft") or {}).get("schema") or {}
+    ontology_version = str(job.get("schema_version") or "")
+    if not ontology_version:
+        raise HTTPException(409, "任务没有已发布的 ontology_version，不能读取生产实例")
+    cap = max(1, min(int(limit), 10000))
+    semantic_service.ensure_ready()
+    total_row = db.fetch_one(
+        "SELECT count(*) AS n FROM ontology.entity_instances "
+        "WHERE tenant_id=:t AND status='active' AND ontology_version=:ov",
+        {"t": tenant, "ov": ontology_version},
+    )
+    total = int(total_row["n"]) if total_row else 0
+    if total > cap:
+        raise HTTPException(409, {
+            "message": "生产实例超过本次完整查询上限；为避免部分数据导致错误答案，本次拒绝计算",
+            "records_available": total, "records_limit": cap,
+            "ontology_version": ontology_version,
+        })
+    principal = getattr(getattr(request, "state", None), "principal", None) or {}
+    instances = semantic_store.list_instances(
+        tenant_id=tenant,
+        where="status='active' AND ontology_version=:ov",
+        params={"ov": ontology_version},
+        limit=cap,
+    )
+    visible = pol.filter_rows(instances, principal)
+    visible_ids = {str(x.get("id")) for x in visible}
+    relations = semantic_store.list_relations(
+        tenant_id=tenant,
+        where="status='active' AND derived=false AND ontology_version=:ov",
+        params={"ov": ontology_version},
+        limit=max(1, min(cap * 5, 50000)),
+    )
+    facts = [
+        {
+            "subject_external_id": str(edge.get("source_id")),
+            "predicate": str(edge.get("relation_type")),
+            "object_value": {"external_id": str(edge.get("target_id"))},
+        }
+        for edge in relations
+        if str(edge.get("source_id")) in visible_ids
+        and str(edge.get("target_id")) in visible_ids
+        and edge.get("relation_type") in (schema.get("relation_types") or {})
+    ]
+    entities = [
+        {
+            "external_id": str(item.get("id")),
+            "entity_type": str(item.get("type_name") or ""),
+            "canonical_name": str(item.get("canonical_name") or ""),
+            "properties": item.get("properties") or {},
+        }
+        for item in visible
+        if item.get("type_name") in (schema.get("entity_types") or {})
+    ]
+    return {
+        "entities": entities, "facts": facts,
+        "stats": {"entities": len(entities), "relations": len(facts),
+                  "records_available": total, "complete": True},
+    }, {
+        "execution_source": "ontology.entity_instances+ontology.instance_relations",
+        "ontology_version": ontology_version,
+        "records_available": total, "records_visible": len(entities),
+        "relations_visible": len(facts), "complete": True,
+    }
+
+
+@router.post("/automodel/jobs/{job_id}/ask-production")
+def ask_production(job_id: str, payload: AskIn, request: Request):
+    """Answer from production semantic instances, never from Discovery samples."""
+    job = _job(job_id, request)
+    if job.get("status") not in ("published", "written"):
+        raise HTTPException(409, "生产问答仅允许使用已发布的本体版本")
+    materialized, snapshot = _production_snapshot(job, request)
+    F, L = mx.frames(materialized, job["draft"]["schema"])
+    result = qa.ask(
+        payload.question, job["draft"]["schema"],
+        job.get("metrics") or {"metrics": {}}, F, L,
+        llm=_llm() if payload.use_llm else None,
+        contract=job.get("contract"),
+    )
+    result.setdefault("evidence", {})
+    result["evidence"]["production_snapshot"] = snapshot
+    result["data_scope"] = "production"
+    return result
+
+
+@router.get("/automodel/jobs/{job_id}/production/graph")
+def production_graph(job_id: str, request: Request, limit: int = 5000,
+                     types: str = ""):
+    """Return a complete, version-pinned production instance graph for visualization."""
+    job = _job(job_id, request)
+    if job.get("status") not in ("published", "written"):
+        raise HTTPException(409, "生产实例图仅允许使用已发布的本体版本")
+    materialized, snapshot = _production_snapshot(job, request, limit=limit)
+    selected = {x.strip() for x in types.split(",") if x.strip()}
+    entities = [
+        item for item in materialized["entities"]
+        if not selected or item["entity_type"] in selected
+    ]
+    visible_ids = {item["external_id"] for item in entities}
+    schema = job["draft"]["schema"]
+    nodes = [{
+        "id": item["external_id"], "type": item["entity_type"],
+        "label": item["canonical_name"] or item["entity_type"],
+        "properties": item["properties"],
+    } for item in entities]
+    edges = [{
+        "source": fact["subject_external_id"],
+        "target": fact["object_value"]["external_id"],
+        "type": fact["predicate"],
+        "label": (schema["relation_types"].get(fact["predicate"]) or {}).get("label")
+                 or fact["predicate"],
+    } for fact in materialized["facts"]
+       if fact["subject_external_id"] in visible_ids
+       and fact["object_value"]["external_id"] in visible_ids]
+    return {"nodes": nodes, "edges": edges, "snapshot": snapshot}
+
+
 @router.get("/automodel/jobs/{job_id}/suggest")
 def suggest(job_id: str, request: Request):
     job = _job(job_id, request)
