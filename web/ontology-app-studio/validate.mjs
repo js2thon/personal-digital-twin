@@ -15,11 +15,11 @@ assert.deepEqual(missing, [], "missing DOM elements: " + missing.join(", "));
 for (const endpoint of [
   "/kg/sessions", "/kg/design/draft", "/kg/design/doc", "/kg/design/apply",
   "/kg/import", "/sparql", "/data",
-  "/ontology/modelling/dataset/inspect",
-  "/ontology/modelling/mapping/validate",
-  "/ontology/modelling/mapping/preview-file",
-  "/ontology/modelling/mapping-sets",
-  "/ontology/modelling/dataset/execute",
+  "/ontology/mapping/dataset/inspect",
+  "/ontology/mapping/validate",
+  "/ontology/mapping/preview-file",
+  "/ontology/mapping/sets",
+  "/ontology/mapping/dataset/execute",
   "/ontology/metrics/catalog", "/ontology/metrics/discover",
   "/ontology/metrics/validate", "/ontology/metrics/preview",
   "/ontology/metrics/preview-from-store"
