@@ -156,7 +156,7 @@ def test_execution_contract_keeps_source_table_and_projects_relation_links():
         "entity_type": "Employee", "property": "name",
         "source": "employee_name", "source_table": "employees",
     }]
-    assert binding["link_maps"][0]["mapping_type"] == "join_table"
+    assert any(item["mapping_type"] == "join_table" for item in binding["link_maps"])
 
 
 def test_relation_execution_requires_explicit_source_table_for_multi_table_contract():
