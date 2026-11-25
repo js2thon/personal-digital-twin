@@ -431,3 +431,30 @@ def vector_stats(request: Request):
     stats = vector_store.get_vector_store().stats()
     p = _principal(request)
     return {**stats, "tenant_id": p.get("tenant_id") or "default"}
+
+
+# ---------------------------------------------------------------- SHACL 本体约束接口（与问答执行解耦）
+@router.get("/ontology/semantic/shapes")
+def semantic_shapes(request: Request):
+    from app.modules.ontology import shacl
+    return shacl.current_shapes(refresh=True)
+
+
+@router.post("/ontology/semantic/shapes/validate")
+def semantic_shapes_validate(payload: dict, request: Request):
+    from app.modules.ontology import shacl
+    return shacl.validate(payload.get("fact") or payload,
+                          subject_type=payload.get("subject_type"),
+                          object_type=payload.get("object_type"))
+
+
+@router.get("/ontology/semantic/shapes/stats")
+def semantic_shapes_stats(request: Request):
+    from app.modules.ontology import shacl
+    return shacl.stats()
+
+
+@router.get("/ontology/semantic/shapes/audit")
+def semantic_shapes_audit(request: Request, limit: int = 200):
+    from app.modules.ontology import shacl
+    return shacl.audit_facts(limit=limit)
