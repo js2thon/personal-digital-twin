@@ -279,9 +279,10 @@ def bootstrap_schema():
         legacy_cq.ensure_schema()
         from app.db import session as db
 
-        if db.fetch_one(
+        cq_table = db.fetch_one(
             "SELECT to_regclass('ontology.competency_questions') AS table_name"
-        ) is None:
+        )
+        if not cq_table or not cq_table.get("table_name"):
             raise RuntimeError("ontology.competency_questions 初始化失败")
 
         # P1-5：CQ V2 状态落库 + 重启自动水合，消除「每次重启手工 bootstrap」
