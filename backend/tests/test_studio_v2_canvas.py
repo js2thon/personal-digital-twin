@@ -117,3 +117,23 @@ def test_dataset_compare_reports_diff_without_mutating_session(monkeypatch):
         assert sess.ontology.object_types["Employee"]["properties"] == before
     finally:
         default_store.delete(sess.session_id)
+
+
+
+def test_relation_rebuild_uses_configured_non_primary_target_property():
+    onto = AutoOntologyBuilder().from_dataframes({
+        "Employee": pd.DataFrame([{"employee_id": "E1", "dept_code": "D-ENG"}]),
+        "Department": pd.DataFrame([
+            {"department_id": "D1", "dept_code": "D-ENG"},
+        ]),
+    })
+    onto.add_link_type(
+        "belongsToDepartment", "Employee", "Department",
+        source_property="dept_code", target_property="dept_code",
+    )
+    onto.rebuild_links()
+    edges = list(onto.links.edges(data=True, keys=True))
+    assert len(edges) == 1
+    assert edges[0][0] == "Employee:E1"
+    assert edges[0][1] == "Department:D1"
+    assert edges[0][3]["target_pk"] == "D1"
