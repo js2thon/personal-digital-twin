@@ -326,11 +326,6 @@ def delete_run(run_id: str, cascade: bool = True):
                 "DELETE FROM memory.memory_items "
                 "WHERE source_claim_ids && CAST(:ids AS uuid[])", {"ids": cid_arr}
             ).rowcount
-            deleted["proposals"] = ex(
-                "DELETE FROM cognition.profile_proposals "
-                "WHERE status = 'pending' "
-                "AND evidence_claim_ids && CAST(:ids AS uuid[])", {"ids": cid_arr}
-            ).rowcount
             ex(f"DELETE FROM ontology.relations WHERE evidence_claim_id IN ({in_clause})", binds)
             # superseded_by 是无 FK 的软指针：先解引用，避免删行后留下悬空版本号
             if fact_ids:

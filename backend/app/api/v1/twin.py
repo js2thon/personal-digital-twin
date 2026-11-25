@@ -156,10 +156,7 @@ def twin_decision(body: DecisionIn):
     })
     rec = result.get("recommendation") or {}
     pol = result.get("policy_result") or {}
-    profile = db.fetch_one(
-        "SELECT version FROM cognition.profile_versions "
-        "WHERE review_status = 'confirmed' ORDER BY version DESC LIMIT 1"
-    )
+    profile = None  # 认知模块已下线
 
     evidence = []
     for ev_type, rows in (("fact", result.get("retrieved_facts") or []),
@@ -267,9 +264,23 @@ def get_task(request_id: str):
 
 @router.post("/twin/feedback")
 def twin_feedback(body: dict):
-    from app.api.v1.cognition import submit_feedback
-    return submit_feedback(
-        type("F", (), {"feedback_type": body.get("feedback_type", ""),
-                       "target_id": body.get("target_id"),
-                       "content": body.get("content", "")})()
-    )
+    """反馈入口（认知模块已下线）：仅登记到审计工单，不修改画像。"""
+    import re
+    from app.modules.audit import service as audit
+    from app.db import session as db
+
+    feedback_type = str(body.get("feedback_type") or "fact_error")
+    content = str(body.get("content") or "")
+    raw_tid = body.get("target_id")
+    target = (str(raw_tid) if raw_tid and re.fullmatch(
+        r"[0-9a-fA-F-]{36}", str(raw_tid)) else None)
+    with db.transaction():
+        fid = db.insert_returning_id(
+            "audit.user_feedbacks",
+            {"feedback_type": feedback_type, "target_id": target,
+             "content": content, "handled": False},
+        )
+        audit.log_access("user", "feedback_submitted", "user_feedback", fid,
+                         {"feedback_type": feedback_type})
+    return {"status": "queued", "ticket_id": fid, "handled": False,
+            "note": "反馈已登记；认知画像模块已下线，不会自动修改画像"}

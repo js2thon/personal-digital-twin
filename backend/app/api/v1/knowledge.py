@@ -399,16 +399,10 @@ def approve_claim(claim_id: str):
         raise HTTPException(400, f"claim status is {claim['status']}")
 
     # 单事务：Fact + Claim 状态 + 关系 + 记忆要么全成、要么全回滚。
-    # 认知候选在提交后生成（避免 SQL 异常被 catch 掉却让事务进入 aborted 状态）。
+    # 事实发布在单事务内完成。
     with db.transaction():
         out = _approve_in_tx(claim_id, claim)
-    try:
-        from app.api.v1.cognition import generate_proposal_from_claim
-
-        proposal = generate_proposal_from_claim(claim_id)
-    except Exception as e:  # noqa: BLE001  不影响事实发布
-        proposal = {"skipped": str(e)[:120]}
-    return {**out, "cognition_proposal": proposal}
+    return out
 
 
 def _approve_in_tx(claim_id: str, claim: dict) -> dict:
@@ -550,10 +544,10 @@ def reject_claim(claim_id: str):
 
 @router.post("/knowledge/maintenance/backfill")
 def backfill_knowledge():
-    """一次性数据修复：清自环关系、回填历史事实的记忆与认知候选。
+    """一次性数据修复：清自环关系、回填历史事实的记忆。
 
     早期版本审核通过 Claim 时未写 memory_items，relation 全是 source=target
-    自环；这里补齐历史缺口，让「事实 → 记忆 → 认知」链路在数据上也闭合。
+    自环；这里补齐历史缺口，让「事实 → 记忆」链路在数据上也闭合。
     可重复执行（各步骤均幂等）。
     """
     stats: dict = {}
@@ -597,22 +591,6 @@ def backfill_knowledge():
             "                   WHERE c.id = ANY(m.source_claim_ids)) "
             " RETURNING 1) SELECT count(*) AS n FROM ins"
         ) or {"n": 0})["n"]
-
-    rows = db.fetch_all(
-        "SELECT c.id FROM knowledge.claims c WHERE c.status = 'approved' "
-        "AND NOT EXISTS (SELECT 1 FROM cognition.profile_proposals p "
-        "                WHERE c.id = ANY(p.evidence_claim_ids)) LIMIT 300"
-    )
-    created = 0
-    for r in rows:
-        try:
-            from app.api.v1.cognition import generate_proposal_from_claim
-
-            if generate_proposal_from_claim(str(r["id"])).get("created"):
-                created += 1
-        except Exception:  # noqa: BLE001  单条失败不影响整批
-            continue
-    stats["cognition_proposals_backfilled"] = created
     return {"status": "ok", **stats}
 
 

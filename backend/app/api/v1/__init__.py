@@ -1,5 +1,4 @@
 from app.api.v1 import (  # noqa: F401
-    cognition,
     cq_v2,
     documents,
     evaluation,
