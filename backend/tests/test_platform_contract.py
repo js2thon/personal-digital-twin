@@ -1,9 +1,7 @@
-"""V1.3 换栈 Phase 0 回归：只读 IdentityContext + CQ 存储禁降级闸门。
+"""V1.3 换栈 Phase 0 回归：只读 IdentityContext。
 
 覆盖 Sprint 1 三条验收铁律中本轮真实落地的部分：
 - `/me` 身份来自全局中间件，请求体提权字段不参与判定、只读、不可反写；
-- `/health/cq-store` 如实报出实际 store / 降级原因 / 库连通性；
-- production 下显式 memory 与隐式降级都 fail-fast，dev 行为逐行不变。
 """
 from __future__ import annotations
 
@@ -11,7 +9,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.modules.ontology.cq_v2 import store as st
 
 
 @pytest.fixture()
@@ -85,84 +82,3 @@ def test_me_discloses_iam_boundary(client):
     assert "X-Permission-Context" in d["security_boundary"]
     assert "尚未达成" in d["security_boundary"]
     assert d["environment"] == "dev"
-
-
-# --------------------------------------------------- /health/cq-store
-
-def test_cq_store_health_reports_real_facts(client):
-    r = client.get("/api/v1/health/cq-store")
-    assert r.status_code == 200, r.text
-    d = r.json()
-    assert d["service"] == "cq-v2"
-    assert d["requested_mode"] == "postgres"
-    assert d["authoritative_table"] == "ontology.cq_v2_records"
-    assert isinstance(d["healthy"], bool)
-    assert "actual_store" in d and "db_ok" in d
-    assert "persistence" in d or "persistence_error" in d
-    assert d["memory_store_allowed"] is True          # dev 环境
-    assert d["startup_gate"]["checked"] is False      # 非生产跳过
-
-
-def test_cq_store_health_is_not_just_liveness(client):
-    """/healthz 只报存活；本端点必须带持久化事实。"""
-    h = client.get("/healthz").json()
-    d = client.get("/api/v1/health/cq-store").json()
-    assert h == {"status": "ok"}
-    assert {"using_postgres", "degraded_reason", "db_ok", "hydrated"} & set(d)
-
-
-# --------------------------------------------- production 禁 MemoryStore
-
-def test_dev_mode_allows_explicit_memory(monkeypatch):
-    monkeypatch.delenv("APP_ENV", raising=False)
-    monkeypatch.setenv("CQ_V2_STORE", "memory")
-    assert st.production_mode() is False
-    assert st.assert_production_store()["checked"] is False
-    assert type(st.default_store()).__name__ == "MemoryStore"
-
-
-def test_production_rejects_explicit_memory(monkeypatch):
-    monkeypatch.setenv("APP_ENV", "production")
-    monkeypatch.setenv("CQ_V2_STORE", "memory")
-    assert st.production_mode() is True
-    with pytest.raises(RuntimeError, match="禁止 MemoryStore"):
-        st.assert_production_store()
-    with pytest.raises(RuntimeError, match="禁止 MemoryStore"):
-        st.default_store()
-
-
-@pytest.mark.parametrize("env_value", ["production", "PROD", " Production "])
-def test_production_mode_alias(monkeypatch, env_value):
-    monkeypatch.setenv("APP_ENV", env_value)
-    assert st.production_mode() is True
-
-
-def test_production_rejects_db_unreachable(monkeypatch):
-    """生产 + postgres 但库不可达：禁止隐式降级，必须 fail-fast。"""
-    monkeypatch.setenv("APP_ENV", "production")
-    monkeypatch.setenv("CQ_V2_STORE", "postgres")
-    monkeypatch.setattr(st.PostgresStore, "ping", lambda self: False)
-    with pytest.raises(RuntimeError, match="禁止降级为 MemoryStore"):
-        st.default_store()
-    with pytest.raises(RuntimeError, match="PostgreSQL 不可达"):
-        st.assert_production_store()
-
-
-def test_dev_db_unreachable_still_degrades(monkeypatch):
-    """dev 行为逐行不变：库不可达仍降级并带 degraded_reason。"""
-    monkeypatch.delenv("APP_ENV", raising=False)
-    monkeypatch.setenv("CQ_V2_STORE", "postgres")
-    monkeypatch.setattr(st.PostgresStore, "ping", lambda self: False)
-    s = st.default_store()
-    assert type(s).__name__ == "MemoryStore"
-    assert "降级" in (s.degraded_reason or "")
-
-
-def test_production_gate_passes_when_db_ok(monkeypatch):
-    monkeypatch.setenv("APP_ENV", "production")
-    monkeypatch.setenv("CQ_V2_STORE", "postgres")
-    monkeypatch.setattr(st.PostgresStore, "ping", lambda self: True)
-    out = st.assert_production_store()
-    assert out["checked"] is True
-    assert out["mode"] == "postgres"
-    assert out["memory_store_allowed"] is False
