@@ -1,4 +1,4 @@
-"""V1.3 换栈 Phase 0：平台级契约端点（只读身份 + CQ 存储健康）。
+"""平台级契约端点：只读身份上下文。
 
 设计约束（对应 Sprint 1 验收铁律与「禁止客户端伪造权限」）：
 - `/me` 的身份**只**来自 AC-01 全局中间件算出的 `request.state.principal`
@@ -8,6 +8,8 @@
   同时报出 production 判定与降级原因，避免「验收时 PG、上线后 memory」。
 """
 from __future__ import annotations
+
+import os
 
 import re
 
@@ -84,82 +86,5 @@ def me(request: Request):
 
 
 def _production() -> bool:
-    """与启动闸门共用同一判定（env > settings.app_env）。"""
-    try:
-        from app.modules.ontology.cq_v2 import store as st
-
-        return bool(st.production_mode())
-    except Exception:  # noqa: BLE001
-        return False
-
-
-@router.get("/health/cq-store")
-def health_cq_store():
-    """专门检查 CQ V2 是否真的使用 PostgreSQL（Sprint 1 验收项）。
-
-    与 `/healthz` 的区别：`/healthz` 只报进程存活；本端点报持久化事实，
-    包括请求模式、实际 store 类型、降级原因、库连通性、水合状态。
-    """
-    from app.modules.ontology import cq_v2
-    from app.modules.ontology.cq_v2 import store as st
-
-    requested = st.requested_mode()
-    prod = st.production_mode()
-    out: dict = {
-        "service": "cq-v2",
-        "requested_mode": requested,
-        "environment": "production" if prod else "dev",
-        "memory_store_allowed": not prod,
-        "authoritative_table": "ontology.cq_v2_records",
-        "healthy": False,
-    }
-
-    # 1) 实际生效的 store（不新建连接，避免健康检查自身拖慢响应）
-    try:
-        engine = cq_v2.get_engine()
-        actual_store = engine.store
-        actual = type(actual_store).__name__
-        degraded = getattr(actual_store, "degraded_reason", None)
-        out["actual_store"] = actual
-        out["degraded_reason"] = _safe(degraded) if degraded else None
-        out["using_postgres"] = actual == "PostgresStore" and not degraded
-        try:
-            status = engine.persistence_status()
-            out["persistence"] = {
-                "durable": bool(status.get("durable")),
-                "store_mode": status.get("store_mode"),
-                "restored_at": status.get("restored_at"),
-                "objects_in_memory": status.get("objects_in_memory"),
-                "objects_in_db": status.get("objects_in_db"),
-                "registry_version": status.get("registry_version"),
-            }
-            out["hydrated"] = bool(status.get("restored_at"))
-        except Exception as exc:  # noqa: BLE001
-            out["persistence_error"] = f"{type(exc).__name__}: {str(exc)[:120]}"
-    except Exception as exc:  # noqa: BLE001
-        out["actual_store"] = None
-        out["using_postgres"] = False
-        out["engine_error"] = f"{type(exc).__name__}: {str(exc)[:120]}"
-
-    # 2) 库连通性（一次 ping；失败如实报，不吞成 healthy=true）
-    try:
-        out["db_ok"] = bool(st.PostgresStore().ping())
-    except Exception as exc:  # noqa: BLE001
-        out["db_ok"] = False
-        out["db_error"] = f"{type(exc).__name__}: {str(exc)[:120]}"
-
-    # 3) production 下额外校验启动闸门结论，双闸状态可查
-    try:
-        out["startup_gate"] = st.assert_production_store()
-    except Exception as exc:  # noqa: BLE001
-        out["startup_gate"] = {"checked": True, "passed": False,
-                               "error": f"{type(exc).__name__}: {str(exc)[:160]}"}
-
-    out["healthy"] = bool(out.get("using_postgres") and out.get("db_ok"))
-    if prod:
-        out["healthy"] = bool(
-            out["healthy"] and requested == "postgres"
-            and out.get("startup_gate", {}).get("passed", True) is not False
-            and out.get("startup_gate", {}).get("checked") is True
-        )
-    return out
+    """平台环境判定，不依赖任何业务子系统。"""
+    return os.getenv("APP_ENV", "dev").strip().lower() == "production"
