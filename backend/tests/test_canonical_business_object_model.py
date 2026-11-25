@@ -107,3 +107,19 @@ def test_mapping_contract_uses_explicit_junction_columns_without_database_foreig
     assert link["source_table"] == "departments"
     assert link["target_table"] == "materials"
     assert link["explicit_binding"] is True
+
+
+
+def test_canonical_model_does_not_silently_downgrade_invalid_cardinality():
+    ontology = SimpleNamespace(
+        object_types={
+            "A": {"primary_key": "id", "properties": ["id"]},
+            "B": {"primary_key": "id", "properties": ["id"]},
+        },
+        data_mapping={},
+        link_types={"bad_relation": {"source": "A", "target": "B", "cardinality": "unknown"}},
+    )
+    model = canonical_model_from_studio(ontology)
+    assert model["relationships"][0]["cardinality"] == "unknown"
+    assert any(item["code"] == "RELATION_CARDINALITY_INVALID"
+               for item in model["validation"]["errors"])
