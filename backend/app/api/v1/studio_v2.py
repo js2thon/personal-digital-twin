@@ -688,6 +688,17 @@ def schema_edit(session_id: str, body: SchemaEditRequest) -> Dict[str, Any]:
                                source_property=o.source_property, target_property=o.target_property)
             done.append(f"新增关系 {name}")
         elif o.op == "update_relation":
+            current = onto.link_types.get(o.ref)
+            if current is None:
+                continue
+            source_type = o.source or current.get("source")
+            target_type = o.target or current.get("target")
+            if source_type not in onto.object_types or target_type not in onto.object_types:
+                raise HTTPException(400, "关系起点或终点对象不存在")
+            if o.source_property and o.source_property not in onto.object_types[source_type].get("properties", []):
+                raise HTTPException(400, f"起点属性不存在：{source_type}.{o.source_property}")
+            if o.target_property and o.target_property not in onto.object_types[target_type].get("properties", []):
+                raise HTTPException(400, f"终点属性不存在：{target_type}.{o.target_property}")
             if onto.update_link_type(
                 o.ref,
                 description=o.description,
