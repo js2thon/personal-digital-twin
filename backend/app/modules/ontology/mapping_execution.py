@@ -40,6 +40,14 @@ def ensure_schema() -> None:
     )
     """)
     db.execute("""
+    ALTER TABLE ontology.dataset_ingestion_runs
+    ADD COLUMN IF NOT EXISTS relations_inserted INTEGER NOT NULL DEFAULT 0
+    """)
+    db.execute("""
+    ALTER TABLE ontology.dataset_ingestion_runs
+    ADD COLUMN IF NOT EXISTS relations_skipped INTEGER NOT NULL DEFAULT 0
+    """)
+    db.execute("""
     CREATE TABLE IF NOT EXISTS ontology.dataset_ingestion_records (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id VARCHAR(120) NOT NULL,
@@ -557,10 +565,12 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
 
             db.execute(
                 "UPDATE ontology.dataset_ingestion_runs SET status='succeeded', "
-                " rows_inserted=:ri, rows_skipped=:rs, instances_inserted=:ii, finished_at=now() "
+                " rows_inserted=:ri, rows_skipped=:rs, instances_inserted=:ii, "
+                " relations_inserted=:rli, relations_skipped=:rls, finished_at=now() "
                 "WHERE id=CAST(:id AS uuid)",
                 {"ri": inserted_records, "rs": skipped_records,
-                 "ii": inserted_instances, "id": run_id},
+                 "ii": inserted_instances, "rli": relation_inserted,
+                 "rls": relation_skipped, "id": run_id},
             )
     except Exception as exc:
         # The execution transaction has rolled back; preserve a separate failure record.
@@ -601,7 +611,8 @@ def get_run(run_id: str, *, tenant_id: str) -> dict | None:
     row = db.fetch_one(
         "SELECT id::text AS id, mapping_set_id::text AS mapping_set_id, source_name, "
         " source_sha256, status, rows_received, rows_inserted, rows_skipped, "
-        " instances_inserted, error, created_by, started_at, finished_at "
+        " instances_inserted, relations_inserted, relations_skipped, "
+        " error, created_by, started_at, finished_at "
         "FROM ontology.dataset_ingestion_runs WHERE id=CAST(:id AS uuid) AND tenant_id=:t",
         {"id": run_id, "t": tenant_id})
     if not row:
