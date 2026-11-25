@@ -293,16 +293,27 @@ def execute_approved_database_snapshot(*, tenant_id: str, mapping_set_id: str,
         raise PermissionError("只有当前租户已审核的映射版本可以执行")
     definition = mapping_set.get("definition") or {}
     mappings = definition.get("mappings") or []
-    if not mappings:
-        raise ValueError("已审核映射版本没有字段映射")
-    source_columns = sorted({str(item.get("source") or "").strip()
-                             for item in mappings if item.get("source")})
-    if not source_columns:
-        raise ValueError("映射版本没有有效的源字段")
-    if primary_key not in source_columns:
-        source_columns.append(primary_key)
+    table_mapping = next((item for item in mappings
+                          if item.get("table") == table_name), None)
+    junction_mapping = next((item for item in (definition.get("links") or [])
+                             if item.get("table") == table_name), None)
+    if not table_mapping and not junction_mapping:
+        raise ValueError(f"已审核映射版本中不存在源表：{table_name}")
+    source_columns = set()
+    if table_mapping:
+        source_columns.update(str(column) for column in
+                              (table_mapping.get("attributes") or {}).values() if column)
+        source_columns.update(str(item.get("column")) for item in
+                              (table_mapping.get("relations") or []) if item.get("column"))
+        if table_mapping.get("name"):
+            source_columns.add(str(table_mapping["name"]))
+    if junction_mapping:
+        source_columns.update(str(junction_mapping.get(key)) for key in
+                              ("source_column", "target_column") if junction_mapping.get(key))
+    source_columns.add(primary_key)
+    source_columns = sorted(source_columns)
     source_name = f"db:{profile_name}:{schema_name or 'default'}.{table_name}"
-    source_namespace = _database_source_namespace(profile_name, schema_name, table_name)
+    source_namespace = f"db:{profile_name}:{schema_name or 'default'}"
     source_sha = _digest({
         "profile": profile_name, "schema": schema_name, "table": table_name,
         "primary_key": primary_key, "snapshot_id": snapshot_id,
@@ -319,4 +330,5 @@ def execute_approved_database_snapshot(*, tenant_id: str, mapping_set_id: str,
         source_sha256=source_sha, sync_mode="upsert",
         source_id_column=primary_key, batch_size=batch_size,
         reconcile_missing=reconcile_missing, source_namespace=source_namespace,
+        source_table=table_name,
     )
