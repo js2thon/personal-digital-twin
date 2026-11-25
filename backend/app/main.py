@@ -272,10 +272,27 @@ def bootstrap_schema():
     except Exception:  # noqa: BLE001  监听起不来不影响 API 可用，API 即时钩子仍在
         pass
     try:
+        # 先初始化 V1.2 CQ 基础表。CQ V2 schema.sql 中的关系表通过外键依赖
+        # ontology.competency_questions；若只执行 V2 DDL，会因基表缺失而整批失败。
+        from app.modules.ontology import cq as legacy_cq
+
+        legacy_cq.ensure_schema()
+        from app.db import session as db
+
+        if db.fetch_one(
+            "SELECT to_regclass('ontology.competency_questions') AS table_name"
+        ) is None:
+            raise RuntimeError("ontology.competency_questions 初始化失败")
+
         # P1-5：CQ V2 状态落库 + 重启自动水合，消除「每次重启手工 bootstrap」
         from app.modules.ontology import cq_v2
 
-        cq_v2.get_engine().ensure_ready()
+        ready = cq_v2.get_engine().ensure_ready()
+        ddl = ready.get("ddl") or {}
+        if ddl.get("errors"):
+            raise RuntimeError(
+                "CQ V2 schema 初始化失败：" + "; ".join(ddl["errors"][:5])
+            )
     except Exception:  # noqa: BLE001  持久化不可用时仍可按需手工 bootstrap
         pass
     try:
