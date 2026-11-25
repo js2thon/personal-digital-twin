@@ -688,6 +688,7 @@ class SchemaEditOp(BaseModel):
     clear_source_mapping: bool = False
     label: str = ""
     description: str = ""
+    object_kind: str = ""
     source_property: str = ""
     clear_source_property: bool = False
     clear_target_property: bool = False
@@ -857,7 +858,8 @@ def schema_edit(session_id: str, body: SchemaEditRequest) -> Dict[str, Any]:
             onto.add_object_type(name, o.primary_key, props, o.description)
             done.append(f"新增对象 {name}")
         elif o.op == "update_class":
-            if onto.update_object_type(o.ref, label=o.label, description=o.description):
+            if onto.update_object_type(o.ref, label=o.label, description=o.description,
+                                       object_kind=o.object_kind):
                 done.append(f"更新类 {o.ref}")
         elif o.op == "delete_class":
             if onto.remove_object_type(o.ref):
