@@ -604,7 +604,7 @@ def compare_source_dataset(session_id: str, dataset_id: str) -> Dict[str, Any]:
             "rows_after": len(table.df),
         })
     current_dataset_id = sess.meta.get("source_info", {}).get("dataset_id")
-    dataset_changed = bool(current_dataset_id and current_dataset_id != dataset_id)
+    dataset_changed = current_dataset_id != dataset_id
     changed = bool(dataset_changed or added_tables or removed_tables or any(
         d["added_columns"] or d["removed_columns"] or d["type_changes"] or d["rows_before"] != d["rows_after"]
         for d in table_diffs
