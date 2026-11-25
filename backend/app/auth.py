@@ -15,6 +15,7 @@ TCP 对端可能是回环，若直接采信 XFF 就会把所有人都当成 owne
 from __future__ import annotations
 
 import hmac
+import json
 
 from fastapi import HTTPException, Request
 
@@ -56,6 +57,52 @@ def actor_from_request(request: Request) -> str:
         401,
         "非本机访问需要有效的 X-Twin-API-Key；请在 .env 配置 API_KEY 后重启服务",
     )
+
+
+
+def _audit_owner_deny(request: Request, reason: str) -> None:
+    """越权写操作审计；审计失败不改变拒绝结果。"""
+    try:
+        from app import security_audit
+
+        security_audit.record(
+            "owner_gate_deny", rule="require_owner", severity="block",
+            detail={"reason": reason,
+                    "path": getattr(getattr(request, "url", None), "path", None)},
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def require_owner(request: Request) -> dict:
+    """通用 owner 权限闸门，复用全局 principal 并在缺失时 fail-closed。"""
+    from app import policy as pol
+
+    cached = getattr(getattr(request, "state", None), "principal", None)
+    if isinstance(cached, dict) and cached:
+        principal = cached
+    else:
+        headers = request.headers
+        raw = (headers.get("x-permission-context") or "").strip()
+        perm: dict = {}
+        if raw:
+            try:
+                perm = json.loads(raw)
+                if not isinstance(perm, dict):
+                    raise ValueError
+            except (ValueError, TypeError):
+                _audit_owner_deny(request, "X-Permission-Context 不可解析")
+                raise HTTPException(403, "X-Permission-Context 不可解析，拒绝本体写操作") from None
+        principal = pol.principal_from({
+            "tenant_id": (headers.get("x-tenant-id") or "default").strip() or "default",
+            "user_id": (headers.get("x-user-id") or "").strip(),
+            "actor": current_actor(request) or "owner",
+            "permission_context": perm or {"role": "owner", "scope": ["owner"]},
+        })
+    if not pol.is_owner_class(principal):
+        _audit_owner_deny(request, "非 owner 级主体尝试受保护写操作")
+        raise HTTPException(403, "该操作要求 owner 级主体（role=owner）")
+    return principal
 
 
 def current_actor(request: Request) -> str:

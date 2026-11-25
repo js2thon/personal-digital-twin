@@ -302,7 +302,7 @@ def _fake_request(perm=None, tenant="default", user=""):
 def test_require_owner_allows_owner_and_blocks_viewer():
     from fastapi import HTTPException
 
-    from app.api.v1.cq_v2 import require_owner
+    from app.auth import require_owner
 
     assert require_owner(_fake_request())["role"] == "owner"
 
@@ -333,13 +333,11 @@ def test_ontology_write_endpoints_reject_viewer():
         "X-Permission-Context": json.dumps({"role": "viewer", "scope": ["owner"]}),
     }
     for path, body in (
-        ("/api/v1/ontology/v2/schema/pin", {"cq_id": "x"}),
-        ("/api/v1/ontology/v2/schema/versions/sync", {}),
-        ("/api/v1/ontology/v2/registry/tracks/sync", {}),
+        ("/api/v1/ontology/semantic/maintenance/ensure-ready", {}),
     ):
         r = client.post(path, json=body, headers=viewer_headers)
         assert r.status_code == 403, f"{path} → {r.status_code}"
 
     # 不带上下文（本机回落 owner）→ 不再 403（端点正常执行或 4xx 业务错）
-    r = client.post("/api/v1/ontology/v2/schema/versions/sync", json={})
+    r = client.post("/api/v1/ontology/semantic/maintenance/ensure-ready", json={})
     assert r.status_code != 403

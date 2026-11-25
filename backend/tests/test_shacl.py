@@ -250,9 +250,9 @@ def test_strict_mode_blocks_write_before_touching_db(monkeypatch):
 
 def test_shapes_routes_registered():
     pytest.importorskip("fastapi")
-    from app.api.v1 import cq_v2 as api
+    from app.api.v1 import ontology_semantic as api
 
     paths = {r.path for r in api.router.routes}
-    for path in ("/ontology/v2/shapes", "/ontology/v2/shapes/validate",
-                 "/ontology/v2/shapes/stats", "/ontology/v2/shapes/audit"):
+    for path in ("/ontology/semantic/shapes", "/ontology/semantic/shapes/validate",
+                 "/ontology/semantic/shapes/stats", "/ontology/semantic/shapes/audit"):
         assert path in paths, path

@@ -62,6 +62,13 @@
     var edge = (!isClass && sel) ? graph.edges.find(function (e) { return e.id === sel.ref; }) : null;
     var node = (isClass && sel) ? graph.nodes.find(function (n) { return n.id === sel.ref; }) : null;
     var labelState = React.useState(isClass ? (node ? node.data.label : "") : ""), label = labelState[0], setLabel = labelState[1];
+    var propNameState = React.useState(""), propName = propNameState[0], setPropName = propNameState[1];
+    var sourceColState = React.useState(""), sourceCol = sourceColState[0], setSourceCol = sourceColState[1];
+    var newRelNameState = React.useState(""), newRelName = newRelNameState[0], setNewRelName = newRelNameState[1];
+    var newRelSrcState = React.useState(""), newRelSrc = newRelSrcState[0], setNewRelSrc = newRelSrcState[1];
+    var newRelTgtState = React.useState(""), newRelTgt = newRelTgtState[0], setNewRelTgt = newRelTgtState[1];
+    var newRelSrcColState = React.useState(""), newRelSrcCol = newRelSrcColState[0], setNewRelSrcCol = newRelSrcColState[1];
+    var newRelTgtColState = React.useState(""), newRelTgtCol = newRelTgtColState[0], setNewRelTgtCol = newRelTgtColState[1];
     var descState = React.useState(isClass ? (node ? node.data.desc : "") : (edge ? (edge.data && edge.data.desc || "") : "")), desc = descState[0], setDesc = descState[1];
     var relNameState = React.useState((!isClass && sel) ? sel.ref : ""), relName = relNameState[0], setRelName = relNameState[1];
     var relSrcState = React.useState(!isClass && edge ? edge.source.replace(/^CLASS:/, "") : ""), relSrc = relSrcState[0], setRelSrc = relSrcState[1];
@@ -79,20 +86,44 @@
         .catch(function (e) { setMsg("失败：" + e.message); })
         .finally(function () { setBusy(false); });
     }
-    if (!sel) return h("div", { style: { color: T.sub, fontSize: 12, lineHeight: 1.9 } },
-      h("b", { style: { color: T.text } }, "操作说明"), h("br"),
-      "· 点击类节点 / 关系边 → 在此编辑", h("br"),
-      "· 选中后按 Delete → 删除（自动保存重建）", h("br"),
-      "· 拖动节点调整布局；Ctrl+滚轮缩放；空白处框选", h("br"),
-      h("b", { style: { color: T.text } }, "共 " + graph.nodes.length + " 个类 · " + graph.edges.length + " 个关系"));
+    if (!sel) return h("div", { style: { color: T.sub, fontSize: 12, lineHeight: 1.7 } },
+      h("b", { style: { color: T.text, display:"block", marginBottom:6 } }, "新增业务关系"),
+      h("input", { value:newRelName, placeholder:"关系标识（如 belongsTo）", onChange:function(e){setNewRelName(e.target.value);}, style:{width:"100%",marginBottom:6} }),
+      h("select", { value:newRelSrc, onChange:function(e){setNewRelSrc(e.target.value);setNewRelSrcCol("");}, style:{width:"100%",marginBottom:6} },
+        [h("option",{key:"",value:""},"选择关系起点")].concat(clsOptions.map(function(c){return h("option",{key:c,value:c},c);}))),
+      h("select", { value:newRelSrcCol, onChange:function(e){setNewRelSrcCol(e.target.value);}, style:{width:"100%",marginBottom:6} },
+        [h("option",{key:"",value:""},"选择起点字段")].concat(clsProps(newRelSrc).map(function(p){return h("option",{key:p,value:p},p);}))),
+      h("select", { value:newRelTgt, onChange:function(e){setNewRelTgt(e.target.value);setNewRelTgtCol("");}, style:{width:"100%",marginBottom:6} },
+        [h("option",{key:"",value:""},"选择关系终点")].concat(clsOptions.map(function(c){return h("option",{key:c,value:c},c);}))),
+      h("select", { value:newRelTgtCol, onChange:function(e){setNewRelTgtCol(e.target.value);}, style:{width:"100%",marginBottom:8} },
+        [h("option",{key:"",value:""},"选择终点字段")].concat(clsProps(newRelTgt).map(function(p){return h("option",{key:p,value:p},p);}))),
+      h("button", { className:"primary", disabled:busy||!newRelName.trim()||!newRelSrc||!newRelTgt, onClick:function(){
+        run([{op:"create_relation",new_name:newRelName.trim(),source:newRelSrc,target:newRelTgt,source_property:newRelSrcCol,target_property:newRelTgtCol,description:"由本体工作台创建"}],"关系已创建并重建实例边");
+        setNewRelName("");
+      } }, "创建关系"),
+      h("div", { style:{borderTop:"1px solid "+T.border,marginTop:12,paddingTop:10} },
+        h("b", { style:{color:T.text} }, "画布操作说明"), h("br"),
+        "· 点击对象或关系，在此编辑", h("br"),
+        "· Delete 删除选中元素", h("br"),
+        "· 拖动节点调整布局；Ctrl+滚轮缩放", h("br"),
+        "· " + graph.nodes.length + " 个对象 · " + graph.edges.length + " 个关系"));
     return h("div", null,
       h("div", { style: { fontWeight: 700, marginBottom: 8, color: T.text } }, (isClass ? "类：" : "关系：") + sel.ref),
+      isClass && node && node.data.sourceInfo ? h("div", { style: { padding: 8, marginBottom: 8, borderRadius: 6, background: T.raised, fontSize: 11, color: T.sub } },
+        h("b", { style: { color: T.text } }, "上游数据源"),
+        h("div", null, "数据表：" + (node.data.sourceInfo.source_table || "—")),
+        h("div", null, "记录数：" + (node.data.sourceInfo.row_count ?? "—")),
+        h("div", null, "字段：" + (node.data.sourceInfo.columns || []).length + " 个")) : null,
       isClass ? h("div", { style: { marginBottom: 8 } },
         h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "中文名"),
         h("input", { value: label, onChange: function (e) { setLabel(e.target.value); }, style: { width: "100%", marginBottom: 6 } })) : null,
       h("div", { style: { marginBottom: 8 } },
         h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "描述"),
         h("textarea", { value: desc, onChange: function (e) { setDesc(e.target.value); }, rows: 3, style: { width: "100%" } })),
+      !isClass && edge && edge.data && edge.data.source_binding ? h("div", { style: { padding: 8, marginBottom: 8, borderRadius: 6, background: T.raised, fontSize: 11, color: T.sub } },
+        h("b", { style: { color: T.text } }, "关系来源映射"),
+        h("div", null, (edge.data.source_binding.source_table || "—") + "." + (edge.data.source_binding.source_column || "—") + " → " + (edge.data.source_binding.target_table || "—") + "." + (edge.data.source_binding.target_column || "—")),
+        h("div", null, edge.data.source_binding.mapped ? "已配置字段映射" : "尚未配置完整字段映射")) : null,
       !isClass ? h("div", { style: { marginBottom: 8 } },
         h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "关系名称"),
         h("input", { value: relName, onChange: function (e) { setRelName(e.target.value); }, style: { width: "100%" } })) : null,
@@ -114,11 +145,28 @@
           h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "终点属性"),
           h("select", { value: tgtCol, onChange: function (e) { setTgtCol(e.target.value); }, style: { width: "100%" } },
             [h("option", { key: "", value: "" }, "—")].concat(clsProps(relTgt).map(function (p) { return h("option", { key: p, value: p }, p); }))))) : null,
+      isClass ? h("div", { style: { borderTop: "1px solid " + T.border, paddingTop: 9, marginTop: 8, marginBottom: 9 } },
+        h("b", { style: { display: "block", color: T.text, fontSize: 12, marginBottom: 6 } }, "属性与上游字段绑定"),
+        h("div", { style: { display: "grid", gap: 5, marginBottom: 7 } }, (node.data.props || []).map(function (p) {
+          var m=(node.data.propertySources||{})[p]||{};
+          return h("div", { key:p, style:{display:"grid",gridTemplateColumns:"minmax(70px,1fr) minmax(100px,1.4fr) auto",gap:5,alignItems:"center"} },
+            h("span", { style:{fontSize:11,color:T.text,overflowWrap:"anywhere"} }, p),
+            h("select", { defaultValue:m.mapped?(m.source_column||p):"", style:{width:"100%",fontSize:11}, onChange:function(e){run([{op:"update_property",type_name:clsName(sel.ref),property_name:p,source_column:e.target.value,clear_source_mapping:!e.target.value}],"字段映射已更新")} },
+              [h("option",{key:"",value:""},"未绑定")].concat(((node.data.sourceInfo||{}).columns||[]).map(function(col){return h("option",{key:col,value:col},col)}))),
+            h("button",{className:"ghost",title:"删除属性",onClick:function(){if(confirm("删除属性 "+p+"？"))run([{op:"delete_property",type_name:clsName(sel.ref),property_name:p}],"属性已删除")}},"×"));
+        })),
+        h("input", { value: propName, placeholder: "新增属性名称", onChange: function (e) { setPropName(e.target.value); }, style: { width: "100%", marginBottom: 6 } }),
+        h("select", { value: sourceCol, onChange: function (e) { setSourceCol(e.target.value); }, style: { width: "100%", marginBottom: 6 } },
+          [h("option", { key: "", value: "" }, "不绑定上游字段")].concat(((node.data.sourceInfo || {}).columns || []).map(function (p) { return h("option", { key: p, value: p }, p); }))),
+        h("button", { className: "ghost", disabled: busy || !propName.trim(), onClick: function () {
+          run([{ op: "add_property", type_name: clsName(sel.ref), property_name: propName.trim(), source_column: sourceCol }], "属性已新增并保存");
+          setPropName(""); setSourceCol("");
+        } }, "新增属性")) : null,
       h("div", { style: { display: "flex", gap: 6 } },
         h("button", { className: "primary", disabled: busy, onClick: function () {
           var ops = [{ op: isClass ? "update_class" : "update_relation", ref: sel.ref,
             description: desc }].map(function (o) {
-            if (isClass) { o.label = label; } else { o.new_name = relName.trim(); o.source = relSrc; o.target = relTgt; o.source_property = srcCol; o.target_property = tgtCol; }
+            if (isClass) { o.label = label; } else { o.new_name = relName.trim(); o.source = relSrc; o.target = relTgt; o.source_property = srcCol; o.target_property = tgtCol; o.clear_source_property = !srcCol; o.clear_target_property = !tgtCol; }
             return o; });
           run(ops, "已保存并重建");
         } }, "保存"),
@@ -133,7 +181,8 @@
     var T = TH();
     el.innerHTML = "";
     var wrap = document.createElement("div");
-    wrap.style.cssText = "display:grid;grid-template-columns:1fr 280px;gap:12px;height:620px";
+    wrap.className = "x6-designer-layout";
+    wrap.style.cssText = "display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;height:min(72vh,760px);min-height:620px";
     var canvasHost = document.createElement("div");
     canvasHost.style.cssText = "position:relative;border:1px solid " + T.border + ";border-radius:10px;overflow:hidden;background:" + T.raised;
     var panelHost = document.createElement("div");
@@ -160,6 +209,7 @@
 
     graph.nodes.forEach(function (n) {
       var props = (n.data.props || []).slice(0, 8);
+      var saved = (o.positions || {})[n.id] || {};
       var markup = [
         { tagName: "rect", selector: "body" },
         { tagName: "text", selector: "title" },
@@ -179,7 +229,7 @@
         attrs["prop" + i] = { text: "· " + p, fill: T.sub, fontSize: 11, refX: 12, refY: 52 + i * 16 };
       });
       graph6.addNode({
-        id: n.id, x: (pos[n.id] || { x: 0 }).x, y: (pos[n.id] || { y: 0 }).y,
+        id: n.id, x: Number.isFinite(saved.x) ? saved.x : (pos[n.id] || { x: 0 }).x, y: Number.isFinite(saved.y) ? saved.y : (pos[n.id] || { y: 0 }).y,
         width: nodeSize[n.id].width, height: nodeSize[n.id].height,
         markup: markup, attrs: attrs,
       });
@@ -207,9 +257,23 @@
       }));
     }
     renderPanel();
-    graph6.on("node:click", function (args) { sel = { kind: "class", ref: args.node.id }; renderPanel(); });
-    graph6.on("edge:click", function (args) { sel = { kind: "relation", ref: args.edge.id }; renderPanel(); });
-    graph6.on("blank:click", function () { sel = null; renderPanel(); });
+    function setSelection(next) {
+      sel = next;
+      renderPanel();
+      if (typeof o.onSelect === "function") o.onSelect(sel ? sel.ref : null);
+    }
+    graph6.on("node:click", function (args) { setSelection({ kind: "class", ref: args.node.id }); });
+    graph6.on("edge:click", function (args) { setSelection({ kind: "relation", ref: args.edge.id }); });
+    graph6.on("blank:click", function () { setSelection(null); });
+    function persistLayout() {
+      if (typeof o.onLayoutChange !== "function") return;
+      var positions = {};
+      graph6.getNodes().forEach(function (node) {
+        var p = node.position(); positions[node.id] = { x: p.x, y: p.y };
+      });
+      Promise.resolve(o.onLayoutChange(positions)).catch(function () {});
+    }
+    graph6.on("node:mouseup", persistLayout);
     // Delete 键删除选中（X6 2.x 无 bindKey，用原生 keydown）
     var host = canvasHost;
     host.tabIndex = 0;
@@ -234,6 +298,7 @@
           graph.edges.map(function (e) { return { source: e.source, target: e.target }; }));
         graph.nodes.forEach(function (n) { var c = graph6.getCellById(n.id); if (c) c.position(p2[n.id].x, p2[n.id].y); });
         graph6.centerContent();
+        persistLayout();
       }),
       mkBtn("缩放适配", function () { graph6.zoomToFit({ padding: 40, maxScale: 1.5 }); }),
       mkBtn("导出 PNG", function () {
@@ -241,7 +306,19 @@
       }));
     canvasHost.appendChild(bar);
 
-    return { graph: graph6, dispose: function () { graph6.dispose(); panelRoot.unmount(); el.innerHTML = ""; } };
+    return {
+      graph: graph6,
+      select: function (id) {
+        var cell = graph6.getCellById(id);
+        if (!cell) return false;
+        graph6.cleanSelection(); graph6.select(cell);
+        if (typeof graph6.centerCell === "function") graph6.centerCell(cell);
+        setSelection(cell.isNode() ? { kind: "class", ref: id } : { kind: "relation", ref: id });
+        return true;
+      },
+      fit: function () { graph6.zoomToFit({ padding: 40, maxScale: 1.5 }); },
+      dispose: function () { graph6.dispose(); panelRoot.unmount(); el.innerHTML = ""; }
+    };
   }
 
   window.X6D = { ready: ready, designer: designer };

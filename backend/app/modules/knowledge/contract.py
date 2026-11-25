@@ -189,7 +189,9 @@ def coverage_report(total: int, counts: dict, spec=FACT_FIELD_SPEC,
     for item in spec:
         col = item["column"]
         filled = int(counts.get(col, 0) or 0)
-        ratio = round(filled / total, 4) if total else 0.0
+        # Empty tables have no uncovered rows: treat coverage as vacuously
+        # complete while keeping total_facts=0 visible to callers.
+        ratio = round(filled / total, 4) if total else 1.0
         out.append({
             **item,
             "present": col in exists,
@@ -375,6 +377,34 @@ def ensure_schema() -> None:
                 db.execute(stmt)
             except Exception:  # noqa: BLE001
                 continue
+        # Create the temporal constraint idempotently without DO $$ blocks:
+        # SQLAlchemy's text parser can rewrite dollar-quoted PL/pgSQL bodies.
+        try:
+            exists = db.fetch_one(
+                "SELECT 1 AS ok FROM pg_constraint "
+                "WHERE conrelid = 'knowledge.facts'::regclass "
+                "AND conname = 'facts_valid_window'"
+            )
+            if not exists:
+                db.execute(
+                    "ALTER TABLE knowledge.facts ADD CONSTRAINT facts_valid_window "
+                    "CHECK (valid_from IS NULL OR valid_to IS NULL OR valid_to >= valid_from)"
+                )
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            db.execute(
+                "CREATE OR REPLACE FUNCTION knowledge.touch_updated_at() "
+                "RETURNS trigger LANGUAGE plpgsql AS "
+                "'BEGIN NEW.updated_at := NOW(); RETURN NEW; END'"
+            )
+            db.execute("DROP TRIGGER IF EXISTS trg_facts_touch_updated_at ON knowledge.facts")
+            db.execute(
+                "CREATE TRIGGER trg_facts_touch_updated_at BEFORE UPDATE ON knowledge.facts "
+                "FOR EACH ROW EXECUTE FUNCTION knowledge.touch_updated_at()"
+            )
+        except Exception:  # noqa: BLE001
+            pass
         _ensured = True
 
 

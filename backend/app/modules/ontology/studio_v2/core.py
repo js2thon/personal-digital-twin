@@ -139,6 +139,82 @@ class Ontology:
             info["description"] = description
         return True
 
+    def add_property(self, type_name: str, property_name: str, *,
+                     source_column: str = "", property_type: str = "string",
+                     description: str = "") -> bool:
+        """Add a schema property and optionally bind it to an existing source column."""
+        info = self.object_types.get(type_name)
+        if not info or not property_name or property_name in info.get("properties", []):
+            return False
+        columns = (self.data_mapping.get(type_name) or {}).get("columns", [])
+        if source_column and source_column not in columns:
+            raise ValueError(f"源字段不存在：{type_name}.{source_column}")
+        info.setdefault("properties", []).append(property_name)
+        info.setdefault("property_definitions", {})[property_name] = {
+            "type": property_type or "string", "description": description or "",
+        }
+        info.setdefault("property_mappings", {})[property_name] = {
+            "source_table": type_name, "source_column": source_column,
+        }
+        if source_column:
+            for obj in self.objects.get(type_name, {}).values():
+                obj[property_name] = obj.get(source_column)
+        return True
+
+    def update_property(self, type_name: str, property_name: str, *,
+                        new_name: str = "", source_column: str = "",
+                        property_type: str = "", description: str = "",
+                        clear_source_mapping: bool = False) -> bool:
+        info = self.object_types.get(type_name)
+        props = info.get("properties", []) if info else []
+        if not info or property_name not in props:
+            return False
+        columns = (self.data_mapping.get(type_name) or {}).get("columns", [])
+        if source_column and source_column not in columns:
+            raise ValueError(f"源字段不存在：{type_name}.{source_column}")
+        target_name = new_name or property_name
+        if target_name != property_name and target_name in props:
+            raise ValueError(f"属性已存在：{target_name}")
+        if target_name != property_name:
+            props[props.index(property_name)] = target_name
+            for obj in self.objects.get(type_name, {}).values():
+                if property_name in obj:
+                    obj[target_name] = obj.pop(property_name)
+            defs = info.setdefault("property_definitions", {})
+            defs[target_name] = defs.pop(property_name, {})
+            maps = info.setdefault("property_mappings", {})
+            if property_name in maps:
+                maps[target_name] = maps.pop(property_name)
+        definition = info.setdefault("property_definitions", {}).setdefault(target_name, {})
+        if property_type:
+            definition["type"] = property_type
+        if description is not None:
+            definition["description"] = description
+        if source_column:
+            info.setdefault("property_mappings", {})[target_name] = {
+                "source_table": type_name, "source_column": source_column,
+            }
+            for obj in self.objects.get(type_name, {}).values():
+                obj[target_name] = obj.get(source_column)
+        elif clear_source_mapping:
+            info.setdefault("property_mappings", {})[target_name] = {
+                "source_table": type_name, "source_column": "",
+            }
+        return True
+
+    def remove_property(self, type_name: str, property_name: str) -> bool:
+        info = self.object_types.get(type_name)
+        if not info or property_name not in info.get("properties", []):
+            return False
+        if property_name == info.get("primary_key"):
+            raise ValueError("不能删除对象主键属性")
+        info["properties"].remove(property_name)
+        info.get("property_definitions", {}).pop(property_name, None)
+        info.get("property_mappings", {}).pop(property_name, None)
+        for obj in self.objects.get(type_name, {}).values():
+            obj.pop(property_name, None)
+        return True
+
     def remove_object_type(self, type_name: str) -> bool:
         """删除类：同时删除其全部实例节点、属性与关联边。"""
         if type_name not in self.object_types:
@@ -166,6 +242,8 @@ class Ontology:
         target: str = "",
         target_property: str = "",
         new_name: str = "",
+        clear_source_property: bool = False,
+        clear_target_property: bool = False,
     ) -> bool:
         """编辑关系：名称 / 描述 / 起点 / 终点 / 起点属性 / 终点属性。
 
@@ -182,8 +260,12 @@ class Ontology:
             info["target"] = target
         if source_property:
             info["source_property"] = source_property
+        elif clear_source_property:
+            info["source_property"] = ""
         if target_property:
             info["target_property"] = target_property
+        elif clear_target_property:
+            info["target_property"] = ""
         if description is not None:
             info["description"] = description
         if new_name and new_name != name and new_name not in self.link_types:
@@ -228,6 +310,26 @@ class Ontology:
         for name, info in self.link_types.items():
             src_type, tgt_type = info["source"], info["target"]
             src_col = info.get("source_property", "")
+            target_info = self.object_types.get(tgt_type) or {}
+            target_pk = target_info.get("primary_key", "")
+            target_col = info.get("target_property") or target_pk
+            source_mapping = (self.object_types.get(src_type) or {}).get("property_mappings", {}).get(src_col)
+            target_mapping = target_info.get("property_mappings", {}).get(target_col)
+            if source_mapping is not None and not source_mapping.get("source_column"):
+                continue
+            if target_mapping is not None and not target_mapping.get("source_column"):
+                continue
+            target_index: Dict[str, str] = {}
+            ambiguous: set[str] = set()
+            for target_id, target_obj in self.objects.get(tgt_type, {}).items():
+                target_value = target_obj.get(target_col) if target_col else target_id
+                if target_value is None:
+                    continue
+                key = str(target_value)
+                if key in target_index:
+                    ambiguous.add(key)
+                else:
+                    target_index[key] = str(target_id)
             for pk_value, obj in self.objects.get(src_type, {}).items():
                 if not src_col:
                     continue
@@ -235,18 +337,19 @@ class Ontology:
                 if value is None:
                     continue
                 value = str(value)
-                if value not in self.objects.get(tgt_type, {}):
-                    continue  # 悬空引用跳过
+                target_id = target_index.get(value)
+                if target_id is None or value in ambiguous:
+                    continue  # 悬空或非唯一目标引用不生成实例边
                 self.links.add_edge(
                     make_node_id(src_type, pk_value),
-                    make_node_id(tgt_type, value),
+                    make_node_id(tgt_type, target_id),
                     key=name,
                     label=name,
                     relation_type=name,
                     source_type=src_type,
                     target_type=tgt_type,
                     source_pk=str(pk_value),
-                    target_pk=value,
+                    target_pk=target_id,
                     description=info.get("description", ""),
                 )
 
@@ -728,10 +831,13 @@ class AutoOntologyBuilder:
             self.ontology.add_objects(table_name, safe_records(df))
             self.ontology.data_mapping[table_name] = {
                 "source_name": table_name,
+                "source_table": table_name,
                 "primary_key": pk,
                 "columns": list(df.columns),
+                "column_types": {str(col): str(dtype) for col, dtype in df.dtypes.items()},
                 "row_count": len(df),
                 "loaded_count": len(self.ontology.objects[table_name]),
+                "source_kind": "uploaded_table",
             }
 
         self._auto_detect_links(normalized_data, actual_pks)
@@ -897,13 +1003,21 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
 
     for type_name, info in ontology.object_types.items():
         props = info.get("properties", [])
+        source_meta = ontology.data_mapping.get(type_name) or {}
         nodes.append({
             "id": f"CLASS:{type_name}",
             "kind": "class",
-            "label": type_name,
+            "label": info.get("label") or type_name,
             "primary_key": info["primary_key"],
             "properties": props,
             "description": info.get("description", ""),
+            "source": ({
+                "source_table": type_name,
+                "source_kind": source_meta.get("source_kind", "unknown"),
+                "dataset_id": source_meta.get("dataset_id"),
+                "row_count": source_meta.get("row_count", 0),
+                "columns": source_meta.get("columns", []),
+            } if source_meta else None),
         })
         for prop in props:
             prop_id = f"PROP:{type_name}:{prop}"
@@ -912,6 +1026,18 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
                 "kind": "property",
                 "label": prop,
                 "owner": type_name,
+                "source": {
+                    **(info.get("property_mappings", {}).get(prop) or {
+                        "source_table": type_name, "source_column": prop,
+                    }),
+                    "dataset_id": (ontology.data_mapping.get(type_name) or {}).get("dataset_id"),
+                    "mapped": (
+                        info.get("property_mappings", {}).get(prop, {}).get("source_column", prop)
+                        in (ontology.data_mapping.get(type_name) or {}).get("columns", [])
+                        and bool(info.get("property_mappings", {}).get(prop, {}).get("source_column", prop))
+                    ),
+                },
+                "definition": info.get("property_definitions", {}).get(prop, {}),
             })
             edges.append({
                 "source": f"CLASS:{type_name}",
@@ -924,12 +1050,32 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
         source, target = info["source"], info["target"]
         if source not in ontology.object_types or target not in ontology.object_types:
             continue
+        source_property = info.get("source_property", "")
+        target_property = info.get("target_property", "")
+        source_map = ontology.object_types[source].get("property_mappings", {}).get(source_property)
+        target_map = ontology.object_types[target].get("property_mappings", {}).get(target_property)
+        source_column = source_map.get("source_column") if source_map is not None else source_property
+        target_column = target_map.get("source_column") if target_map is not None else target_property
+        source_columns = (ontology.data_mapping.get(source) or {}).get("columns", [])
+        target_columns = (ontology.data_mapping.get(target) or {}).get("columns", [])
         edges.append({
             "source": f"CLASS:{source}",
             "target": f"CLASS:{target}",
             "label": relation_name,
             "kind": "objectProperty",
             "description": info.get("description", ""),
+            "source_binding": {
+                "source_table": source,
+                "source_column": source_column or "",
+                "source_property": source_property,
+                "target_table": target,
+                "target_column": target_column or "",
+                "target_property": target_property,
+                "source_dataset_id": (ontology.data_mapping.get(source) or {}).get("dataset_id"),
+                "target_dataset_id": (ontology.data_mapping.get(target) or {}).get("dataset_id"),
+                "mapped": bool(source_column and target_column
+                               and source_column in source_columns and target_column in target_columns),
+            },
         })
 
     return {"nodes": nodes, "edges": edges}

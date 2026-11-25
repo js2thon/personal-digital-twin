@@ -1,9 +1,9 @@
-"""Schema-as-Code 定义层（V1.3 语义层方案 · 能力 1）。
+"""Schema-as-Code 定义层：独立于问答/评测模块的本体语义契约。
 
-定位：**在现有 CQ V2 Schema Registry 之上做增强，不推倒重来**。
+定位：**本体 Schema 是独立建模源**。
 - Pydantic 2 定义实体/关系/属性/约束/特性的强类型契约；
-- 从 `cq_v2.registry.default_schema()` 派生增强层（继承、对称/互逆/传递、
-  必填/枚举/值域、业务规则），Registry 仍是 LinkML 建模源；
+- 从本模块内置的基础业务对象 Schema 派生增强层（继承、对称/互逆/传递、
+  必填/枚举/值域、业务规则）；
 - 导出标准 JSON Schema（既可给人审阅，也可直接喂给写入侧校验）；
 - 纯 dict 投影 `to_schema_dict()` 供约束/推理/规则三个纯函数引擎离线消费，
   不依赖 Web/DB 框架，方便零库单测。
@@ -157,7 +157,7 @@ class SemanticSchema(BaseModel):
     interfaces: list[InterfaceDef] = Field(default_factory=list)
     business_rules: list[BusinessRuleDef] = Field(default_factory=list)
     constraints: dict[str, Any] = Field(default_factory=dict)
-    source: str = "cq_v2.registry+semantic_enrichment"
+    source: str = "ontology.semantic_schema"
 
 
 # ---------------------------------------------------------------- 增强层定义
@@ -241,22 +241,41 @@ _DEFAULT_RULES = [
         action={"rule_type": "authorization", "effect": "deny",
                 "message": "restricted 可见性不得作为决策证据"},
     ),
-    BusinessRuleDef(
-        name="R-CQ-TRACE-01", priority=1, rule_type="derivation",
-        condition={"all": [
-            {"field": "operation", "op": "eq", "value": "cq_execute"},
-        ]},
-        action={"rule_type": "derivation", "emit": "cq_result_as_decision_evidence",
-                "note": "每次 CQ 执行把结果登记为决策确定性证据，写入 Decision Trace"},
-    ),
+
 ]
 
 
 def from_registry(reg: dict | None = None) -> SemanticSchema:
-    """以 CQ V2 Registry 为建模源，叠加语义增强层，产出强类型 SemanticSchema。"""
+    """从独立的基础本体 Schema 派生增强语义契约；兼容传入外部 Schema dict。"""
     if reg is None:
-        from app.modules.ontology.cq_v2 import registry as _reg
-        reg = _reg.default_schema()
+        reg = {
+            "schema_version": "v2.0.0",
+            "entity_types": {
+                "Person": {"label": "人员", "aliases": ["员工", "人"]},
+                "OrganizationUnit": {"label": "组织单元", "aliases": ["部门", "组织", "事业部", "业务单元"]},
+                "Project": {"label": "项目", "aliases": ["项目组"]},
+                "Policy": {"label": "制度", "aliases": ["规则", "办法"]},
+                "Document": {"label": "文档", "aliases": ["文件", "材料"]},
+                "System": {"label": "系统", "aliases": ["平台"]},
+                "Risk": {"label": "风险", "aliases": ["风险项"]},
+                "Skill": {"label": "技能", "aliases": ["能力"]},
+            },
+            "relation_types": {
+                "reports_to": {"label": "汇报对象", "source": "Person", "target": "Person", "cardinality": "many_to_one"},
+                "works_at": {"label": "任职于", "source": "Person", "target": "OrganizationUnit", "cardinality": "many_to_one"},
+                "member_of": {"label": "成员属于", "source": "Person", "target": "OrganizationUnit", "cardinality": "many_to_many"},
+                "is_project_manager_of": {"label": "负责项目", "source": "Person", "target": "Project", "cardinality": "one_to_many"},
+                "works_on": {"label": "参与项目", "source": "Person", "target": "Project", "cardinality": "many_to_many"},
+                "collaborates_with": {"label": "协作", "source": "Person", "target": "Person", "cardinality": "many_to_many"},
+                "has_role": {"label": "担任角色", "source": "Person", "target": "OrganizationUnit", "cardinality": "many_to_one"},
+                "authored": {"label": "撰写", "source": "Person", "target": "Document", "cardinality": "one_to_many"},
+                "references": {"label": "引用", "source": "Document", "target": "Document", "cardinality": "many_to_many"},
+                "believes": {"label": "持有观点", "source": "Person", "target": "Document", "cardinality": "one_to_many"},
+                "knows": {"label": "掌握技能", "source": "Person", "target": "Skill", "cardinality": "many_to_many"},
+                "owns": {"label": "负责系统", "source": "Person", "target": "System", "cardinality": "many_to_one"},
+            },
+            "constraints": {"max_hops": 3},
+        }
 
     ent: dict[str, EntityTypeDef] = {}
     for name, meta in (reg.get("entity_types") or {}).items():
@@ -281,7 +300,6 @@ def from_registry(reg: dict | None = None) -> SemanticSchema:
             cardinality=(meta or {}).get("cardinality", "many_to_many"),
             characteristics=_CHARACTERISTICS.get(name, Characteristics()),
         )
-    # 给项目负责人关系补互逆定义
     if "is_project_manager_of" in rel:
         rel["is_project_manager_of"].characteristics = Characteristics(
             inverse_of="managed_by")
@@ -298,11 +316,11 @@ def from_registry(reg: dict | None = None) -> SemanticSchema:
         constraints={"max_transitive_depth": 3,
                      "max_hops": (reg.get("constraints") or {}).get("max_hops", 3),
                      "write_gate": "application_enforced"},
+        source="ontology.semantic_schema",
     )
 
-
 def default_semantic_schema() -> SemanticSchema:
-    """默认增强 Schema（供启动播种与离线单测）。"""
+    """默认增强 Schema（独立于问答模块，供启动播种与离线单测）。"""
     return from_registry(None)
 
 

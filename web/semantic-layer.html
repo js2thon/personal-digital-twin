@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>本体语义层工作台 · Schema / 约束 / 推理 / CQ / 决策 Trace</title>
+<title>本体语义层工作台 · Schema / 约束 / 推理 / 版本冻结</title>
 <style>
 :root{--bg:#f7f8fa;--card:#fff;--border:#e3e6ec;--text:#1c2330;--muted:#6b7482;
 --accent:#185fa5;--ok:#0f6e56;--warn:#ba7517;--bad:#a32d2d;--info:#e6f1fb;
@@ -81,7 +81,7 @@ padding:9px 11px;font-size:11.5px;min-height:56px;max-height:150px;overflow:auto
 </head>
 <body>
 <header>
-  <h1>本体语义层工作台 <span class="sub">Schema-as-Code · 写入约束 · 轻量推理 · CQ 工程化 · 版本冻结 · 可评估</span></h1>
+  <h1>本体语义层工作台 <span class="sub">Schema-as-Code · 写入约束 · 轻量推理 · 版本冻结 · 可评估</span></h1>
   <a class="back" href="/console/index.html">← 返回主控制台</a>
   <button onclick="boot(true)">刷新全部</button>
 </header>
@@ -93,7 +93,6 @@ padding:9px 11px;font-size:11.5px;min-height:56px;max-height:150px;overflow:auto
     <div class="kpi"><div class="n" id="kTypes">—</div><div class="l">实体 / 关系类型</div></div>
     <div class="kpi"><div class="n" id="kRules">—</div><div class="l">业务规则 / 特性关系</div></div>
     <div class="kpi"><div class="n" id="kViol">—</div><div class="l">类型违规边</div></div>
-    <div class="kpi"><div class="n" id="kStable">—</div><div class="l">CQ 回归稳定率</div></div>
   </div>
 
   <!-- 1. Schema 定义与治理 -->
@@ -154,59 +153,17 @@ padding:9px 11px;font-size:11.5px;min-height:56px;max-height:150px;overflow:auto
     </div>
   </section>
 
-  <!-- 3. CQ 工程化 -->
+  <!-- 4. 版本冻结 -->
   <section>
-    <h2>③ CQ 工程化 <small>execute 幂等 · 服务端上下文 · 执行历史 · 回归集</small></h2>
-    <p class="hint">execute 强制服务端注入 tenant / identity / space / ontology_version / policy，
-      请求体伪造字段会被剥离并在结果中如实披露；相同 idempotency_key 返回同一 run。</p>
-    <div class="two">
-      <div>
-        <div class="bar">
-          <input type="text" id="cqId" value="CQ-001" style="width:110px" placeholder="CQ code">
-          <select id="querySel">
-            <option value="schema_snapshot">schema_snapshot</option>
-            <option value="type_hierarchy">type_hierarchy</option>
-            <option value="instances_by_type">instances_by_type</option>
-            <option value="relations_by_type">relations_by_type</option>
-            <option value="reasoning_expand">reasoning_expand</option>
-            <option value="constraint_check">constraint_check</option>
-            <option value="overview">overview</option>
-          </select>
-          <input type="text" id="idemKey" placeholder="幂等键（留空自动生成）" style="width:180px">
-          <button class="primary" onclick="runCQ()">执行</button>
-        </div>
-        <div class="bar"><span class="pill">越权自证</span>
-          <label style="font-size:12px"><input type="checkbox" id="spoofChk"> 注入伪造 tenant_id/actor/role</label></div>
-        <pre id="cqResult">点「执行」查看结果（含 server_context / applied_rules / 幂等标记）</pre>
+    <h2>④ 版本冻结 <small>任务可还原到具体 ontology_version</small></h2>
+    <div>
+      <div class="bar">
+        <input type="text" id="taskId" placeholder="task_id（如 task-demo-1）" style="width:190px">
+        <button onclick="freeze()">冻结快照</button>
+        <button onclick="loadSnapshots()">刷新</button>
       </div>
-      <div>
-        <div class="bar"><span class="pill">回归集</span>
-          <button onclick="runRegression()">跑核心回归集</button>
-          <button onclick="loadRuns()">刷新历史</button></div>
-        <div id="regressionBox" class="hint">加载中…</div>
-        <table><thead><tr><th>run_id</th><th>CQ</th><th>state</th><th>版本绑定</th></tr></thead>
-          <tbody id="runsBody"><tr><td colspan="4" class="empty">加载中…</td></tr></tbody></table>
-      </div>
-    </div>
-  </section>
-
-  <!-- 4. 决策 Trace / 版本冻结 -->
-  <section>
-    <h2>④ 版本冻结与决策 Trace <small>任务可还原到具体 ontology_version · 应用了哪些规则/CQ</small></h2>
-    <div class="two">
-      <div>
-        <div class="bar">
-          <input type="text" id="taskId" placeholder="task_id（如 task-demo-1）" style="width:190px">
-          <button onclick="freeze()">冻结快照</button>
-          <button onclick="loadSnapshots()">刷新</button></div>
-        <table><thead><tr><th>task_id</th><th>ontology_version</th><th>冻结时间</th></tr></thead>
-          <tbody id="snapBody"><tr><td colspan="3" class="empty">加载中…</td></tr></tbody></table>
-      </div>
-      <div>
-        <div class="bar"><input type="text" id="traceRun" placeholder="run_id" style="width:230px">
-          <button onclick="loadTrace()">查看决策 Trace</button></div>
-        <pre id="traceBox">展示 Applied Rules / CQ 结果 / 衍生候选（候选不改写权威 Fact）</pre>
-      </div>
+      <table><thead><tr><th>task_id</th><th>ontology_version</th><th>冻结时间</th></tr></thead>
+        <tbody id="snapBody"><tr><td colspan="3" class="empty">加载中…</td></tr></tbody></table>
     </div>
   </section>
 
@@ -248,18 +205,16 @@ function post(path, body) {
 }
 function showErr(box, e) { $(box).textContent = "请求失败：" + (e.message || e); }
 
-async function boot(force) {
-  if (force) { $("cqResult").textContent = "—"; }
+async function boot() {
   try {
     const h = await api("/health");
     $("kStore").textContent = h.db_ok ? "PG ✓" : "PG ✗";
     $("kStore").parentNode.className = "kpi " + (h.db_ok ? "ok" : "bad");
     $("kVer").textContent = h.ontology_version || "—";
     $("kRules").textContent = "—";
-  } catch (e) { $("kStore").textContent = "离线"; showErr("cqResult", e); return; }
+  } catch (e) { $("kStore").textContent = "离线"; return; }
   await loadSchema();
-  await Promise.all([loadGraphData(), loadRegression(), loadRuns(),
-                     loadSnapshots(), loadInstances(), loadMetrics()]);
+  await Promise.all([loadGraphData(), loadSnapshots(), loadInstances(), loadMetrics()]);
 }
 
 async function loadSchema() {
@@ -442,68 +397,6 @@ function drawGraph() {
   svg.innerHTML = s;
 }
 
-async function runCQ() {
-  const cq = $("cqId").value.trim() || "CQ-001";
-  const q = $("querySel").value;
-  const body = {parameters: {query: q}, idempotency_key: $("idemKey").value.trim()};
-  if (q === "type_hierarchy" || q === "instances_by_type") body.parameters.parameters = {type: "Person"};
-  if (q === "constraint_check") body.parameters.parameters = {kind: "instance",
-    target: {type_name: "Employee", properties: {employee_no: "E10001"}}};
-  if ($("spoofChk").checked) Object.assign(body,
-    {tenant_id: "EVIL_TENANT", actor: "hacker", role: "admin", ontology_version: "v9.9.9"});
-  $("cqResult").textContent = "执行中…";
-  try {
-    const d = await post("/cq/" + encodeURIComponent(cq) + "/execute", body);
-    const ctx = d.server_context || {};
-    $("cqResult").textContent = JSON.stringify({
-      run_id: d.run_id, state: d.state, query: d.query,
-      idempotency_key: d.idempotency_key, idempotent_replay: d.idempotent_replay,
-      ontology_version: d.ontology_version, version_bound: d.version_bound,
-      server_context_tenant: ctx.tenant_id, server_context_actor: ctx.actor,
-      stripped_body_keys: d.stripped_body_keys, body_trusted: d.body_trusted,
-      applied_rules: (d.applied_rules||[]).map(a=>a.code),
-      derived_candidates: d.derived_candidates,
-      fingerprint: d.fingerprint, answer: d.answer,
-    }, null, 2);
-    $("traceRun").value = d.run_id;
-    loadRuns();
-  } catch (e) { showErr("cqResult", e); }
-}
-
-async function loadRegression() {
-  try {
-    const s = await api("/regression/sets");
-    const core = (s.items || []).find(x => x.set_id === "core-semantic-v1");
-    $("regressionBox").innerHTML = `核心回归集：<span class="mono">core-semantic-v1</span> ·
-      ${core ? core.case_count : "—"} 个用例 <span class="tag info">确定性执行</span>
-      <div class="hint" style="margin:6px 0 0">连续执行两次指纹一致即 stable=true（可重复执行，结果稳定）</div>`;
-  } catch (e) { $("regressionBox").textContent = e.message; }
-}
-async function runRegression() {
-  $("regressionBox").textContent = "执行中…";
-  try {
-    await post("/regression/sets/core-semantic-v1/run", {});
-    const d = await post("/regression/sets/core-semantic-v1/run", {});
-    $("regressionBox").innerHTML = `本次指纹 <span class="mono">${esc(d.result_fingerprint)}</span><br>
-      上次指纹 <span class="mono">${esc(d.previous_fingerprint)}</span><br>
-      用例数 ${d.case_count} · 结果 <span class="tag ${d.stable?'ok':'warn'}">${d.stable?'稳定 stable=true':'基线建立/变化'}</span>
-      · <span class="mono">${esc(d.ontology_version)}</span>`;
-    loadMetrics();
-  } catch (e) { $("regressionBox").textContent = e.message; }
-}
-
-async function loadRuns() {
-  try {
-    const d = await api("/cq/runs");
-    const rows = (d.items || []).slice(0, 12);
-    $("runsBody").innerHTML = rows.length ? rows.map(r => `<tr>
-      <td class="mono">${esc(r.run_id)}</td><td>${esc(r.cq_id)}</td>
-      <td><span class="tag ${r.state==='answered'?'ok':'mute'}">${esc(r.state)}</span></td>
-      <td>${r.version_bound ? '<span class="tag ok">已冻结</span>' : '<span class="pill">当前版本</span>'}</td>
-    </tr>`).join("") : `<tr><td colspan="4" class="empty">无执行历史</td></tr>`;
-  } catch (e) { $("runsBody").innerHTML = `<tr><td colspan="4" class="empty">${esc(e.message)}</td></tr>`; }
-}
-
 async function freeze() {
   const tid = $("taskId").value.trim();
   if (!tid) { $("snapBody").innerHTML = `<tr><td colspan="3" class="empty">请输入 task_id</td></tr>`; return; }
@@ -520,18 +413,6 @@ async function loadSnapshots() {
       : `<tr><td colspan="3" class="empty">无冻结快照</td></tr>`;
   } catch (e) { $("snapBody").innerHTML = `<tr><td colspan="3" class="empty">${esc(e.message)}</td></tr>`; }
 }
-async function loadTrace() {
-  const rid = $("traceRun").value.trim();
-  if (!rid) { $("traceBox").textContent = "请输入 run_id"; return; }
-  try { const d = await api("/decision-trace/" + encodeURIComponent(rid));
-    $("traceBox").textContent = JSON.stringify({
-      run_id: d.run_id, cq_id: d.cq_id, ontology_version: d.ontology_version,
-      applied_rules: d.applied_rules, cq_results: d.cq_results,
-      derived_candidates: d.derived_candidates,
-    }, null, 2);
-  } catch (e) { showErr("traceBox", e); }
-}
-
 async function loadInstances() {
   try {
     const d = await api("/instances");
@@ -556,13 +437,11 @@ async function loadAlignment() {
 }
 async function loadMetrics() {
   try { const d = await api("/metrics");
-    const st = d.cq_regression_stability || {};
-    $("kStable").textContent = (st.stable_rate == null) ? "无数据" : (st.stable_rate * 100).toFixed(0) + "%";
     $("metricsBox").textContent = JSON.stringify(d, null, 2);
   } catch (e) { showErr("metricsBox", e); }
 }
 
-boot(false).then(() => {
+boot().then(() => {
   /* 支持 ?view=3d 直达 3D 图谱（便于分享与自动化验收；默认仍是 2D，不改变既有行为） */
   const v = new URLSearchParams(location.search).get("view");
   if (v === "3d") setGraphView("3d");

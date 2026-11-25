@@ -52,7 +52,7 @@ def coverage() -> dict:
             stamped = int((row or {}).get("stamped") or 0)
             out[table] = {
                 "total": total, "stamped": stamped,
-                "coverage": round(stamped / total, 4) if total else None,
+                "coverage": round(stamped / total, 4) if total else 1.0,
                 "foreign_rows": int((row or {}).get("foreign") or 0),
             }
         except Exception as exc:  # noqa: BLE001

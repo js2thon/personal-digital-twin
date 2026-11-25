@@ -144,6 +144,12 @@ def build_from_dataset(dataset_id: str) -> Dict[str, Any]:
     tables: Dict[str, pd.DataFrame] = {t.name: t.df for t in ts.tables.values()}
     name = f"dataset:{dataset_id[:8]}"
     sess = _store().build_from_dataframes(tables, name=name)
+    sess.meta["source_info"] = {"kind": "dataset", "dataset_id": dataset_id, "name": name}
+    sess.touch()
+    for mapping in sess.ontology.data_mapping.values():
+        mapping["source_kind"] = "dataset"
+        mapping["dataset_id"] = dataset_id
+    sess.touch()
     return {"ok": True, "session_id": sess.session_id, "name": name,
             "dataset_id": dataset_id, **sess.summary()}
 
@@ -267,6 +273,8 @@ async def build_from_upload(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    sess.meta["source_info"] = {"kind": "uploaded_files", "files": [f.filename or "table" for f in files]}
+    sess.touch()
     return {"ok": True, **sess.summary()}
 
 
@@ -290,6 +298,8 @@ def build_from_records(body: BuildFromRecordsRequest) -> Dict[str, Any]:
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    sess.meta["source_info"] = {"kind": "records", "tables": list(frames.keys())}
+    sess.touch()
     return {"ok": True, **sess.summary()}
 
 
@@ -508,12 +518,21 @@ def list_actions(session_id: str, limit: int = Query(50, ge=1, le=500)) -> Dict[
 # Schema 编辑（图编辑器）：编辑后自动保存 + 重建实例边
 # ---------------------------------------------------------------------
 class SchemaEditOp(BaseModel):
-    op: str = Field(description="update_class | delete_class | update_relation | delete_relation")
-    ref: str
+    op: str = Field(description="create_class | update_class | delete_class | add_property | update_property | delete_property | create_relation | update_relation | delete_relation")
+    ref: str = ""
+    type_name: str = ""
+    primary_key: str = ""
+    properties: List[str] = Field(default_factory=list)
+    property_name: str = ""
+    property_type: str = ""
+    source_table: str = ""
+    source_column: str = ""
+    clear_source_mapping: bool = False
     label: str = ""
     description: str = ""
     source_property: str = ""
-    # 关系配置：名称 / 起点 / 终点（业务对象） / 起点属性 / 终点属性
+    clear_source_property: bool = False
+    clear_target_property: bool = False
     new_name: str = ""
     source: str = ""
     target: str = ""
@@ -522,6 +541,136 @@ class SchemaEditOp(BaseModel):
 
 class SchemaEditRequest(BaseModel):
     ops: List[SchemaEditOp]
+
+
+class CanvasLayoutRequest(BaseModel):
+    positions: Dict[str, Dict[str, float]] = Field(default_factory=dict)
+
+class StudioVersionCreateRequest(BaseModel):
+    label: str = ""
+    note: str = ""
+
+
+@router.post("/sessions/{session_id}/versions")
+def create_studio_version(session_id: str, body: StudioVersionCreateRequest) -> Dict[str, Any]:
+    try:
+        return {"ok": True, "version": _store().create_version(session_id, body.label, body.note)}
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("/sessions/{session_id}/versions")
+def list_studio_versions(session_id: str) -> Dict[str, Any]:
+    try:
+        _store().require(session_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"versions": _store().list_versions(session_id)}
+
+
+@router.post("/sessions/{session_id}/versions/{version_id}/restore")
+def restore_studio_version(session_id: str, version_id: str) -> Dict[str, Any]:
+    try:
+        sess = _store().restore_version(session_id, version_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True, **sess.summary()}
+
+
+@router.get("/sessions/{session_id}/layout")
+def get_canvas_layout(session_id: str) -> Dict[str, Any]:
+    try:
+        sess = _store().require(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"positions": sess.meta.get("canvas_layout", {}), "storage": "postgresql"}
+
+
+@router.post("/sessions/{session_id}/layout")
+def save_canvas_layout(session_id: str, body: CanvasLayoutRequest) -> Dict[str, Any]:
+    try:
+        sess = _store().require(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    valid_ids = {node["id"] for node in schema_graph_payload(sess.ontology)["nodes"]
+                 if node.get("kind") == "class"}
+    positions = {}
+    for node_id, point in body.positions.items():
+        if node_id not in valid_ids:
+            continue
+        x, y = point.get("x"), point.get("y")
+        if x is None or y is None or not (-100000 <= x <= 100000) or not (-100000 <= y <= 100000):
+            raise HTTPException(400, f"画布坐标无效：{node_id}")
+        positions[node_id] = {"x": float(x), "y": float(y)}
+    sess.meta["canvas_layout"] = positions
+    sess.touch()
+    return {"ok": True, "saved": len(positions), "storage": "postgresql"}
+
+
+@router.post("/sessions/{session_id}/compare-dataset/{dataset_id}")
+def compare_source_dataset(session_id: str, dataset_id: str) -> Dict[str, Any]:
+    """Compare a newly uploaded dataset with the source schema without mutating the ontology."""
+    try:
+        sess = _store().require(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    from app.modules.ontology.automodel import versions as am_versions
+    dataset = am_versions.load_dataset(dataset_id, "default")
+    if dataset is None:
+        raise HTTPException(404, f"数据集不存在：{dataset_id}")
+    current = sess.ontology.data_mapping
+    incoming = {table.name: table for table in dataset.tables.values()}
+    added_tables = sorted(set(incoming) - set(current))
+    removed_tables = sorted(set(current) - set(incoming))
+    table_diffs = []
+    for table_name in sorted(set(current) & set(incoming)):
+        old = current[table_name]
+        table = incoming[table_name]
+        new_columns = [str(c) for c in table.df.columns]
+        old_columns = list(old.get("columns", []))
+        old_types = old.get("column_types", {})
+        new_types = {str(col): str(dtype) for col, dtype in table.df.dtypes.items()}
+        table_diffs.append({
+            "table": table_name,
+            "added_columns": [c for c in new_columns if c not in old_columns],
+            "removed_columns": [c for c in old_columns if c not in new_columns],
+            "type_changes": [{"column": c, "before": old_types.get(c), "after": new_types.get(c)}
+                             for c in new_columns if c in old_types and old_types.get(c) != new_types.get(c)],
+            "rows_before": old.get("row_count", 0),
+            "rows_after": len(table.df),
+        })
+    current_dataset_id = sess.meta.get("source_info", {}).get("dataset_id")
+    dataset_changed = current_dataset_id != dataset_id
+    changed = bool(dataset_changed or added_tables or removed_tables or any(
+        d["added_columns"] or d["removed_columns"] or d["type_changes"] or d["rows_before"] != d["rows_after"]
+        for d in table_diffs
+    ))
+    return {
+        "ok": True, "requires_review": changed, "mutated": False,
+        "dataset_changed": dataset_changed,
+        "current_dataset_id": current_dataset_id,
+        "incoming_dataset_id": dataset_id,
+        "added_tables": added_tables, "removed_tables": removed_tables,
+        "table_diffs": table_diffs,
+        "message": "发现上游数据变化，已生成差异报告；本次比较不会自动修改本体或映射。" if changed else "数据结构与记录数未发现变化。",
+    }
+
+
+@router.get("/sessions/{session_id}/source-lineage")
+def get_source_lineage(session_id: str) -> Dict[str, Any]:
+    try:
+        sess = _store().require(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    graph = schema_graph_payload(sess.ontology)
+    return {
+        "session_id": session_id,
+        "source_info": sess.meta.get("source_info", {}),
+        "tables": list(sess.ontology.data_mapping.values()),
+        "objects": [n for n in graph["nodes"] if n.get("kind") == "class"],
+        "properties": [n for n in graph["nodes"] if n.get("kind") == "property"],
+        "relations": [e for e in graph["edges"] if e.get("kind") == "objectProperty"],
+    }
 
 
 @router.post("/sessions/{session_id}/schema/edit")
@@ -534,13 +683,61 @@ def schema_edit(session_id: str, body: SchemaEditRequest) -> Dict[str, Any]:
     onto = sess.ontology
     done: List[str] = []
     for o in body.ops:
-        if o.op == "update_class":
+        if o.op == "create_class":
+            name = o.type_name or o.ref
+            if not name or not o.primary_key:
+                raise HTTPException(400, "新增业务对象必须提供 type_name 和 primary_key")
+            if name in onto.object_types:
+                raise HTTPException(409, f"对象已存在：{name}")
+            props = list(o.properties)
+            if o.primary_key not in props:
+                props.insert(0, o.primary_key)
+            onto.add_object_type(name, o.primary_key, props, o.description)
+            done.append(f"新增对象 {name}")
+        elif o.op == "update_class":
             if onto.update_object_type(o.ref, label=o.label, description=o.description):
                 done.append(f"更新类 {o.ref}")
         elif o.op == "delete_class":
             if onto.remove_object_type(o.ref):
                 done.append(f"删除类 {o.ref}")
+        elif o.op == "add_property":
+            type_name = o.type_name or o.ref
+            if onto.add_property(type_name, o.property_name, source_column=o.source_column,
+                                 property_type=o.property_type, description=o.description):
+                done.append(f"新增属性 {type_name}.{o.property_name}")
+        elif o.op == "update_property":
+            if onto.update_property(o.type_name, o.property_name, new_name=o.new_name,
+                                    source_column=o.source_column, property_type=o.property_type,
+                                    description=o.description, clear_source_mapping=o.clear_source_mapping):
+                done.append(f"更新属性 {o.type_name}.{o.property_name}")
+        elif o.op == "delete_property":
+            if onto.remove_property(o.type_name, o.property_name):
+                done.append(f"删除属性 {o.type_name}.{o.property_name}")
+        elif o.op == "create_relation":
+            name = o.new_name or o.ref
+            if not name or o.source not in onto.object_types or o.target not in onto.object_types:
+                raise HTTPException(400, "新增关系必须指定有效的名称、起点和终点对象")
+            if name in onto.link_types:
+                raise HTTPException(409, f"关系已存在：{name}")
+            if o.source_property and o.source_property not in onto.object_types[o.source].get("properties", []):
+                raise HTTPException(400, f"起点属性不存在：{o.source}.{o.source_property}")
+            if o.target_property and o.target_property not in onto.object_types[o.target].get("properties", []):
+                raise HTTPException(400, f"终点属性不存在：{o.target}.{o.target_property}")
+            onto.add_link_type(name, o.source, o.target, o.description,
+                               source_property=o.source_property, target_property=o.target_property)
+            done.append(f"新增关系 {name}")
         elif o.op == "update_relation":
+            current = onto.link_types.get(o.ref)
+            if current is None:
+                continue
+            source_type = o.source or current.get("source")
+            target_type = o.target or current.get("target")
+            if source_type not in onto.object_types or target_type not in onto.object_types:
+                raise HTTPException(400, "关系起点或终点对象不存在")
+            if o.source_property and o.source_property not in onto.object_types[source_type].get("properties", []):
+                raise HTTPException(400, f"起点属性不存在：{source_type}.{o.source_property}")
+            if o.target_property and o.target_property not in onto.object_types[target_type].get("properties", []):
+                raise HTTPException(400, f"终点属性不存在：{target_type}.{o.target_property}")
             if onto.update_link_type(
                 o.ref,
                 description=o.description,
@@ -549,6 +746,8 @@ def schema_edit(session_id: str, body: SchemaEditRequest) -> Dict[str, Any]:
                 target=o.target,
                 target_property=o.target_property,
                 new_name=o.new_name,
+                clear_source_property=o.clear_source_property,
+                clear_target_property=o.clear_target_property,
             ):
                 done.append(f"更新关系 {o.new_name or o.ref}")
         elif o.op == "delete_relation":
@@ -572,6 +771,7 @@ def run_tool(session_id: str, body: ToolCallRequest) -> Dict[str, Any]:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     result = execute_ontology_tool(sess.ontology, body.name, body.arguments)
+    sess.touch()
     return {"tool": body.name, "result": result}
 
 

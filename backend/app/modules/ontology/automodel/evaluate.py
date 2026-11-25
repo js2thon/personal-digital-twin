@@ -123,8 +123,18 @@ def generate(schema: dict, F: dict, n_per_type: int = 3, seed: int = 7) -> list[
         # count_all
         add("count_all", f"一共有多少{'人' if people else cw}？", {"type": "number", "value": len(df)}, cls=cls)
 
+        # attr_lookup: retain a broader deterministic fallback when a
+        # source column is typed as text rather than enum/name.
+        lookup_attrs = list(attrs)
+        if not lookup_attrs:
+            lookup_attrs = [
+                a for a, meta in schema["attributes"].items()
+                if meta.get("owner") == cls and a in df
+                and a not in ("_id", "_name") and df[a].notna().any()
+                and df[a].nunique(dropna=True) > 1
+            ]
         # attr_lookup
-        for a in attrs[:n_per_type]:
+        for a in lookup_attrs[:n_per_type]:
             rows = uniq[uniq[a].notna()]
             if rows.empty:
                 continue

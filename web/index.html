@@ -1369,96 +1369,6 @@
   .wb-seg button.active { color: var(--ax-info); font-weight: 500;
       background: color-mix(in srgb, var(--ax-info) 14%, var(--ax-surface)); }
 
-  /* ---------- CQ（能力问题） ---------- */
-  .cq-wrap { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr); gap: 14px; }
-  @media (max-width: 980px) { .cq-wrap { grid-template-columns: 1fr; } }
-  .cq-list { display: flex; flex-direction: column; gap: 8px; max-height: 620px; overflow: auto; padding-right: 4px; }
-  .cq-card { border: 1px solid var(--ax-border); border-radius: var(--radius-element);
-      padding: 10px 12px; background: var(--ax-surface); cursor: pointer; }
-  .cq-card:hover { border-color: var(--ax-border-emphasized); }
-  .cq-card.sel { border-color: color-mix(in srgb, var(--ax-info) 55%, var(--ax-border));
-      background: color-mix(in srgb, var(--ax-info) 6%, var(--ax-surface)); }
-  .cq-head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-  .cq-code { font-family: var(--font-mono, monospace); font-size: 11.5px;
-      color: var(--ax-text-secondary); letter-spacing: .3px; }
-  .cq-q { font-size: var(--font-size-sm); color: var(--ax-text-primary);
-      margin: 5px 0 4px; line-height: 1.45; }
-  .cq-sub { font-size: 11.5px; color: var(--ax-text-secondary); }
-  .cq-badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid;
-      white-space: nowrap; }
-  .cq-badge.ok { color: var(--ax-success); border-color: color-mix(in srgb, var(--ax-success) 45%, transparent);
-      background: color-mix(in srgb, var(--ax-success) 10%, transparent); }
-  .cq-badge.warn { color: var(--ax-warning); border-color: color-mix(in srgb, var(--ax-warning) 45%, transparent);
-      background: color-mix(in srgb, var(--ax-warning) 10%, transparent); }
-  .cq-badge.bad { color: var(--ax-error); border-color: color-mix(in srgb, var(--ax-error) 45%, transparent);
-      background: color-mix(in srgb, var(--ax-error) 10%, transparent); }
-  .cq-badge.mute { color: var(--ax-text-secondary); border-color: var(--ax-border); }
-  .cq-bar { height: 4px; border-radius: 2px; background: var(--ax-border); margin: 7px 0 5px; overflow: hidden; }
-  .cq-bar i { display: block; height: 100%; border-radius: 2px; background: var(--ax-info); }
-  .cq-bar i.ok { background: var(--ax-success); }
-  .cq-bar i.bad { background: var(--ax-error); }
-  .cq-gap { font-size: 11.5px; color: var(--ax-text-secondary); line-height: 1.5; }
-  .cq-gap b { color: var(--ax-warning); font-weight: 500; }
-  .cq-sample { font-size: 11.5px; margin-top: 5px; padding: 4px 7px; border-radius: 6px;
-      background: var(--ax-surface-subtle); color: var(--ax-text-secondary); line-height: 1.5; }
-  .cq-sample b { color: var(--ax-text-primary); font-weight: 500; }
-  .cq-form textarea { width: 100%; min-height: 54px; margin-top: 3px; resize: vertical; }
-  .cq-form .wb-field select, .cq-form .wb-field input { width: 100%; margin-top: 3px; }
-  .cq-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .cq-hint { font-size: 11.5px; color: var(--ax-text-secondary); line-height: 1.5;
-      min-height: 16px; margin-top: 6px; }
-  .wb-group-box { fill: var(--ax-surface-subtle); stroke: var(--ax-border); stroke-width: .5; }
-  .wb-group-label { font-size: 11px; font-weight: 500;
-      fill: var(--ax-text-secondary); }
-  .wb-zoom-badge { position: absolute; right: 50px; bottom: 8px; z-index: 2; pointer-events: none;
-      font-size: 11px; color: var(--ax-text-secondary); padding: 2px 8px; border-radius: 999px;
-      border: 1px solid var(--ax-border);
-      background: color-mix(in srgb, var(--ax-surface) 86%, transparent); }
-  .wb-side { border: 1px solid var(--ax-border); border-radius: var(--radius-card);
-      padding: 10px 10px 10px 18px; max-height: 430px; overflow: auto;
-      background: var(--ax-surface-subtle); }
-  .wb-side ul { padding-left: 2px; }
-  .wb-side h4 { margin: 0 0 6px; font-size: var(--font-size-sm); color: var(--ax-text-secondary);
-      font-weight: 600; }
-  .wb-side ul { list-style: none; margin: 0 0 12px; padding: 0; display: flex;
-      flex-direction: column; gap: 4px; }
-  .wb-side li { font-size: var(--font-size-sm); color: var(--ax-text-primary);
-      display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
-  .wb-side li span { color: var(--ax-text-secondary); overflow-wrap: anywhere; min-width: 0; }
-  .wb-side li b { text-align: right; flex: 0 0 auto; }
-  .wb-side li span { color: var(--ax-text-secondary); }
-  .wb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
-  .wb-box { border: 1px solid var(--ax-border); border-radius: var(--radius-card);
-      padding: 12px; background: var(--ax-surface-subtle); }
-  .wb-box h3 { margin: 0 0 10px; font-size: var(--font-size-base); }
-  .wb-field { display: block; font-size: var(--font-size-sm); color: var(--ax-text-secondary);
-      margin-bottom: 8px; }
-  .wb-field select, .wb-field input { width: 100%; margin-top: 3px; }
-  .wb-rule { border: 1px solid var(--ax-border); border-radius: var(--radius-element);
-      padding: 8px 12px; margin-bottom: 8px; background: var(--ax-surface); }
-  .wb-rule-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .wb-rule-head b { font-size: var(--font-size-sm); }
-  .wb-rule-head .desc { color: var(--ax-text-secondary); font-size: var(--font-size-sm); }
-  .wb-sev { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid; }
-  .wb-sev.error { color: var(--ax-error); border-color: color-mix(in srgb, var(--ax-error) 45%, transparent);
-      background: var(--ax-error-bg); }
-  .wb-sev.warn { color: var(--ax-warning); border-color: color-mix(in srgb, var(--ax-warning) 45%, transparent);
-      background: var(--ax-warning-bg); }
-  .wb-sev.info { color: var(--ax-info); border-color: color-mix(in srgb, var(--ax-info) 45%, transparent);
-      background: color-mix(in srgb, var(--ax-info) 10%, transparent); }
-  .wb-sev.pass { color: var(--ax-success); border-color: color-mix(in srgb, var(--ax-success) 45%, transparent);
-      background: var(--ax-success-bg); }
-  .wb-samples { margin-top: 6px; font-size: 12px; color: var(--ax-text-secondary);
-      display: flex; flex-direction: column; gap: 2px; }
-  .wb-samples code { background: var(--ax-surface-subtle); padding: 1px 5px; border-radius: 4px;
-      color: var(--ax-text-primary); }
-  .wb-banner { border: 1px solid; border-radius: var(--radius-element); padding: 8px 12px;
-      margin-bottom: 10px; font-size: var(--font-size-sm); }
-  .wb-banner.ok { border-color: color-mix(in srgb, var(--ax-success) 45%, transparent);
-      background: var(--ax-success-bg); color: var(--ax-text-primary); }
-  .wb-banner.bad { border-color: color-mix(in srgb, var(--ax-error) 45%, transparent);
-      background: var(--ax-error-bg); color: var(--ax-text-primary); }
-
   /* ---------- 规则校验 / 本体自检：双列 + 紧凑行 ---------- */
   .wb-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 14px; align-items: start; }
@@ -1523,89 +1433,6 @@
       background: var(--ax-surface-subtle); border: 1px solid var(--ax-border);
       color: var(--ax-text-primary); word-break: break-all; }
   .g-path em { color: var(--ax-text-secondary); font-style: normal; margin-right: 6px; }
-
-  /* ---------- CQ 工程 V2.0（内嵌本体页） ---------- */
-  .cqv2-seg { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-      margin: 2px 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--ax-border); }
-  .cqv2-seg button { border: 1px solid transparent; background: transparent; cursor: pointer;
-      padding: 4px 12px; border-radius: 999px; font-size: var(--font-size-sm);
-      color: var(--ax-text-secondary); }
-  .cqv2-seg button:hover { color: var(--ax-text-primary); background: var(--ax-surface-subtle); }
-  .cqv2-seg button.active { color: var(--ax-info); font-weight: 600;
-      background: color-mix(in srgb, var(--ax-info) 12%, var(--ax-surface));
-      border-color: color-mix(in srgb, var(--ax-info) 32%, var(--ax-border)); }
-  .cqv2-segnote { margin-left: auto; font-size: 11.5px; color: var(--ax-text-secondary); }
-  .cqv2-pane[hidden] { display: none; }
-  .cqv2-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
-      gap: 10px; margin-bottom: 12px; }
-  /* 汇总卡：数字与文字并排一行（数字基线对齐），不再上下两行 */
-  .cqv2-kpi { border: 1px solid var(--ax-border); border-radius: var(--radius-element);
-      padding: 8px 12px; background: var(--ax-surface-subtle);
-      display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-  .cqv2-kpi .n { font-size: var(--font-size-lg); font-weight: 600; line-height: 1.3;
-      font-variant-numeric: tabular-nums; flex: 0 0 auto; }
-  .cqv2-kpi .n.ok { color: var(--ax-success); }
-  .cqv2-kpi .n.warn { color: var(--ax-warning); }
-  .cqv2-kpi .n.bad { color: var(--ax-error); }
-  .cqv2-kpi .l { font-size: 11.5px; color: var(--ax-text-secondary); margin-top: 0;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cqv2-dims { display: flex; gap: 2px; align-items: flex-end; height: 17px; }
-  .cqv2-dims i { display: block; width: 5px; border-radius: 1px; background: var(--ax-border); }
-  .cqv2-dims i.ok { background: var(--ax-success); }
-  .cqv2-dims i.warn { background: var(--ax-warning); }
-  .cqv2-dims i.bad { background: var(--ax-error); }
-  /* 六维图例：把「那 6 根小柱子分别是什么」直接写在表头上方 */
-  .cqv2-dimlegend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px;
-      margin: 0 0 8px; font-size: 11.5px; color: var(--ax-text-secondary); }
-  .cqv2-dimlegend .ttl { color: var(--ax-text-primary); font-weight: 600; }
-  .cqv2-dimlegend .lg { display: inline-flex; align-items: center; gap: 5px; cursor: help; }
-  .cqv2-dimlegend .lg i { width: 7px; height: 7px; border-radius: 1.5px;
-      background: var(--ax-info); opacity: .75; }
-  .cqv2-dimlegend .lg b { font-weight: 600; color: var(--ax-text-primary); }
-  /* 表头术语加虚线提示：hover 有解释，不用去翻文档 */
-  .cqv2-admit th[title] { text-decoration: underline dotted; text-underline-offset: 3px;
-      cursor: help; }
-  .cqv2-bars { display: flex; flex-direction: column; gap: 7px; }
-  .cqv2-bar { display: grid; grid-template-columns: 96px minmax(0, 1fr) 74px; gap: 8px;
-      align-items: center; font-size: var(--font-size-sm); }
-  .cqv2-bar .t { color: var(--ax-text-secondary); }
-  .cqv2-bar .v { text-align: right; font-variant-numeric: tabular-nums;
-      color: var(--ax-text-primary); }
-  .cqv2-track { height: 6px; border-radius: 3px; background: var(--ax-border); overflow: hidden; }
-  .cqv2-track i { display: block; height: 100%; border-radius: 3px; background: var(--ax-info); }
-  .cqv2-track i.ok { background: var(--ax-success); }
-  .cqv2-track i.warn { background: var(--ax-warning); }
-  .cqv2-track i.bad { background: var(--ax-error); }
-  .cqv2-stack { display: flex; height: 10px; border-radius: 5px; overflow: hidden;
-      border: 1px solid var(--ax-border); margin: 4px 0 8px; }
-  .cqv2-stack i { display: block; height: 100%; }
-  .cqv2-legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 11.5px;
-      color: var(--ax-text-secondary); }
-  .cqv2-legend span { display: inline-flex; align-items: center; gap: 5px; }
-  .cqv2-legend em { width: 8px; height: 8px; border-radius: 2px; display: inline-block;
-      font-style: normal; }
-  .cqv2-steps { display: flex; flex-direction: column; gap: 7px; }
-  .cqv2-step { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px;
-      align-items: start; font-size: var(--font-size-sm); }
-  .cqv2-step .i { width: 18px; height: 18px; border-radius: 50%; display: flex;
-      align-items: center; justify-content: center; font-size: 11px;
-      background: var(--ax-surface-subtle); border: 1px solid var(--ax-border);
-      color: var(--ax-text-secondary); }
-  .cqv2-step.ok .i { background: var(--ax-success-bg); border-color: var(--ax-success);
-      color: var(--ax-success); }
-  .cqv2-step.bad .i { background: var(--ax-error-bg); border-color: var(--ax-error);
-      color: var(--ax-error); }
-  .cqv2-step .r { color: var(--ax-text-secondary); font-size: 11.5px; }
-  .cqv2-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 14px; }
-  .cqv2-box { border: 1px solid var(--ax-border); border-radius: var(--radius-element);
-      padding: 10px 12px; background: var(--ax-surface); }
-  .cqv2-box > h4 { margin: 0 0 10px; font-size: var(--font-size-sm);
-      color: var(--ax-text-primary); display: flex; align-items: center; gap: 8px; }
-  .cqv2-box > h4 .ghost { margin-left: auto; }
-  .cqv2-empty { padding: 18px; text-align: center; color: var(--ax-text-secondary);
-      font-size: var(--font-size-sm); border: 1px dashed var(--ax-border);
-      border-radius: var(--radius-element); }
 
   /* ============================================================
      运营驾驶舱 Ops Cockpit (P0) —— 延续 Astryx 令牌，零外部依赖
@@ -2282,7 +2109,7 @@
   <!-- 03 本体中心：导入本体文件 → 自动画出设计图 → 灌入实例数据 → SPARQL 控制台
        设计 / 改本体 与 语义问答 都在右上角的「AI 设计助手」浮层里（同一个对话框）。
        本页由「导入」驱动：没有导入时只有拖拽区，导入后按导入的内容生成全部内容。
-       旧的四页签工作台（模式视图 / 编辑与测试 / 规则校验 / 能力问题设计）已整体下线。 -->
+       旧的四页签工作台已整体下线。 -->
   <section class="view" id="v-ontology">
     <div class="kgo-top">
       <div class="kgo-top-l">
@@ -4656,9 +4483,8 @@ const WB_TAB_DEFS = [
   { id: "schema", icon: "◈", title: "模式视图",     desc: "本体结构与关系约束" },
   { id: "edit",   icon: "✎", title: "编辑与测试",   desc: "实体与关系的增改演练" },
   { id: "rules",  icon: "✓", title: "规则校验",     desc: "一致性规则体检 R1~R10" },
-  { id: "cq",     icon: "◎", title: "能力问题设计", desc: "业务问题设计与缺口" },
 ];
-const WB_DEFAULT_TAB = "cq";   // 默认展示「能力问题设计」
+const WB_DEFAULT_TAB = "schema";
 const WB_RING_RX = 250;      // 底盘椭圆水平半径（px）
 const WB_RING_KY = 58;       // 底盘椭圆纵向半径（px）：决定「躺平」程度
 const WB_RING_SPEED = 17;    // 自动公转速度（度/秒，顺时针）
@@ -5222,12 +5048,12 @@ function wbTab(name) {
   // 本体中心改版后旧工作台的四个页签已下线，只剩散落在别处的历史入口（诊断直达、
   // 3D 卡片）还会调到这里。一粒面包屑都找不到就直接返回，别让这些死路径把页面搞崩。
   if (!document.getElementById("wbPane-schema") && !document.getElementById("wbPane-edit")
-      && !document.getElementById("wbPane-rules") && !document.getElementById("wbPane-cq")) {
+      && !document.getElementById("wbPane-rules")) {
     return;
   }
   const k = WB_TAB_DEFS.findIndex(t => t.id === name);
   if (k >= 0) wbCylGo(k);
-  ["schema", "rules", "edit", "cq"].forEach(k => {
+  ["schema", "rules", "edit"].forEach(k => {
     const pane = document.getElementById("wbPane-" + k);
     if (pane) pane.hidden = (k !== name);
   });
@@ -5239,652 +5065,7 @@ function wbTab(name) {
     if (name === "rules" && !_wbRules) loadRules();
   }
   if (name === "edit") wbInitEdit();
-  // CQ 工程：默认落在「质量准入」，只有「问题明细」段才需要 V1.2 列表
-  if (name === "cq") { cqv2Seg(_cqv2Seg || "admit"); cqv2Ensure(); }
   if (!_wbSyncSeen) { _wbSyncSeen = true; wbSyncAuto(true); }
-}
-
-/* ---------- CQ 工程 V2.0：质量准入 / 覆盖与缺口 / 演进闭环 ---------- */
-let _cqv2 = null;          // {meta, cqs, metrics, coverage, portfolio}
-let _cqv2Loop = null;      // 最近一次演进闭环结果
-let _cqv2Seg = "admit";
-let _cqv2Busy = false;
-
-const CQV2_DIM_KEYS = ["schema", "data", "evidence", "answer", "temporal"];
-const CQV2_DIM_LABEL = { schema: "Schema", data: "Data", evidence: "Evidence",
-  answer: "Answer", temporal: "Temporal" };
-const CQV2_STATE_LABEL = { answered: "答得上", partial: "部分可答",
-  unanswerable: "答不上", conflict: "事实冲突", restricted: "权限受限" };
-const CQV2_STATE_KIND = { answered: "ok", partial: "warn",
-  unanswerable: "bad", conflict: "bad", restricted: "warn" };
-const CQV2_STATE_COLOR = { answered: "var(--ax-success)", partial: "var(--ax-warning)",
-  unanswerable: "var(--ax-text-disabled)", conflict: "var(--ax-error)",
-  restricted: "var(--ax-info)" };
-const CQV2_GAP_LABEL = { entity: "实体", relation: "关系", attribute: "属性",
-  evidence: "证据", schema: "Schema", source_access: "数据源/权限" };
-const CQV2_QUALITY_DIMS = ["target", "clarity", "verifiability", "ontology_fit",
-  "representativeness", "executability"];
-const CQV2_QUALITY_LABEL = { target: "业务价值", clarity: "问题明确性",
-  verifiability: "可验证性", ontology_fit: "本体可表达",
-  representativeness: "业务代表性", executability: "可执行性" };
-// 六维权重与白话释义：界面上能直接看懂「这 6 根柱子是什么、凭什么加权」
-const CQV2_QUALITY_WEIGHT = { target: 25, clarity: 20, verifiability: 20,
-  ontology_fit: 15, representativeness: 10, executability: 10 };
-const CQV2_QUALITY_HINT = {
-  target: "业务价值（25%）：这条问题对应哪个业务判断或动作，答出来有没有用；为 0 分直接淘汰",
-  clarity: "问题明确性（20%）：说法是否唯一可解，有没有歧义、能不能一条只问一件事",
-  verifiability: "可验证性（20%）：答案能否被独立权威数据核对，不靠大模型自己证明自己",
-  ontology_fit: "本体可表达（15%）：能否落到已有的实体、关系、属性上",
-  representativeness: "业务代表性（10%）：是否代表高频或关键的业务场景",
-  executability: "可执行性（10%）：能否转成结构化查询；只看能不能转，不看当前有没有数据",
-};
-const CQV2_LOOP_STEPS = ["定义业务能力与 CQ", "推导本体与知识需求", "建设本体与知识",
-  "执行 CQ 测试", "分析业务能力缺口", "生成优化提案", "重新评估并形成新基线"];
-
-function cqv2Seg(name) {
-  _cqv2Seg = name;
-  document.querySelectorAll("#cqv2SegBar button").forEach(b =>
-    b.classList.toggle("active", b.dataset.seg === name));
-  ["admit", "cover", "evolve", "edit"].forEach(k => {
-    const p = document.getElementById("cqv2Seg-" + k);
-    if (p) p.hidden = (k !== name);
-  });
-  if (name === "edit" && !_cqItems.length) loadCqList();
-  if (name === "evolve" && _cqv2 && !_cqv2Loop) cqv2RenderLoop(null);
-}
-
-function cqv2Kpis(hostId, rows) {
-  const host = document.getElementById(hostId);
-  if (!host) return;
-  host.innerHTML = rows.map(([l, n, k]) =>
-    `<div class="cqv2-kpi"><span class="n ${k || ""}">${esc(n)}</span>` +
-    `<span class="l">${esc(l)}</span></div>`).join("");
-}
-
-async function cqv2Ensure(force) {
-  if (_cqv2 && !force) return _cqv2;
-  if (_cqv2Busy) return _cqv2;
-  _cqv2Busy = true;
-  try {
-    const [meta, cqs, metrics, coverage, portfolio] = await Promise.all([
-      api("/ontology/v2/meta"),
-      api("/ontology/v2/cqs"),
-      api("/ontology/v2/metrics"),
-      api("/ontology/v2/coverage?only_admitted=true"),
-      api("/ontology/v2/portfolio"),
-    ]);
-    if (meta.error) {
-      document.getElementById("cqv2BarSummary").textContent = "V2 接口不可用";
-      document.getElementById("cqv2AdmitBox").innerHTML =
-        `<div class="cqv2-empty">CQ 工程 V2.0 暂不可用：${esc(errText(meta))}` +
-        `（确认后端已加载 cq_v2 路由后刷新）</div>`;
-      return null;
-    }
-    _cqv2 = {
-      meta: meta,
-      cqs: cqs.error ? [] : cqs,
-      metrics: metrics.error ? [] : metrics,
-      coverage: coverage.error ? null : coverage,
-      portfolio: portfolio.error ? null : portfolio,
-    };
-    cqv2RenderAll();
-    return _cqv2;
-  } finally {
-    _cqv2Busy = false;
-  }
-}
-
-function cqv2RenderAll() {
-  if (!_cqv2) return;
-  const total = _cqv2.cqs.length;
-  const admitted = _cqv2.metrics.filter(x => x.admitted).length;
-  document.getElementById("cqv2BarSummary").textContent =
-    "V2.0 · " + (_cqv2.meta.store_mode === "postgres" ? "PostgreSQL 持久化" : "内存演示态") +
-    " · 准入 " + admitted + "/" + total;
-  document.getElementById("cqv2SegNote").textContent =
-    "数据源 /api/v1/ontology/v2 · schema " + (_cqv2.meta.schema_version || "—");
-  cqv2RenderAdmit();
-  cqv2RenderCover();
-  cqv2RenderEvolve();
-}
-
-function cqv2RenderAdmit() {
-  const met = {};
-  _cqv2.metrics.forEach(x => { met[x.code] = x; });
-  const rows = _cqv2.cqs.slice().sort((a, b) => {
-    const ma = met[a.code] || {}, mb = met[b.code] || {};
-    if (!!ma.admitted !== !!mb.admitted) return ma.admitted ? 1 : -1;
-    return Number(a.quality_score || 0) - Number(b.quality_score || 0);
-  });
-  const pass = rows.filter(c => (met[c.code] || {}).admitted).length;
-  const gate = rows.filter(c => (c.hard_gates || {}).passed).length;
-  const avg = rows.length
-    ? rows.reduce((s, c) => s + Number(c.quality_score || 0), 0) / rows.length : 0;
-  cqv2Kpis("cqv2AdmitKpis", [
-    ["CQ 总数", rows.length, ""],
-    ["硬门槛通过", gate, gate && gate === rows.length ? "ok" : gate ? "warn" : "bad"],
-    ["已准入", pass, pass ? "ok" : "warn"],
-    ["平均质量分", avg.toFixed(1), avg >= 80 ? "ok" : avg >= 60 ? "warn" : "bad"],
-  ]);
-  const box = document.getElementById("cqv2AdmitBox");
-  if (!rows.length) {
-    box.innerHTML = `<div class="cqv2-empty">还没有 CQ。点击上方「重建种子」生成 16 条示例，` +
-      `或到「问题明细」新建。</div>`;
-    return;
-  }
-  // 六维图例：直接说明那 6 根小柱子分别是什么、各占多少权重
-  const legend = `<div class="cqv2-dimlegend">
-      <span class="ttl">六维评分</span>
-      ${CQV2_QUALITY_DIMS.map(k =>
-        `<span class="lg" title="${esc(CQV2_QUALITY_HINT[k])}"><i></i>${esc(CQV2_QUALITY_LABEL[k])}` +
-        ` <b>${CQV2_QUALITY_WEIGHT[k]}%</b></span>`).join("")}
-      <span class="lg" style="cursor:default">每项 0–4 分 · 柱越高越好 · 加权合成总分</span>
-    </div>`;
-  box.innerHTML = legend + `<table class="table-compact cqv2-admit"><thead><tr>
-      <th>编号</th><th>能力问题</th>
-      <th title="六项质量维度各自得分（每项 0–4 分），柱越高越好；鼠标停在柱子上看具体分数">六维评分</th>
-      <th title="六维按权重折算成百分制：业务价值 25%、问题明确性 20%、可验证性 20%、本体可表达 15%、业务代表性 10%、可执行性 10%">总分</th>
-      <th title="优秀 ≥90 · 良好 ≥80 · 合格 ≥70 · 待优化 ≥60 · 不合格 &lt;60">等级</th>
-      <th title="四条一票否决：业务价值不为 0、问题明确性 ≥3 分、可验证性 ≥2 分、总分 ≥80；任一条不过就不准入">硬门槛</th>
-      <th title="机器评分通过 + 业务负责人人工确认，两关都过才算已准入">准入</th>
-      <th>操作</th></tr></thead><tbody>
-    ${rows.map(c => {
-      const m = met[c.code] || {};
-      const dims = (c.quality_dimensions || {});
-      const bars = CQV2_QUALITY_DIMS.map(k => {
-        const v = Number(dims[k] || 0);
-        const cls = v >= 3 ? "ok" : v >= 2 ? "warn" : "bad";
-        return `<i class="${cls}" style="height:${4 + v * 3}px" ` +
-          `title="${esc(CQV2_QUALITY_LABEL[k])} ${v}/4（权重 ${CQV2_QUALITY_WEIGHT[k]}%）"></i>`;
-      }).join("");
-      const hs = (c.hard_gates || {});
-      const score = c.quality_score == null ? null : Number(c.quality_score);
-      const gradeCls = score == null ? "mute" : score >= 80 ? "ok" : score >= 60 ? "warn" : "bad";
-      return `<tr>
-        <td><code class="cq-code">${esc(c.code)}</code></td>
-        <td>${esc(c.question)}</td>
-        <td><div class="cqv2-dims">${bars}</div></td>
-        <td><b>${score == null ? "—" : score.toFixed(1)}</b></td>
-        <td><span class="cq-badge ${gradeCls}">${esc(c.grade || "未评分")}</span></td>
-        <td><span class="cq-badge ${hs.passed ? "ok" : "bad"}">${hs.passed ? "通过" : "未过"}</span></td>
-        <td><span class="cq-badge ${m.admitted ? "ok" : "mute"}">${m.admitted ? "已准入" : "待审核"}</span></td>
-        <td><div class="row" style="gap:4px">
-          <button class="ghost" onclick="cqv2Admit('${c.id}',this)" ${m.admitted ? "disabled" : ""}
-                  title="业务负责人确认这条问题值得做；确认后状态变成「已准入」，才进入覆盖度评估（评分在新建/编辑/实例变化时自动重算）">人工确认</button>
-        </div></td></tr>`;
-    }).join("")}</tbody></table>`;
-}
-
-function cqv2RenderCover() {
-  const cov = _cqv2.coverage;
-  const kpi = document.getElementById("cqv2CoverKpis");
-  if (!cov) {
-    kpi.innerHTML = "";
-    document.getElementById("cqv2States").innerHTML =
-      `<div class="cqv2-empty">尚未评估。点击上方「跑 CQ 评估」。</div>`;
-    document.getElementById("cqv2Gates").innerHTML = "";
-    document.getElementById("cqv2CoverTable").innerHTML = "";
-    document.getElementById("cqv2GapKinds").innerHTML = "";
-    document.getElementById("cqv2GapTable").innerHTML = "";
-    return;
-  }
-  const w = (cov.weighted || {});
-  const g = (cov.gates || {});
-  cqv2Kpis("cqv2CoverKpis", [
-    ["加权覆盖率", (Number(w.coverage || 0) * 100).toFixed(1) + "%",
-      w.coverage >= 0.7 ? "ok" : "warn"],
-    ["已答 CQ", (w.answered || 0) + " / " + (w.total || cov.total || 0), ""],
-    ["缺口数", cov.gap_count || 0, cov.gap_count ? "warn" : "ok"],
-    ["分层门禁", g.passed ? "通过" : "未通过", g.passed ? "ok" : "bad"],
-  ]);
-
-  const order = ["answered", "partial", "unanswerable", "conflict", "restricted"];
-  const sum = order.reduce((s, k) => s + Number(cov.states[k] || 0), 0) || 1;
-  document.getElementById("cqv2States").innerHTML =
-    `<div class="cqv2-stack">${order.map(k => {
-      const v = Number(cov.states[k] || 0);
-      return v ? `<i style="width:${(v / sum * 100).toFixed(1)}%;` +
-        `background:${CQV2_STATE_COLOR[k]}" title="${CQV2_STATE_LABEL[k]} ${v}"></i>` : "";
-    }).join("")}</div>
-    <div class="cqv2-legend">${order.map(k =>
-      `<span><em style="background:${CQV2_STATE_COLOR[k]}"></em>` +
-      `${CQV2_STATE_LABEL[k]} ${cov.states[k] || 0}</span>`).join("")}</div>
-    <div class="hint" style="margin-top:8px">conflict / restricted 优先于 answered：
-      有冲突或受限事实时先解决，再谈覆盖率。</div>`;
-
-  const gateRows = [
-    ["核心 CQ 覆盖率", g.core_cq_coverage, g.core_min],
-    ["普通 CQ 覆盖率", g.normal_cq_coverage, g.normal_min],
-    ["证据可追溯率", g.evidence_traceability, g.evidence_min],
-  ];
-  document.getElementById("cqv2Gates").innerHTML =
-    `<div class="cqv2-bars">${gateRows.map(([l, v, min]) => {
-      const val = Number(v || 0), mm = Number(min || 0);
-      const okk = val >= mm;
-      return `<div class="cqv2-bar"><span class="t">${esc(l)}</span>
-        <div class="cqv2-track"><i class="${okk ? "ok" : "bad"}" ` +
-        `style="width:${Math.min(100, val * 100).toFixed(0)}%"></i></div>
-        <span class="v">${(val * 100).toFixed(0)}% / ${(mm * 100).toFixed(0)}%</span></div>`;
-    }).join("")}</div>
-    <div class="hint" style="margin-top:8px">高风险 CQ 冲突 ${g.high_risk_conflicts || 0} 处
-      （必须为 0）；四条同时满足才算通过。</div>`;
-
-  const items = (cov.items || []);
-  document.getElementById("cqv2CoverTable").innerHTML = items.length
-    ? `<table class="table-compact"><thead><tr><th>编号</th><th>结果</th>` +
-      `${CQV2_DIM_KEYS.map(k => `<th>${CQV2_DIM_LABEL[k]}</th>`).join("")}</tr></thead><tbody>` +
-      `${items.map(i => {
-        const d = (i.dimensions || {});
-        return `<tr><td><code class="cq-code">${esc(i.code)}</code></td>
-          <td><span class="cq-badge ${CQV2_STATE_KIND[i.state] || "mute"}">` +
-          `${CQV2_STATE_LABEL[i.state] || esc(i.state)}</span></td>
-          ${CQV2_DIM_KEYS.map(k => {
-            const v = Number(d[k] || 0);
-            return `<td><div class="cqv2-track" style="width:64px;display:inline-block;vertical-align:middle">` +
-              `<i class="${v >= 0.8 ? "ok" : v > 0 ? "warn" : "bad"}" ` +
-              `style="width:${(v * 100).toFixed(0)}%"></i></div>` +
-              `<span style="margin-left:6px">${v.toFixed(2)}</span></td>`;
-          }).join("")}</tr>`;
-      }).join("")}</tbody></table>`
-    : `<div class="cqv2-empty">本次没有可评估的 CQ（需先通过质量准入）。</div>`;
-
-  const kinds = (cov.gap_kinds || {});
-  document.getElementById("cqv2GapKinds").innerHTML = Object.keys(CQV2_GAP_LABEL)
-    .map(k => `<span class="chip" style="margin-right:6px">` +
-      `${CQV2_GAP_LABEL[k]} ${kinds[k] || 0}</span>`).join("");
-  const gaps = (cov.top_gaps || []);
-  document.getElementById("cqv2GapTable").innerHTML = gaps.length
-    ? `<table class="table-compact"><thead><tr>
-        <th>优先级</th><th>类型</th><th>对象</th><th>说明</th><th>建议动作</th>
-        </tr></thead><tbody>${gaps.map(x => `<tr>
-          <td><b>${Number(x.gap_priority || 0).toFixed(2)}</b></td>
-          <td><span class="cq-badge warn">${esc(CQV2_GAP_LABEL[x.kind] || x.kind)}</span></td>
-          <td>${esc(x.ref || "—")}</td>
-          <td>${esc(x.note || "")}</td>
-          <td>${esc((x.action || {}).label || "—")}</td></tr>`).join("")}</tbody></table>`
-    : `<div class="cqv2-empty">本次没有检出缺口。</div>`;
-}
-
-function cqv2RenderEvolve() {
-  const p = _cqv2.portfolio;
-  const kpi = document.getElementById("cqv2EvolveKpis");
-  const box = document.getElementById("cqv2Portfolio");
-  if (!p) {
-    kpi.innerHTML = "";
-    box.innerHTML = `<div class="cqv2-empty">暂无集合质量数据。</div>`;
-    cqv2RenderLoop(_cqv2Loop);
-    return;
-  }
-  cqv2Kpis("cqv2EvolveKpis", [
-    ["准入 CQ", p.admitted_total || 0, ""],
-    ["业务能力覆盖", (Number(p.business_coverage || 0) * 100).toFixed(0) + "%",
-      p.business_coverage >= 0.5 ? "ok" : "warn"],
-    ["意图分布熵", Number(p.intent_entropy || 0).toFixed(2), ""],
-    ["实体类型覆盖", (Number((p.entity_coverage || {}).ratio || 0) * 100).toFixed(0) + "%", ""],
-    ["关系类型覆盖", (Number((p.relation_coverage || {}).ratio || 0) * 100).toFixed(0) + "%", ""],
-  ]);
-  const d = (p.difficulty_distribution || {});
-  const bars = [
-    ["业务能力覆盖", p.business_coverage],
-    ["实体类型覆盖", (p.entity_coverage || {}).ratio],
-    ["关系类型覆盖", (p.relation_coverage || {}).ratio],
-  ].map(([l, v]) => {
-    const val = Number(v || 0);
-    return `<div class="cqv2-bar"><span class="t">${esc(l)}</span>
-      <div class="cqv2-track"><i class="${val >= 0.7 ? "ok" : val >= 0.4 ? "warn" : "bad"}" ` +
-      `style="width:${Math.min(100, val * 100).toFixed(0)}%"></i></div>
-      <span class="v">${(val * 100).toFixed(0)}%</span></div>`;
-  }).join("");
-  box.innerHTML = `<div class="cqv2-bars">${bars}</div>
-    <div class="hint" style="margin-top:8px">难度分布：简单 ${d.simple || 0} ·
-      复杂 ${d.complex || 0} · 跨域 ${d.cross_domain || 0}</div>
-    ${(p.findings || []).length
-      ? `<div class="hint" style="margin-top:6px;color:var(--ax-warning)">` +
-        `${esc(p.findings.join("；"))}</div>` : ""}`;
-  cqv2RenderLoop(_cqv2Loop);
-}
-
-function cqv2RenderLoop(r) {
-  const box = document.getElementById("cqv2Loop");
-  if (!box) return;
-  if (!r) {
-    box.innerHTML = `<div class="cqv2-empty">尚未执行。闭环会重跑评估并生成提案` +
-      `（只提议，不自动发布）。</div>`;
-    return;
-  }
-  const steps = (r.steps || []);
-  box.innerHTML = `<div class="cqv2-steps">${CQV2_LOOP_STEPS.map((label, i) => {
-    const s = steps[i];
-    const res = (s && s.result) || {};
-    const bad = !s || res.error || res.skipped;
-    const ok = s && !bad;
-    let detail = "未执行";
-    if (bad) detail = res.error || "跳过";
-    else if (s.key === "run_cq_tests")
-      detail = "覆盖率 " + (Number(((res.coverage || {}).coverage || 0) * 100)).toFixed(1) + "%";
-    else if (s.key === "generate_proposals") detail = "生成 " + (res.count || 0) + " 个提案";
-    else if (s.key === "re_evaluate") detail = "已形成新基线";
-    else detail = "完成";
-    return `<div class="cqv2-step ${ok ? "ok" : bad ? "bad" : ""}">
-      <span class="i">${ok ? "✓" : bad ? "✕" : "·"}</span>
-      <div><div>${esc(label)} <span class="r">· ${esc(detail)}</span></div></div></div>`;
-  }).join("")}</div>
-  <div class="hint" style="margin-top:8px">运行 ${esc(r.status || "—")} ·
-    提案 ${r.proposals_generated || 0} 个（仅提议，不发布） ·
-    ${esc((r.run_id || "").slice(0, 8))}</div>`;
-}
-
-async function cqv2Refresh(btn) {
-  if (btn) { btn.disabled = true; btn.textContent = "加载中…"; }
-  try {
-    const d = await cqv2Ensure(true);
-    if (d) showToast("已同步 CQ 工程数据", "ok", 2200);
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "刷新"; }
-  }
-}
-
-async function cqv2RunCoverage(btn) {
-  if (btn) { btn.disabled = true; btn.textContent = "评估中…"; }
-  try {
-    const r = await api("/ontology/v2/coverage?only_admitted=true");
-    if (r.error) { showToast("评估失败：" + errText(r), "err"); return; }
-    if (_cqv2) _cqv2.coverage = r;
-    const p = await api("/ontology/v2/portfolio");
-    if (_cqv2 && !p.error) _cqv2.portfolio = p;
-    cqv2RenderCover();
-    cqv2RenderEvolve();
-    cqv2Seg("cover");
-    showToast("已评估 " + r.total + " 条准入 CQ，加权覆盖 " +
-      (Number((r.weighted || {}).coverage || 0) * 100).toFixed(1) + "%", "ok");
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "跑 CQ 评估"; }
-  }
-}
-
-async function cqv2Bootstrap(btn) {
-  if (!confirm("将重建 V2 种子（业务能力 / CQ / 本体需求 / 测试实例），当前演示数据会被重置。继续？")) return;
-  if (btn) { btn.disabled = true; btn.textContent = "重建中…"; }
-  try {
-    const r = await post("/ontology/v2/bootstrap",
-      { force: true, auto_admit_actor: "业务负责人" });
-    if (r.error) { showToast("重建失败：" + errText(r), "err"); return; }
-    _cqv2Loop = null;
-    await cqv2Ensure(true);
-    showToast("已重建：" + r.cqs + " 条 CQ / " + r.capabilities + " 个能力 / " +
-      r.requirements + " 项需求，自动确认准入 " + (r.auto_admitted || []).length + " 条", "ok");
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "重建种子"; }
-  }
-}
-
-async function cqv2Admit(id, btn) {
-  if (btn) { btn.disabled = true; btn.textContent = "…"; }
-  try {
-    const r = await post("/ontology/v2/cqs/" + id + "/admit", {});
-    if (r.error) { showToast("确认失败：" + errText(r), "err"); return; }
-    await cqv2Ensure(true);
-    showToast("已确认准入", "ok");
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "人工确认"; }
-  }
-}
-
-async function cqv2RunLoop(btn) {
-  if (btn) { btn.disabled = true; btn.textContent = "执行中…"; }
-  try {
-    const r = await post("/ontology/v2/evolution/cycle", { actor: "业务负责人" });
-    if (r.error) { showToast("闭环执行失败：" + errText(r), "err"); return; }
-    _cqv2Loop = r;
-    const p = await api("/ontology/v2/portfolio");
-    if (_cqv2 && !p.error) _cqv2.portfolio = p;
-    cqv2RenderEvolve();
-    showToast("演进闭环 " + (r.status || "") + "：" + (r.steps || []).length + " 步，生成 " +
-      (r.proposals_generated || 0) + " 个提案（仅提议）",
-      r.status === "completed" ? "ok" : "warn");
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "执行闭环"; }
-  }
-}
-
-/* ---------- CQ：能力问题与缺口 ---------- */
-let _cqMeta = null, _cqItems = [], _cqSel = null, _cqTimer = 0;
-const CQ_STATE = { answered: ["ok", "答得上"], partial: ["warn", "答一半"],
-                   unanswerable: ["bad", "答不上"] };
-
-function cqOpts(el, items, extra) {
-  if (!el) return;
-  el.innerHTML = (extra || []).concat(
-    (items || []).map(x => `<option value="${esc(x.value)}">${esc(x.label)}</option>`)
-  ).join("");
-}
-
-async function cqEnsureMeta() {
-  if (_cqMeta) return _cqMeta;
-  const m = await api("/ontology/cq/meta");
-  _cqMeta = m.error ? { intents: [], answer_shapes: [], statuses: [],
-                        declared_types: [], entity_types: [] } : m;
-  cqOpts(document.getElementById("cqIntent"), _cqMeta.intents);
-  cqOpts(document.getElementById("cqShape"), _cqMeta.answer_shapes);
-  cqOpts(document.getElementById("cqStatus"), _cqMeta.statuses);
-  const declared = new Set(_cqMeta.declared_types || []);
-  const types = [...new Set([...( _cqMeta.declared_types || []),
-                             ...(_cqMeta.entity_types || [])])].sort();
-  document.getElementById("cqSubject").innerHTML =
-    `<option value="">（不限类型）</option>` + types.map(t =>
-      `<option value="${esc(t)}">${esc(t)}${declared.size && !declared.has(t) ? " · 未声明" : ""}</option>`
-    ).join("");
-  return _cqMeta;
-}
-
-async function loadCqList(btn) {
-  await cqEnsureMeta();
-  if (btn) { btn.disabled = true; btn.textContent = "加载中…"; }
-  const st = (document.getElementById("cqStatusFilter") || {}).value || "";
-  const kw = ((document.getElementById("cqKeyword") || {}).value || "").trim();
-  const qs = new URLSearchParams();
-  if (st) qs.set("status", st);
-  if (kw) qs.set("keyword", kw);
-  const d = await api("/ontology/cq" + (qs.toString() ? "?" + qs.toString() : ""));
-  if (btn) { btn.disabled = false; btn.textContent = "刷新"; }
-  if (d.error) {
-    document.getElementById("cqSummary").textContent = "加载失败：" + errText(d.error);
-    return;
-  }
-  _cqItems = d.items || [];
-  if (_cqSel && !_cqItems.some(i => i.id === _cqSel)) _cqSel = null;
-  renderCqList();
-  const c = d.counts || {};
-  document.getElementById("cqSummary").textContent =
-    `共 ${d.total} 条 · 待审核 ${c.draft || 0} · 已启用 ${c.active || 0} · 已停用 ${c.retired || 0}`;
-  if (!_cqSel && _cqItems.length) cqEdit(_cqItems[0].id);
-  else if (!_cqItems.length) cqNew();
-}
-
-function renderCqList() {
-  const host = document.getElementById("cqList");
-  if (!host) return;
-  if (!_cqItems.length) {
-    host.innerHTML = `<div class="hint" style="padding:8px">没有 CQ。点「写入种子」生成 16 条待审草案。</div>`;
-    return;
-  }
-  host.innerHTML = _cqItems.map(it => {
-    const st = CQ_STATE[it.state] || ["mute", "未评估"];
-    const pct = Math.round((it.score || 0) * 100);
-    const cls = it.state === "answered" ? "ok" : (it.state === "unanswerable" ? "bad" : "");
-    let sample = "";
-    if (it.sample && it.sample.found) {
-      const vals = (it.sample.values || []).map(v => v.value).filter(Boolean).slice(0, 3);
-      sample = it.sample.answerable
-        ? `<div class="cq-sample">样例 <b>${esc(it.sample.entity)}</b> → ${esc(vals.join("、") || "（空）")}</div>`
-        : `<div class="cq-sample">样例 <b>${esc(it.sample.entity)}</b>：${esc(it.sample.note || "取不到值")}</div>`;
-    }
-    return `<div class="cq-card${it.id === _cqSel ? " sel" : ""}" onclick="cqEdit('${it.id}')">
-      <div class="cq-head">
-        <span class="cq-code">${esc(it.code)}</span>
-        <span class="cq-badge ${st[0]}">${st[1]}</span>
-        <span class="cq-badge mute">${esc(it.intent_label || it.intent)}</span>
-        <span class="cq-badge mute">${esc(it.status_label || it.status)}</span>
-        <span class="cq-badge mute" style="margin-left:auto">P${it.priority || 3} · ${pct}%</span>
-      </div>
-      <div class="cq-q">${esc(it.question)}</div>
-      <div class="cq-bar"><i class="${cls}" style="width:${Math.max(2, pct)}%"></i></div>
-      <div class="cq-gap">${(it.total === null || it.total === undefined) ? "未评估" : (it.total + " 个 " + esc(it.subject_type || "实体"))} · 缺口 ${it.gap_count || 0} 条</div>
-      ${sample}
-    </div>`;
-  }).join("");
-}
-
-async function cqEdit(id) {
-  const d = await api("/ontology/cq/" + id);
-  if (d.error) { document.getElementById("cqMsg").textContent = "读取失败：" + errText(d.error); return; }
-  await cqEnsureMeta();
-  _cqSel = id;
-  renderCqList();
-  document.getElementById("cqEditId").value = d.id;
-  document.getElementById("cqFormTitle").firstChild.nodeValue = d.code + " 编辑 ";
-  document.getElementById("cqQuestion").value = d.question || "";
-  document.getElementById("cqSample").value = d.sample_question || "";
-  document.getElementById("cqIntent").value = d.intent || "lookup";
-  document.getElementById("cqShape").value = d.answer_shape || "entity";
-  document.getElementById("cqSubject").value = d.subject_type || "";
-  document.getElementById("cqSide").value = d.subject_side || "source";
-  document.getElementById("cqRels").value = (d.required_relations || []).join(", ");
-  document.getElementById("cqAttrs").value = (d.required_attributes || []).join(", ");
-  document.getElementById("cqPriority").value = String(d.priority || 3);
-  document.getElementById("cqStatus").value = d.status || "draft";
-  document.getElementById("cqNotes").value = d.notes || "";
-  document.getElementById("cqMsg").textContent =
-    `创建于 ${cqTime(d.created_at)}` + (d.reviewed_by ? ` · 审核人 ${d.reviewed_by}` : "");
-  document.getElementById("cqAnalyzeHint").textContent = "";
-}
-
-function cqTime(v) {
-  if (!v) return "—";
-  const dt = new Date(v);
-  if (isNaN(dt.getTime())) return String(v);
-  const p = n => String(n).padStart(2, "0");
-  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())} ` +
-         `${p(dt.getHours())}:${p(dt.getMinutes())}`;
-}
-
-function cqNew() {
-  _cqSel = null;
-  renderCqList();
-  document.getElementById("cqEditId").value = "";
-  document.getElementById("cqFormTitle").firstChild.nodeValue = "新建 CQ ";
-  ["cqQuestion", "cqSample", "cqRels", "cqAttrs", "cqNotes"].forEach(id =>
-    document.getElementById(id).value = "");
-  document.getElementById("cqIntent").value = "lookup";
-  document.getElementById("cqShape").value = "entity";
-  document.getElementById("cqSubject").value = "";
-  document.getElementById("cqSide").value = "source";
-  document.getElementById("cqPriority").value = "2";
-  document.getElementById("cqStatus").value = "draft";
-  document.getElementById("cqMsg").textContent = "";
-  document.getElementById("cqAnalyzeHint").textContent = "";
-}
-
-function cqSplit(id) {
-  return (document.getElementById(id).value || "")
-    .split(/[,，\s]+/).map(x => x.trim()).filter(Boolean);
-}
-
-async function cqSave(btn) {
-  const id = document.getElementById("cqEditId").value;
-  const body = {
-    question: document.getElementById("cqQuestion").value.trim(),
-    sample_question: document.getElementById("cqSample").value.trim(),
-    intent: document.getElementById("cqIntent").value,
-    answer_shape: document.getElementById("cqShape").value,
-    subject_type: document.getElementById("cqSubject").value || null,
-    subject_side: document.getElementById("cqSide").value,
-    required_relations: cqSplit("cqRels"),
-    required_attributes: cqSplit("cqAttrs"),
-    priority: parseInt(document.getElementById("cqPriority").value, 10),
-    status: document.getElementById("cqStatus").value,
-    notes: document.getElementById("cqNotes").value.trim(),
-  };
-  if (body.question.length < 4) {
-    document.getElementById("cqMsg").textContent = "问题描述至少 4 个字";
-    return;
-  }
-  if (btn) { btn.disabled = true; btn.textContent = "保存中…"; }
-  const d = id
-    ? await api("/ontology/cq/" + id, { method: "PATCH",
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-    : await post("/ontology/cq", body);
-  if (btn) { btn.disabled = false; btn.textContent = "保存"; }
-  if (d.error) { document.getElementById("cqMsg").textContent = "保存失败：" + errText(d.error); return; }
-  const warns = d.warnings || [];
-  showToast(warns.length ? "已保存，但有 " + warns.length + " 条提醒" : "已保存",
-            warns.length ? "warn" : "ok");
-  const newId = id || d.id;
-  await loadCqList();
-  if (newId) cqEdit(newId);
-  if (warns.length) document.getElementById("cqMsg").textContent = "提醒：" + warns.join("；");
-}
-
-async function cqSeed(btn) {
-  if (btn) { btn.disabled = true; btn.textContent = "写入中…"; }
-  const d = await post("/ontology/cq/seed");
-  if (btn) { btn.disabled = false; btn.textContent = "写入种子"; }
-  if (d.error) { showToast("写入失败：" + errText(d.error), "warn"); return; }
-  showToast(`种子：新增 ${(d.inserted || []).length} 条 · 刷新 ${(d.refreshed || []).length} 条 · 跳过已审 ${(d.skipped || []).length} 条`);
-  await loadCqList();
-}
-
-async function cqRunCoverage(btn) {
-  if (btn) { btn.disabled = true; btn.textContent = "评估中…"; }
-  const d = await api("/ontology/cq/coverage?persist=true");
-  if (btn) { btn.disabled = false; btn.textContent = "跑覆盖率"; }
-  if (d.error) { showToast("覆盖率失败：" + errText(d.error), "warn"); return; }
-  const kinds = Object.entries(d.gap_kinds || {})
-    .sort((a, b) => b[1] - a[1]).slice(0, 4)
-    .map(([k, v]) => CQ_GAP_LABEL[k] ? CQ_GAP_LABEL[k] + v : k + " " + v).join(" · ");
-  document.getElementById("cqSummary").textContent =
-    `${d.total} 条 · 答得上 ${d.states.answered || 0} · 答一半 ${d.states.partial || 0} · ` +
-    `答不上 ${d.states.unanswerable || 0} · 平均覆盖 ${Math.round((d.avg_score || 0) * 100)}%` +
-    (kinds ? " · 缺口：" + kinds : "");
-  showToast("覆盖率已更新并记录快照");
-  await loadCqList();
-}
-
-const CQ_GAP_LABEL = {
-  type_undeclared: "类型未声明 ", relation_unregistered: "关系未登记 ",
-  relation_empty: "无关系实例 ", attribute_empty: "缺属性 ", entity_missing: "缺实体 ",
-  evidence_missing: "缺证据 ", coverage_low: "覆盖过低 ",
-};
-
-function cqAnalyzeSoon() {
-  clearTimeout(_cqTimer);
-  _cqTimer = setTimeout(cqAnalyze, 650);
-}
-
-async function cqAnalyze() {
-  const q = (document.getElementById("cqSample").value || "").trim();
-  const hint = document.getElementById("cqAnalyzeHint");
-  if (!q || q.length < 4) { hint.textContent = ""; return; }
-  const d = await post("/ontology/cq/analyze", { question: q });
-  if (d.error) { hint.textContent = ""; return; }
-  const rels = (d.matched_relations || []).join(", ") || "—";
-  const parts = [`识别：${d.intent_label}`];
-  if (d.matched_types && d.matched_types.length) parts.push("类型 " + d.matched_types.join("/"));
-  parts.push("关系 " + rels);
-  if (d.gaps && d.gaps.length) parts.push("缺口：" + d.gaps.map(g => g.message).join("；"));
-  hint.textContent = parts.join(" · ");
-  // 新建且字段为空时，用抽取结果补一次，减少手工填错
-  if (!document.getElementById("cqEditId").value) {
-    const sug = d.suggested || {};
-    if (!document.getElementById("cqRels").value && (sug.required_relations || []).length)
-      document.getElementById("cqRels").value = sug.required_relations.join(", ");
-    if (!document.getElementById("cqAttrs").value && (sug.required_attributes || []).length)
-      document.getElementById("cqAttrs").value = sug.required_attributes.join(", ");
-    if (!document.getElementById("cqSubject").value && sug.subject_type)
-      document.getElementById("cqSubject").value = sug.subject_type;
-    if (sug.intent) document.getElementById("cqIntent").value = sug.intent;
-    if (sug.answer_shape) document.getElementById("cqShape").value = sug.answer_shape;
-  }
 }
 
 /* ---------- 模式视图：实体类型 + 允许的关系类型 ---------- */
@@ -7677,7 +6858,7 @@ function drawSchemaCanvas() {
   if (!GV.reduced) { gvPhysics(0.016); gvPhysics(0.016); gvPhysics(0.016); }
   else { GV.nodes.forEach(n => { n.a = n.aTo; n.r = n.rTo; n.entities = n.valTo; }); }
   gvDraw();
-  // 页签不在「模式视图」时不跑 3D 动画（默认停在能力问题设计）
+  // 页签不在「模式视图」时不跑 3D 动画
   const pane = document.getElementById("wbPane-schema");
   if (!pane || !pane.hidden) gvStart(); else gvStop();
 }
@@ -8373,7 +7554,7 @@ async function gLoadProfile(id) {
  *   → GET /kg/{sid} 返回设计模型 → 这里画设计图 / 列属性 / 跑 SPARQL / 语义问答
  *
  * 设计原则：没有导入就没有内容。旧的四页签工作台（模式视图 / 编辑与测试 /
- * 规则校验 / 能力问题设计）已整体下线，本页不再调用 wbTab / wbBuildCarousel /
+ * 规则校验 / 本体视图）已整体下线，本页不再调用 wbTab / wbBuildCarousel /
  * runDiagnostics / loadConflicts / loadGraph / loadSchemaGraph / loadRules。
  * 那些函数体仍留在文件里，供其他视图使用，这里一律不碰。
  * ================================================================ */
@@ -10007,7 +9188,7 @@ async function kgDrop() {
 function kgTab(t) {
   const k = String(t || "").toLowerCase();
   // 语义问答已经并入助手浮层：深链接过来就展开面板 + 聚焦输入框
-  if (k === "ask" || k === "qa" || k === "chat" || k === "cq") {
+  if (k === "ask" || k === "qa" || k === "chat") {
     kgAiFold(0);
     kgAiSetMode("qa");
     const box = document.getElementById("kgoAiReq");
@@ -16619,19 +15800,17 @@ function semShowErr(box, e) {
   if (el) el.textContent = "请求失败：" + (e && e.message ? e.message : e);
 }
 
-async function semBoot(force) {
-  if (force) $sem("cqResult").textContent = "—";
+async function semBoot() {
   try {
     const h = await semApi("/health");
     $sem("kStore").textContent = h.db_ok ? "PG ✓" : "PG ✗";
     $sem("kStore").parentNode.className = "sem-kpi " + (h.db_ok ? "ok" : "bad");
     $sem("kVer").textContent = h.ontology_version || "—";
   } catch (e) {
-    $sem("kStore").textContent = "离线"; semShowErr("cqResult", e); return;
+    $sem("kStore").textContent = "离线"; return;
   }
   await semLoadSchema();
-  await Promise.all([semLoadGraphData(), semLoadRegression(), semLoadRuns(),
-                     semLoadSnapshots(), semLoadInstances(), semLoadMetrics()]);
+  await Promise.all([semLoadGraphData(), semLoadSnapshots(), semLoadInstances(), semLoadMetrics()]);
 }
 
 async function semLoadSchema() {
@@ -16807,68 +15986,6 @@ function semDrawGraph() {
   svg.innerHTML = s;
 }
 
-async function semRunCQ() {
-  const cq = $sem("cqId").value.trim() || "CQ-001";
-  const q = $sem("querySel").value;
-  const body = {parameters: {query: q}, idempotency_key: $sem("idemKey").value.trim()};
-  if (q === "type_hierarchy" || q === "instances_by_type") body.parameters.parameters = {type: "Person"};
-  if (q === "constraint_check") body.parameters.parameters = {kind: "instance",
-    target: {type_name: "Employee", properties: {employee_no: "E10001"}}};
-  if ($sem("spoofChk").checked) Object.assign(body,
-    {tenant_id: "EVIL_TENANT", actor: "hacker", role: "admin", ontology_version: "v9.9.9"});
-  $sem("cqResult").textContent = "执行中…";
-  try {
-    const d = await semPost("/cq/" + encodeURIComponent(cq) + "/execute", body);
-    const ctx = d.server_context || {};
-    $sem("cqResult").textContent = JSON.stringify({
-      run_id: d.run_id, state: d.state, query: d.query,
-      idempotency_key: d.idempotency_key, idempotent_replay: d.idempotent_replay,
-      ontology_version: d.ontology_version, version_bound: d.version_bound,
-      server_context_tenant: ctx.tenant_id, server_context_actor: ctx.actor,
-      stripped_body_keys: d.stripped_body_keys, body_trusted: d.body_trusted,
-      applied_rules: (d.applied_rules || []).map(a => a.code),
-      derived_candidates: d.derived_candidates,
-      fingerprint: d.fingerprint, answer: d.answer,
-    }, null, 2);
-    $sem("traceRun").value = d.run_id;
-    semLoadRuns();
-  } catch (e) { semShowErr("cqResult", e); }
-}
-
-async function semLoadRegression() {
-  try {
-    const s = await semApi("/regression/sets");
-    const core = (s.items || []).find(x => x.set_id === "core-semantic-v1");
-    $sem("regressionBox").innerHTML = `核心回归集：<span class="sem-mono">core-semantic-v1</span> ·
-      ${core ? core.case_count : "—"} 个用例 <span class="sem-tag info">确定性执行</span>
-      <div class="hint" style="margin:6px 0 0">连续执行两次指纹一致即 stable=true（可重复执行，结果稳定）</div>`;
-  } catch (e) { $sem("regressionBox").textContent = e.message; }
-}
-async function semRunRegression() {
-  $sem("regressionBox").textContent = "执行中…";
-  try {
-    await semPost("/regression/sets/core-semantic-v1/run", {});
-    const d = await semPost("/regression/sets/core-semantic-v1/run", {});
-    $sem("regressionBox").innerHTML = `本次指纹 <span class="sem-mono">${esc(d.result_fingerprint)}</span><br>
-      上次指纹 <span class="sem-mono">${esc(d.previous_fingerprint)}</span><br>
-      用例数 ${d.case_count} · 结果 <span class="sem-tag ${d.stable ? 'ok' : 'mute'}">${d.stable ? '稳定 stable=true' : '基线建立/变化'}</span>
-      · <span class="sem-mono">${esc(d.ontology_version)}</span>`;
-    semLoadMetrics();
-  } catch (e) { $sem("regressionBox").textContent = e.message; }
-}
-
-async function semLoadRuns() {
-  try {
-    const d = await semApi("/cq/runs");
-    const rows = (d.items || []).slice(0, 12);
-    $sem("runsBody").innerHTML = rows.length ? rows.map(r => `<tr>
-      <td class="sem-mono">${esc(r.run_id)}</td><td>${esc(r.cq_id)}</td>
-      <td><span class="sem-tag ${r.state === 'answered' ? 'ok' : 'mute'}">${esc(r.state)}</span></td>
-      <td>${r.version_bound ? '<span class="sem-tag ok">已冻结</span>' : '<span class="sem-pill">当前版本</span>'}</td>
-    </tr>`).join("") : `<tr><td colspan="4" class="sem-empty">无执行历史</td></tr>`;
-  } catch (e) { $sem("runsBody").innerHTML = `<tr><td colspan="4" class="sem-empty">${esc(e.message)}</td></tr>`; }
-}
-
 async function semFreeze() {
   const tid = $sem("taskId").value.trim();
   if (!tid) { $sem("snapBody").innerHTML = `<tr><td colspan="3" class="sem-empty">请输入 task_id</td></tr>`; return; }
@@ -16885,19 +16002,6 @@ async function semLoadSnapshots() {
       : `<tr><td colspan="3" class="sem-empty">无冻结快照</td></tr>`;
   } catch (e) { $sem("snapBody").innerHTML = `<tr><td colspan="3" class="sem-empty">${esc(e.message)}</td></tr>`; }
 }
-async function semLoadTrace() {
-  const rid = $sem("traceRun").value.trim();
-  if (!rid) { $sem("traceBox").textContent = "请输入 run_id"; return; }
-  try {
-    const d = await semApi("/decision-trace/" + encodeURIComponent(rid));
-    $sem("traceBox").textContent = JSON.stringify({
-      run_id: d.run_id, cq_id: d.cq_id, ontology_version: d.ontology_version,
-      applied_rules: d.applied_rules, cq_results: d.cq_results,
-      derived_candidates: d.derived_candidates,
-    }, null, 2);
-  } catch (e) { semShowErr("traceBox", e); }
-}
-
 async function semLoadInstances() {
   try {
     const d = await semApi("/instances");
@@ -16924,8 +16028,6 @@ async function semLoadAlignment() {
 async function semLoadMetrics() {
   try {
     const d = await semApi("/metrics");
-    const st = d.cq_regression_stability || {};
-    $sem("kStable").textContent = (st.stable_rate == null) ? "无数据" : (st.stable_rate * 100).toFixed(0) + "%";
     $sem("metricsBox").textContent = JSON.stringify(d, null, 2);
   } catch (e) { semShowErr("metricsBox", e); }
 }
@@ -19315,7 +18417,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 loadView("ops");
-// 深链接：?view=ontology&tab=cq 直达某页某页签（分享定位，也让自动化验证不必模拟点击）
+// 深链接：?view=ontology&tab=... 直达本体视图的指定功能区
 (function deepLink() {
   const q = new URLSearchParams(location.search);
   const view = q.get("view");

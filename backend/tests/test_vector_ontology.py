@@ -146,7 +146,15 @@ def test_embed_chunks_writes_ontology_coordinates(monkeypatch):
     from app.db import session as db
     from app.modules.embeddings import service as emb
 
-    did = db.fetch_one("SELECT id FROM source.documents LIMIT 1")["id"]
+    # The CI database is intentionally empty; this test owns its document
+    # fixture instead of relying on unrelated pre-seeded application data.
+    import uuid
+    did = str(uuid.uuid4())
+    db.execute(
+        "INSERT INTO source.documents (id, content_hash, title) "
+        "VALUES (CAST(:id AS uuid), :hash, :title)",
+        {"id": did, "hash": "test-vector-ontology-" + did, "title": "vector ontology test"},
+    )
     monkeypatch.setattr(
         retrieval, "detect_mentions",
         lambda text: [{"entity_id": "e-test", "entity_type": "Person"}],
@@ -171,7 +179,8 @@ def test_embed_chunks_writes_ontology_coordinates(monkeypatch):
             assert n == 1
             assert row["entity_ids"] == ["e-test"]
             assert row["entity_types"] == ["Person"]
-            assert row["ontology_version"] == "v2.1.0"
+            from app.modules.ontology.semantic import versioning
+            assert row["ontology_version"] == versioning.current_version()["ontology_version"]
             assert row["embedding_model"] == emb.settings.embedding_model
             assert row["embedding_version"] == emb.EMBEDDING_VERSION
             assert row["embedded_at"] is not None
@@ -180,6 +189,8 @@ def test_embed_chunks_writes_ontology_coordinates(monkeypatch):
             raise Rollback()
     except Rollback:
         pass
+    finally:
+        db.execute("DELETE FROM source.documents WHERE id = CAST(:id AS uuid)", {"id": did})
 
 
 def test_rechunk_uses_unified_writer():

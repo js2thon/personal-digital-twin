@@ -98,10 +98,14 @@ class VectorProjectionWorker(ProjectionWorker):
             chunks = db.fetch_one(
                 "SELECT count(*) AS total, count(embedding_vec) AS embedded "
                 "FROM knowledge.semantic_chunks")
-            available = int((ext or {}).get("n") or 0) > 0
-            reason = None if available else (
-                "pgvector 扩展未启用（pg_extension 无 vector），"
-                "向量层为 TEXT 降级实现；对应 P0-1 未落地")
+            extension_available = int((ext or {}).get("n") or 0) > 0
+            # The vector worker is intentionally not implemented yet. An
+            # installed extension alone must not advertise a usable consumer.
+            available = False
+            reason = ("向量投影 Worker 尚未实现，当前不参与事件分发"
+                      if extension_available else
+                      "pgvector 扩展未启用（pg_extension 无 vector），"
+                      "向量层为 TEXT 降级实现；对应 P0-1 未落地")
             probe = {"at": __import__("time").time(), "available": available,
                      "unavailable_reason": reason,
                      "coverage": {"chunks": int((chunks or {}).get("total") or 0),

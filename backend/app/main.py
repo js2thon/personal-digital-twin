@@ -8,7 +8,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
 
 from app.api.v1 import (  # noqa: F401
-    cq_v2,
     documents,
     evaluation,
     kg,
@@ -169,9 +168,10 @@ def bootstrap_schema():
     # V1.3 Sprint 1 验收铁律第 1 条：生产环境禁止 MemoryStore。
     # 故意不包 try/except —— 该检查失败必须让进程 fail-fast，而不是
     # 悄悄以进程内存储启动。非生产环境直接返回 checked=false，行为不变。
-    from app.modules.ontology.cq_v2 import store as cq_store
+    from app.db.bootstrap import initialize_base_schema
 
-    cq_store.assert_production_store()
+    initialize_base_schema()
+
     try:
         from app.modules.messaging import service as messaging
 
@@ -248,12 +248,6 @@ def bootstrap_schema():
             _sync.ensure_unique_index()
         except Exception as _exc:  # noqa: BLE001
             logging.getLogger("twin").warning("relations unique index skipped: %s", _exc)
-        # #21：graph.RELATION_TYPES 由 Registry 派生（单一类型来源；Registry 缺的类型先并入再派生）
-        try:
-            from app.modules.ontology import cq_v2 as _cq, type_registry as _tr
-            _tr.install(_cq.get_engine().registry)
-        except Exception as _exc:  # noqa: BLE001  Registry 不可用时保留代码内置目录
-            logging.getLogger("twin").warning("type registry install skipped: %s", _exc)
         # 必须早于 fact_events.start()：后者建的触发器会往账本里写事件。
         from app.modules.ontology import outbox
 
@@ -266,13 +260,6 @@ def bootstrap_schema():
 
         fact_events.start()
     except Exception:  # noqa: BLE001  监听起不来不影响 API 可用，API 即时钩子仍在
-        pass
-    try:
-        # P1-5：CQ V2 状态落库 + 重启自动水合，消除「每次重启手工 bootstrap」
-        from app.modules.ontology import cq_v2
-
-        cq_v2.get_engine().ensure_ready()
-    except Exception:  # noqa: BLE001  持久化不可用时仍可按需手工 bootstrap
         pass
     try:
         # P1-4：核心表落 tenant_id（facts 已由契约列补齐，这里补其余三张）
@@ -350,7 +337,6 @@ app.include_router(lineage.router, prefix=API, tags=["lineage"])
 app.include_router(messages.router, prefix=API, tags=["messages"])
 app.include_router(pipeline.router, prefix=API, tags=["pipeline"])
 app.include_router(structured.router, prefix=API, tags=["structured"])
-app.include_router(cq_v2.router, prefix=API, tags=["cq-v2"])
 # 统一语义运行时（SIL B2）：蓝图 9.3 的 10 个契约端点 + 自检 + /ontology/versions 原路径
 app.include_router(semantic.router, prefix=API, tags=["semantic"])
 app.include_router(evaluation.router, prefix=API, tags=["evaluation"])
@@ -360,7 +346,7 @@ app.include_router(projection.router, prefix=API, tags=["projection"])
 app.include_router(audit_api.router, prefix=API, tags=["security-audit"])
 # V1.3 换栈 Phase 0：只读 IdentityContext + CQ 存储健康检查
 app.include_router(platform.router, prefix=API, tags=["platform"])
-# Ontology 语义层增强：Schema/约束/推理/规则/版本冻结/CQ execute/回归集/评估
+# Ontology 语义层增强：Schema/约束/推理/规则/版本冻结/回归集/评估
 app.include_router(ontology_semantic.router, prefix=API, tags=["ontology-semantic"])
 # 向量本体 P0：向量召回自检（强制词法 0 命中，验证向量独立召回）
 app.include_router(retrieval.router, prefix=API, tags=["retrieval"])

@@ -7,7 +7,7 @@
 
 Shape 来源（优先级从高到低）：
 1. 模块同目录的 `shapes.yaml`（运维可直接改规则，不必改代码）；
-2. 由 Schema Registry 当前版本派生（LinkML → Shape，保证规则跟本体同步）。
+2. 由当前本体 SemanticSchema 派生（保证规则跟本体同步）。
 
 支持的约束（SHACL 子集 + 两个本项目扩展，够覆盖事实层）：
 `sh:minCount` / `sh:maxCount` / `sh:datatype` / `sh:in` / `sh:minInclusive` /
@@ -115,12 +115,33 @@ def shapes_from_schema(schema: dict | None) -> dict:
     }
 
 
-def _registry_schema() -> dict:
+def _ontology_schema() -> dict:
+    """从独立本体语义 Schema 投影出 SHACL 所需的关系与属性目录。"""
     try:
-        from app.modules.ontology import cq_v2
+        from app.modules.ontology.semantic import schema_def
 
-        return cq_v2.get_engine().registry.current()
+        semantic = schema_def.to_schema_dict(schema_def.default_semantic_schema())
+        relations = {}
+        for name, meta in (semantic.get("relation_types") or {}).items():
+            sources = meta.get("source_types") or ["*"]
+            targets = meta.get("target_types") or ["*"]
+            relations[name] = {
+                "source": sources[0] if len(sources) == 1 else "*",
+                "target": targets[0] if len(targets) == 1 else "*",
+                "cardinality": meta.get("cardinality") or "",
+            }
+        attributes = {}
+        for owner, entity in (semantic.get("entity_types") or {}).items():
+            for attr in entity.get("attributes") or []:
+                attributes[attr["name"]] = {
+                    "range": attr.get("range") or "string", "owner": owner,
+                }
+        return {
+            "schema_version": semantic.get("ontology_version") or semantic.get("schema_version") or "",
+            "relation_types": relations, "attributes": attributes,
+        }
     except Exception:  # noqa: BLE001
+        log.exception("无法从本体 SemanticSchema 派生 SHACL shapes")
         return {}
 
 
@@ -129,7 +150,7 @@ _lock = threading.Lock()
 
 
 def current_shapes(refresh: bool = False) -> dict:
-    """当前生效的 Shape：shapes.yaml 覆盖 > Registry 派生。按版本号缓存。"""
+    """当前生效的 Shape：shapes.yaml 覆盖 > 本体 Schema 派生。按版本号缓存。"""
     path = shapes_file()
     with _lock:
         if path is not None:
@@ -137,11 +158,11 @@ def current_shapes(refresh: bool = False) -> dict:
             key = f"file:{mtime}"
             if not refresh and _cache["key"] == key and _cache["shapes"]:
                 return _cache["shapes"]
-            shapes = _merge_override(shapes_from_schema(_registry_schema()), path)
+            shapes = _merge_override(shapes_from_schema(_ontology_schema()), path)
             _cache.update(key=key, shapes=shapes)
             return shapes
 
-        base = shapes_from_schema(_registry_schema())
+        base = shapes_from_schema(_ontology_schema())
         key = f"registry:{base['schema_version']}"
         if not refresh and _cache["key"] == key and _cache["shapes"]:
             return _cache["shapes"]
@@ -151,10 +172,10 @@ def current_shapes(refresh: bool = False) -> dict:
 
 def _merge_override(base: dict, path: Path) -> dict:
     """shapes.yaml 允许只写要改的项：properties 逐项覆盖，其余整段替换。"""
-    from app.modules.ontology.cq_v2.linkml import parse_yaml
-
     try:
-        override = parse_yaml(path.read_text(encoding="utf-8")) or {}
+        import yaml
+
+        override = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except Exception as exc:  # noqa: BLE001
         log.warning("shapes.yaml 解析失败，回落 Registry 派生：%s", exc)
         return base

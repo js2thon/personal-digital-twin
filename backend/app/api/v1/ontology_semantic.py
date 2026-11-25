@@ -1,10 +1,9 @@
 """Ontology 语义层增强 API（V1.3 语义层方案 · Phase A/B/C，全新增量路由）。
 
 所有端点挂在 /ontology/semantic/* 下，与既有 /ontology/*、/ontology/v2/* 零冲突。
-- 写端点：复用 cq_v2.require_owner（SIL-A07 fail-closed）+ 全局中间件 principal；
+- 写端点：使用本模块的通用 owner 权限闸门 + 全局中间件 principal；
 - 读端点：principal 来自中间件，行级过滤走 app/policy.filter_rows；
-- CQ execute：强制服务端上下文（build_server_context 剥离请求体伪造字段），
-  按权限过滤，幂等键，结果持久化，决策 Trace。
+  所有查询均基于服务端 principal 进行权限过滤。
 """
 from __future__ import annotations
 
@@ -12,15 +11,14 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.api.v1.cq_v2 import require_owner
-from app.modules.ontology.semantic import (alignment, cq_executor, metrics,
-                                            regression, store, versioning)
+from app.modules.ontology.semantic import (alignment, metrics, store, versioning)
 from app.modules.ontology.semantic import constraints as C
 from app.modules.ontology.semantic import reasoning as R
 from app.modules.ontology.semantic import rules as RU
 from app.modules.ontology.semantic import schema_def as SD
 from app.modules.ontology.semantic import service as SEM
 from app.modules.ontology.semantic.constraints import ConstraintViolation
+from app.auth import require_owner
 
 router = APIRouter()
 
@@ -122,24 +120,6 @@ class ValidatePayload(BaseModel):
 class FreezePayload(BaseModel):
     task_id: str
 
-
-class ExecutePayload(BaseModel):
-    parameters: dict = {}
-    idempotency_key: str = ""
-    task_snapshot_id: str | None = None
-    # 下面这些字段即便伪造也会被服务端剥离（用于自证，不参与判定）
-    tenant_id: str | None = None
-    user_id: str | None = None
-    actor: str | None = None
-    role: str | None = None
-    space_id: str | None = None
-    ontology_version: str | None = None
-
-
-class RegressionSetPayload(BaseModel):
-    set_id: str
-    name: str
-    cases: list[dict] = []
 
 
 # ---------------------------------------------------------------- 读：健康/Schema
@@ -326,11 +306,17 @@ def register_rule(payload: RulePayload, request: Request):
 def freeze_snapshot(payload: FreezePayload, request: Request):
     _ensure()
     p = require_owner(request)
-    built = cq_executor.build_server_context(p, _semantic_context(request),
-                                             schema=SEM.load_schema())
-    return versioning.freeze(payload.task_id, SEM.load_schema(),
+    schema = SEM.load_schema()
+    context = {
+        **_semantic_context(request),
+        "ontology_version": versioning.current_version()["ontology_version"],
+        "schema_version": schema.get("schema_version"),
+        "policy": {"engine": "app/policy.decide", "fail_closed": True},
+        "source": "global_middleware",
+    }
+    return versioning.freeze(payload.task_id, schema,
                              tenant_id=str(p.get("tenant_id") or "default"),
-                             server_context=built["context"],
+                             server_context=context,
                              created_by=str(p.get("actor") or "system"))
 
 
@@ -346,80 +332,6 @@ def resolve_snapshot(task_id: str, request: Request):
     _ensure()
     p = _principal(request)
     return _call(versioning.resolve, task_id, str(p.get("tenant_id") or "default"))
-
-
-# ---------------------------------------------------------------- CQ execute（验收 1/4/5）
-@router.post("/ontology/semantic/cq/{cq_id}/execute")
-def execute_cq(cq_id: str, payload: ExecutePayload, request: Request):
-    """服务端自动注入 tenant/identity/space/ontology_version/policy；同键同结果。"""
-    _ensure()
-    p = _principal(request)
-    body = payload.model_dump(exclude_none=True)
-    return _call(cq_executor.execute, cq_id, body.get("parameters") or {},
-                 body.get("idempotency_key") or "",
-                 principal=p,
-                 semantic_context=_semantic_context(request),
-                 schema=SEM.load_schema(),
-                 task_snapshot_id=body.get("task_snapshot_id"),
-                 client_body=body)
-
-
-@router.get("/ontology/semantic/cq/runs")
-def cq_runs(request: Request, limit: int = 50):
-    _ensure()
-    p = _principal(request)
-    return {"items": cq_executor.list_runs(str(p.get("tenant_id") or "default"), limit)}
-
-
-@router.get("/ontology/semantic/cq/runs/{run_id}")
-def cq_run(run_id: str, request: Request):
-    _ensure()
-    p = _principal(request)
-    row = cq_executor.get_run(run_id, str(p.get("tenant_id") or "default"))
-    if not row:
-        raise HTTPException(404, f"执行记录 {run_id} 不存在")
-    return row
-
-
-@router.get("/ontology/semantic/decision-trace/{run_id}")
-def decision_trace(run_id: str, request: Request):
-    """验收 5：展示应用了哪些本体规则 / CQ 结果。"""
-    _ensure()
-    p = _principal(request)
-    row = cq_executor.decision_trace(run_id, str(p.get("tenant_id") or "default"))
-    if not row:
-        raise HTTPException(404, f"决策 Trace {run_id} 不存在")
-    return row
-
-
-# ---------------------------------------------------------------- 回归集（验收 4）
-@router.get("/ontology/semantic/regression/sets")
-def regression_sets(request: Request):
-    _ensure()
-    return {"items": regression.list_sets(), "core_set_id": regression.CORE_SET_ID}
-
-
-@router.post("/ontology/semantic/regression/sets")
-def create_regression_set(payload: RegressionSetPayload, request: Request):
-    _ensure()
-    require_owner(request)
-    return _call(regression.upsert_set, payload.set_id, payload.name, payload.cases)
-
-
-@router.post("/ontology/semantic/regression/sets/{set_id}/run")
-def run_regression(set_id: str, request: Request, task_snapshot_id: str | None = None):
-    _ensure()
-    p = _principal(request)
-    return _call(regression.run_set, set_id, principal=p, schema=SEM.load_schema(),
-                 task_snapshot_id=task_snapshot_id,
-                 tenant_id=str(p.get("tenant_id") or "default"))
-
-
-@router.get("/ontology/semantic/regression/runs")
-def regression_runs(request: Request, set_id: str | None = None):
-    _ensure()
-    p = _principal(request)
-    return {"items": regression.list_runs(set_id, str(p.get("tenant_id") or "default"))}
 
 
 # ---------------------------------------------------------------- 对齐 / 指标 / 维护
@@ -519,3 +431,30 @@ def vector_stats(request: Request):
     stats = vector_store.get_vector_store().stats()
     p = _principal(request)
     return {**stats, "tenant_id": p.get("tenant_id") or "default"}
+
+
+# ---------------------------------------------------------------- SHACL 本体约束接口（与问答执行解耦）
+@router.get("/ontology/semantic/shapes")
+def semantic_shapes(request: Request):
+    from app.modules.ontology import shacl
+    return shacl.current_shapes(refresh=True)
+
+
+@router.post("/ontology/semantic/shapes/validate")
+def semantic_shapes_validate(payload: dict, request: Request):
+    from app.modules.ontology import shacl
+    return shacl.validate(payload.get("fact") or payload,
+                          subject_type=payload.get("subject_type"),
+                          object_type=payload.get("object_type"))
+
+
+@router.get("/ontology/semantic/shapes/stats")
+def semantic_shapes_stats(request: Request):
+    from app.modules.ontology import shacl
+    return shacl.stats()
+
+
+@router.get("/ontology/semantic/shapes/audit")
+def semantic_shapes_audit(request: Request, limit: int = 200):
+    from app.modules.ontology import shacl
+    return shacl.audit_facts(limit=limit)

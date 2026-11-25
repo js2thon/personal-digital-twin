@@ -107,6 +107,15 @@ class OntologyService:
                                         auto_reasoning: bool = True) -> dict:
         """写入一条权威关系：类型约束（继承感知）+ 基数 + 规则 + 推理补全。"""
         src, dst = str(payload.get("source_id") or ""), str(payload.get("target_id") or "")
+        # Validate declared endpoint types before existence lookup so an
+        # invalid schema relation is reported as a type violation first.
+        # This is only a preflight: persisted endpoint types remain authoritative.
+        if payload.get("source_type") and payload.get("target_type"):
+            preflight = validate_relation(self.schema, payload)
+            if preflight.get("blocking"):
+                self._audit("write_relation", payload.get("relation_type"),
+                            "rejected", preflight["violations"])
+                assert_valid(preflight, f"关系 {payload.get('relation_type')}")
         # 必须按 ID 在当前租户内精确读取端点；禁止在大租户列表截断后
         # 回退信任客户端提交的 source_type / target_type。
         src_instance = store.get_instance(src, self.tenant_id) if src else None

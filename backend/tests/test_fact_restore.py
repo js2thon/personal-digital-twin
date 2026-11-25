@@ -75,7 +75,9 @@ class TestObjectKey:
 
 class TestRoutesRegistered:
     def test_single_and_batch_restore_routes_exist(self):
-        paths = {getattr(r, "path", "") for r in app.routes}
+        # FastAPI's newer deferred-router representation no longer expands
+        # included APIRoutes into app.routes until schema generation.
+        paths = set(app.openapi()["paths"])
         assert "/api/v1/knowledge/facts/{fact_id}/restore" in paths
         assert "/api/v1/knowledge/facts/batch-restore" in paths
 

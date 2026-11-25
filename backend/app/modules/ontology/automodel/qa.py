@@ -587,7 +587,7 @@ def ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
     g = gq.retrieve(question, schema, F, L, idx)
     if g:
         ans = gq.grounded_answer(question, {"本体结构": brief, "检索结果": g}, llm) if llm else None
-        evidence = {"ontology_result": g,
+        evidence = {"op": g.get("op") or "lookup", "ontology_result": g,
                     "provenance": _source_evidence(contract, schema, {"op": g.get("op")}, g)}
         return {"ok": True, "engine": "ontology_graph" + ("+llm" if ans else ""), "plan": {"op": g["op"]},
                 "result": g, "answer": ans or gq.template_answer(g), "chart": gq.chart_of(g),
@@ -636,6 +636,7 @@ def ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
 
 def _metric_ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
                 llm=None, contract: dict | None = None) -> dict:
+    ms = metric_set["metrics"]
     cat = catalog(schema, metric_set)
     attempts = []
     plan, engine = None, None

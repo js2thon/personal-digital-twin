@@ -23,6 +23,7 @@ dependencies = [
     "python-pptx>=1.0",
     "pypdf>=5.0",
     "rdflib>=7.0",  # RDF/OWL/TTL 本体解析与静态质量检查
+    "networkx>=3.2",  # Studio V2：本体对象关系与实例图
     "PyMySQL>=1.1",  # 企业 MySQL 只读连接器驱动
     "pandas>=2.1",   # automodel：数据画像 / 物化 / 指标计算
     "PyYAML>=6.0",   # automodel：映射契约 YAML

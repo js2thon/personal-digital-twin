@@ -306,7 +306,7 @@ def test_require_owner_deny_is_persisted_with_trace():
     # 导致 before/after 都恒为 200 的假阴性。这里按全量计数。
     sa.flush()
     before = len(sa.query(event_type="owner_gate_deny", limit=10000))
-    r = _client().post("/api/v1/ontology/v2/schema/pin",
+    r = _client().post("/api/v1/ontology/semantic/maintenance/ensure-ready",
                        json={"cq_id": "x"}, headers=viewer)
     assert r.status_code == 403
     sa.flush()
@@ -314,7 +314,7 @@ def test_require_owner_deny_is_persisted_with_trace():
     assert len(rows) >= before + 1
     newest = rows[0]
     # contextvars 必须穿透到同步端点：审计行带得到中间件生成的 trace/path
-    assert newest["path"] == "/api/v1/ontology/v2/schema/pin"
+    assert newest["path"] == "/api/v1/ontology/semantic/maintenance/ensure-ready"
     assert newest["trace_id"] and newest["trace_id"].startswith("trc_")
 
 
