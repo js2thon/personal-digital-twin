@@ -380,6 +380,10 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                         skipped_records += 1
                         if source_state and source_state.get("instance_id"):
                             source_instances.setdefault(row_index, {})[entity] = str(source_state["instance_id"])
+                            db.execute(
+                                "UPDATE ontology.dataset_source_records SET last_seen_at=now(), source_active=TRUE "
+                                "WHERE id=CAST(:id AS uuid)", {"id": source_state["id"]}
+                            )
                         continue
 
                     if (source_state and source_state.get("instance_id")
@@ -398,6 +402,10 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                             "UPDATE ontology.dataset_ingestion_records SET instance_id=CAST(:iid AS uuid) "
                             "WHERE id=CAST(:id AS uuid)",
                             {"iid": iid, "id": reservation["id"]},
+                        )
+                        db.execute(
+                            "UPDATE ontology.dataset_source_records SET last_seen_at=now(), source_active=TRUE "
+                            "WHERE id=CAST(:id AS uuid)", {"id": source_state["id"]}
                         )
                         skipped_records += 1
                         source_instances.setdefault(row_index, {})[entity] = str(iid)
@@ -453,10 +461,6 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                              "sv": mapping_set.get("schema_version")},
                         )
             # Project FK and junction-table mappings into authoritative ontology relations.
-            class_by_table = {
-                str(item.get("table")): str(item.get("class"))
-                for item in raw_mappings if item.get("table") and item.get("class")
-            }
             entity_by_source = {
                 str(item.get("table")): str(item.get("class"))
                 for item in raw_mappings if item.get("table") and item.get("class")
@@ -481,7 +485,6 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                 return str(target["instance_id"])
 
             for row_index, row in enumerate(rows):
-                source_id = stable_source_ids[row_index]
                 if relation_specs:
                     for relation in relation_specs:
                         source_table_name = str(selected_table or "")
