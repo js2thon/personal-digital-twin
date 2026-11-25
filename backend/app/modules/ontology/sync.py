@@ -111,7 +111,10 @@ def _candidate_entities(fact: dict) -> list[dict]:
         "  OR canonical_name = :txt OR aliases @> CAST(:alias AS jsonb) "
         "  OR (length(canonical_name) >= 3 AND :txt <> '' AND position(canonical_name in :txt) > 0) "
         "  OR (length(:txt) >= 4 AND canonical_name LIKE '%' || :txt || '%')) LIMIT 200",
-        {"sid": str(fact.get("subject_id")), "oid": oid or "",
+        # subject_id is nullable for legitimate facts. Passing str(None) to
+        # CAST(:sid AS uuid) raises PostgreSQL "invalid input syntax for type uuid".
+        # Bind SQL NULL instead; the equality predicate naturally evaluates false.
+        {"sid": fact.get("subject_id") or None, "oid": oid or "",
          "ext": json.dumps([ext] if ext else ["__none__"]),
          "txt": text, "alias": json.dumps([text] if text else ["__none__"])})
 
