@@ -163,7 +163,8 @@ class Ontology:
 
     def update_property(self, type_name: str, property_name: str, *,
                         new_name: str = "", source_column: str = "",
-                        property_type: str = "", description: str = "") -> bool:
+                        property_type: str = "", description: str = "",
+                        clear_source_mapping: bool = False) -> bool:
         info = self.object_types.get(type_name)
         props = info.get("properties", []) if info else []
         if not info or property_name not in props:
@@ -195,6 +196,8 @@ class Ontology:
             }
             for obj in self.objects.get(type_name, {}).values():
                 obj[target_name] = obj.get(source_column)
+        elif clear_source_mapping:
+            info.setdefault("property_mappings", {}).pop(target_name, None)
         return True
 
     def remove_property(self, type_name: str, property_name: str) -> bool:
