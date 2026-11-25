@@ -18,6 +18,7 @@ from app.modules.ontology.semantic import rules as RU
 from app.modules.ontology.semantic import schema_def as SD
 from app.modules.ontology.semantic import service as SEM
 from app.modules.ontology.semantic.constraints import ConstraintViolation
+from app.auth import require_owner
 
 router = APIRouter()
 
@@ -39,16 +40,6 @@ def _ensure() -> None:
 def _principal(request: Request) -> dict:
     p = getattr(getattr(request, "state", None), "principal", None)
     return p if isinstance(p, dict) else {}
-
-
-def _require_owner(request: Request) -> dict:
-    """语义本体写操作的通用权限闸门。"""
-    from app.policy import is_owner_class
-
-    principal = _principal(request)
-    if not principal or not is_owner_class(principal):
-        raise HTTPException(403, "本体治理写操作要求 owner 级主体")
-    return principal
 
 
 def _semantic_context(request: Request, space_id: str | None = None) -> dict:
@@ -223,7 +214,7 @@ def derive_relations_from_facts(payload: dict, request: Request):
     携带 source_fact_ids 回链；解析不到的进 unresolved 照实返回，不编造。
     """
     _ensure()
-    p = _require_owner(request)
+    p = require_owner(request)
     from app.modules.ontology.semantic import fact_derive
     return fact_derive.derive(tenant_id=str(p.get("tenant_id") or "default"),
                               commit=bool(payload.get("commit")))
