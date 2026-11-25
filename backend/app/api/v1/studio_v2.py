@@ -546,6 +546,36 @@ class SchemaEditRequest(BaseModel):
 class CanvasLayoutRequest(BaseModel):
     positions: Dict[str, Dict[str, float]] = Field(default_factory=dict)
 
+class StudioVersionCreateRequest(BaseModel):
+    label: str = ""
+    note: str = ""
+
+
+@router.post("/sessions/{session_id}/versions")
+def create_studio_version(session_id: str, body: StudioVersionCreateRequest) -> Dict[str, Any]:
+    try:
+        return {"ok": True, "version": _store().create_version(session_id, body.label, body.note)}
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("/sessions/{session_id}/versions")
+def list_studio_versions(session_id: str) -> Dict[str, Any]:
+    try:
+        _store().require(session_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"versions": _store().list_versions(session_id)}
+
+
+@router.post("/sessions/{session_id}/versions/{version_id}/restore")
+def restore_studio_version(session_id: str, version_id: str) -> Dict[str, Any]:
+    try:
+        sess = _store().restore_version(session_id, version_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True, **sess.summary()}
+
 
 @router.get("/sessions/{session_id}/layout")
 def get_canvas_layout(session_id: str) -> Dict[str, Any]:
@@ -574,7 +604,7 @@ def save_canvas_layout(session_id: str, body: CanvasLayoutRequest) -> Dict[str, 
         positions[node_id] = {"x": float(x), "y": float(y)}
     sess.meta["canvas_layout"] = positions
     sess.touch()
-    return {"ok": True, "saved": len(positions), "storage": "process_session"}
+    return {"ok": True, "saved": len(positions), "storage": "postgresql"}
 
 
 @router.post("/sessions/{session_id}/compare-dataset/{dataset_id}")
