@@ -138,7 +138,13 @@ def answer_validator(cq: dict, exec_out: dict, snap: dict,
                 or bool(refset & set(item.get("evidence_refs") or []))
                 or bool(refset & set(item.get("evidence") or [])))
     facts = snap.get("facts") or []
-    conflicts = [f for f in facts if f.get("conflict") and related(f)]
+    # Contested is the persisted Fact state for conflicting assertions;
+    # older snapshots may carry an explicit boolean conflict flag instead.
+    conflicts = [
+        f for f in facts
+        if (f.get("conflict") or str(f.get("status") or "").lower()
+            in ("contested", "conflict")) and related(f)
+    ]
     restricted = [f for f in facts
                   if f.get("restricted") and not ctx.get("is_admin") and related(f)]
     denied = [d for d in (snap.get("documents") or [])
