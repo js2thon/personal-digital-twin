@@ -215,29 +215,6 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
     namespace = _normalize_source_namespace(source_namespace)
     if sync_mode not in {"append", "upsert"}:
         raise ValueError("sync_mode 仅支持 append 或 upsert")
-    if sync_mode == "upsert" and not source_id_column:
-        pk_columns = list((table_contracts[0].get("primary_key") or [])
-                          if table_contracts else [])
-        if len(pk_columns) == 1:
-            source_id_column = pk_columns[0]
-        else:
-            raise ValueError("upsert 模式需要指定 source_id_column，或映射契约提供单列主键")
-    if source_id_column:
-        stable_source_ids = _validated_source_ids(rows, source_id_column)
-    elif relation_specs or junction_specs:
-        if table_contracts:
-            pk_columns = list(table_contracts[0].get("primary_key") or [])
-            if not pk_columns or any(any(row.get(key) is None for key in pk_columns) for row in rows):
-                raise ValueError("关系投影要求源表每行均具有完整主键")
-            stable_source_ids = [
-                _json([row.get(key) for key in pk_columns]) if len(pk_columns) > 1
-                else str(row[pk_columns[0]]).strip() for row in rows
-            ]
-        else:
-            stable_source_ids = [None] * len(rows)
-    else:
-        stable_source_ids = [None] * len(rows)
-    track_source_records = sync_mode == "upsert" or bool(relation_specs or junction_specs)
     mapping_set = mapping_registry.get(mapping_set_id, tenant_id=tenant_id)
     if not mapping_set:
         raise LookupError("映射版本不存在或不属于当前租户")
@@ -281,6 +258,25 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
         link for link in raw_links
         if isinstance(link, dict) and (not selected_table or link.get("table") == selected_table)
     ]
+    mapping_set_has_relations = bool(
+        raw_links or any(item.get("relations") for item in raw_mappings if isinstance(item, dict))
+    )
+    pk_columns = list((table_contracts[0].get("primary_key") or [])
+                      if table_contracts else [])
+    if sync_mode == "upsert" and not source_id_column and not pk_columns:
+        raise ValueError("upsert 模式需要指定 source_id_column，或映射契约提供主键")
+    if source_id_column:
+        stable_source_ids = _validated_source_ids(rows, source_id_column)
+    elif table_contracts and (mapping_set_has_relations or sync_mode == "upsert"):
+        if not pk_columns or any(any(row.get(key) is None for key in pk_columns) for row in rows):
+            raise ValueError("关系投影/Upsert 要求源表每行均具有完整主键")
+        stable_source_ids = [
+            _json([row.get(key) for key in pk_columns]) if len(pk_columns) > 1
+            else str(row[pk_columns[0]]).strip() for row in rows
+        ]
+    else:
+        stable_source_ids = [None] * len(rows)
+    track_source_records = sync_mode == "upsert" or mapping_set_has_relations
     if not mappings and not junction_specs:
         raise ValueError("所选源表没有可执行的对象属性或关系映射")
     validation = validate_mappings(mappings, schema) if mappings else {"valid": True, "issues": []}
@@ -303,7 +299,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
             service = OntologyService(schema=schema, tenant_id=tenant_id, actor=actor)
             # Bind the instance records to the versions frozen in the approved mapping.
             service.ov = str(mapping_set.get("ontology_version") or service.ov)
-            source_instances: dict[str, str] = {}
+            source_instances: dict[int, dict[str, str]] = {}
             relation_inserted = 0
             relation_skipped = 0
             for row_index, row in enumerate(rows):
@@ -377,6 +373,8 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                     )
                     if not reservation:
                         skipped_records += 1
+                        if source_state and source_state.get("instance_id"):
+                            source_instances.setdefault(row_index, {})[entity] = str(source_state["instance_id"])
                         continue
 
                     if (source_state and source_state.get("instance_id")
@@ -389,6 +387,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                             {"iid": iid, "id": reservation["id"]},
                         )
                         skipped_records += 1
+                        source_instances.setdefault(row_index, {})[entity] = str(iid)
                         continue
 
                     instance_payload = {
@@ -421,7 +420,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                     )
                     inserted_records += 1
                     if stable_source_id is not None:
-                        source_instances[entity] = str(iid)
+                        source_instances.setdefault(row_index, {})[entity] = str(iid)
                     for prop, item in source_columns[entity].items():
                         db.execute(
                             "INSERT INTO ontology.dataset_field_lineage "
@@ -475,7 +474,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                         source_table_name = str(selected_table or "")
                         source_type = next((str(item.get("class")) for item in table_contracts
                                              if item.get("table") == selected_table), "")
-                        source_instance_id = source_instances.get(source_type)
+                        source_instance_id = source_instances.get(row_index, {}).get(source_type)
                         if not source_instance_id:
                             raise ValueError(
                                 f"关系源实例未生成：{source_table_name} 第 {row_index + 1} 行"
