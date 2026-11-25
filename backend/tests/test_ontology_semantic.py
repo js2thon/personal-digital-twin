@@ -15,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.modules.semantic_runtime import request_context as EX
 from app.modules.ontology.semantic import constraints as C
 from app.modules.ontology.semantic import reasoning as R
 from app.modules.ontology.semantic import rules as RU
