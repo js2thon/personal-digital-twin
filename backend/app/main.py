@@ -1,5 +1,6 @@
 """FastAPI 主入口：/api/v1 统一前缀，静态托管 Web 控制台。"""
 from pathlib import Path
+import shutil
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +12,6 @@ from app.api.v1 import (
     ontology_mapping,  # noqa: F401
     documents,
     evaluation,
-    kg,
     knowledge,
     lineage,
     messages,
@@ -165,6 +165,10 @@ async def semantic_context_gate(request: Request, call_next):
 @app.on_event("startup")
 def bootstrap_schema():
     """启动时幂等补齐运行时表与列，杜绝「DDL / 本地库 / 运行时建表」三处漂移。"""
+    # 旧 KG 设计器已下线；仅清理其独占的落盘会话，不触碰新工作台数据。
+    legacy_kg_store = Path(__file__).resolve().parent.parent / ".runtime" / "kg"
+    shutil.rmtree(legacy_kg_store, ignore_errors=True)
+
     # V1.3 Sprint 1 验收铁律第 1 条：生产环境禁止 MemoryStore。
     # 故意不包 try/except —— 该检查失败必须让进程 fail-fast，而不是
     # 悄悄以进程内存储启动。非生产环境直接返回 checked=false，行为不变。
@@ -354,8 +358,6 @@ app.include_router(retrieval.router, prefix=API, tags=["retrieval"])
 app.include_router(ontology_mapping.router, prefix=API, tags=["ontology-mapping"])
 # 指标智能层：原生/衍生/复合指标发现、质量门禁、预览、版本与发布
 app.include_router(ontology_metrics.router, prefix=API, tags=["ontology-metrics"])
-# 本体驱动知识图谱：导入本体/数据 → 自动生成设计模型 → 只读 SPARQL → 语义问答
-app.include_router(kg.router, prefix=API, tags=["kg"])
 # automodel 依赖 pandas 等可选包：缺依赖时只禁用该模块，不能拖垮整个服务
 try:
     from app.api.v1 import automodel as automodel_api
