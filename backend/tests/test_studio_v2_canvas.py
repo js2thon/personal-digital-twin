@@ -143,3 +143,19 @@ def test_relation_rebuild_uses_configured_non_primary_target_property():
     assert edges[0][0] == "Employee:E1"
     assert edges[0][1] == "Department:D1"
     assert edges[0][3]["target_pk"] == "D1"
+
+
+
+def test_relation_editor_can_clear_source_field_binding():
+    onto = AutoOntologyBuilder().from_dataframes({
+        "Employee": pd.DataFrame([{"employee_id": "E1", "department_id": "D1"}]),
+        "Department": pd.DataFrame([{"department_id": "D1"}]),
+    })
+    relation_name = next(iter(onto.link_types))
+    assert onto.link_types[relation_name]["source_property"] == "department_id"
+    assert onto.update_link_type(
+        relation_name, source_property="", target_property="",
+        clear_source_property=True, clear_target_property=True,
+    )
+    assert onto.link_types[relation_name]["source_property"] == ""
+    assert onto.link_types[relation_name]["target_property"] == ""
