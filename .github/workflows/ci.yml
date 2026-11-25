@@ -31,7 +31,6 @@ jobs:
       - name: Import FastAPI app (smoke)
         env:
           APP_ENV: dev
-          CQ_V2_STORE: memory
           SHACL_MODE: warn
           # Avoid hard dependency on live Postgres during import smoke
           DATABASE_URL: postgresql+psycopg://twin:twin@127.0.0.1:5432/personal_twin
