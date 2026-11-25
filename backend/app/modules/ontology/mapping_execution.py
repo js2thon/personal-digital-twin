@@ -85,6 +85,10 @@ def ensure_schema() -> None:
     ADD COLUMN IF NOT EXISTS source_namespace VARCHAR(500) NOT NULL DEFAULT 'default'
     """)
     db.execute("""
+    ALTER TABLE ontology.dataset_source_records
+    ADD COLUMN IF NOT EXISTS source_active BOOLEAN NOT NULL DEFAULT TRUE
+    """)
+    db.execute("""
     DO $migrate$
     DECLARE old_constraint RECORD;
     BEGIN
