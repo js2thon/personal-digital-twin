@@ -1,9 +1,8 @@
 """Ontology 语义层增强 API（V1.3 语义层方案 · Phase A/B/C，全新增量路由）。
 
 所有端点挂在 /ontology/semantic/* 下，与既有 /ontology/*、/ontology/v2/* 零冲突。
-- 写端点：复用 cq_v2.require_owner（SIL-A07 fail-closed）+ 全局中间件 principal；
+- 写端点：使用本模块的通用 owner 权限闸门 + 全局中间件 principal；
 - 读端点：principal 来自中间件，行级过滤走 app/policy.filter_rows；
-- CQ execute：强制服务端上下文（build_server_context 剥离请求体伪造字段），
   按权限过滤，幂等键，结果持久化，决策 Trace。
 """
 from __future__ import annotations
@@ -287,7 +286,7 @@ def rules_trigger(payload: dict, request: Request):
 @router.post("/ontology/semantic/instances")
 def write_instance(payload: InstancePayload, request: Request):
     _ensure()
-    p = require_owner(request)
+    p = _require_owner(request)
     svc = SEM.OntologyService(tenant_id=str(p.get("tenant_id") or "default"),
                               actor=str(p.get("actor") or "system"))
     return _call(svc.write_instance, payload.model_dump())
@@ -297,7 +296,7 @@ def write_instance(payload: InstancePayload, request: Request):
 def write_relation(payload: RelationPayload, request: Request):
     """验收 2：不符合类型约束的关系被拒绝，返回 400 + 逐条违规。"""
     _ensure()
-    p = require_owner(request)
+    p = _require_owner(request)
     svc = SEM.OntologyService(tenant_id=str(p.get("tenant_id") or "default"),
                               actor=str(p.get("actor") or "system"))
     d = payload.model_dump()
@@ -308,7 +307,7 @@ def write_relation(payload: RelationPayload, request: Request):
 @router.post("/ontology/semantic/rules")
 def register_rule(payload: RulePayload, request: Request):
     _ensure()
-    p = require_owner(request)
+    p = _require_owner(request)
     d = payload.model_dump()
     check = RU.validate_rule_payload(d)
     if not check["valid"]:
@@ -321,7 +320,7 @@ def register_rule(payload: RulePayload, request: Request):
 @router.post("/ontology/semantic/snapshots/freeze")
 def freeze_snapshot(payload: FreezePayload, request: Request):
     _ensure()
-    p = require_owner(request)
+    p = _require_owner(request)
     schema = SEM.load_schema()
     context = {
         **_semantic_context(request),
@@ -360,7 +359,7 @@ def regression_sets(request: Request):
 @router.post("/ontology/semantic/regression/sets")
 def create_regression_set(payload: RegressionSetPayload, request: Request):
     _ensure()
-    require_owner(request)
+    _require_owner(request)
     return _call(regression.upsert_set, payload.set_id, payload.name, payload.cases)
 
 
@@ -398,7 +397,7 @@ def get_metrics(request: Request):
 @router.post("/ontology/semantic/maintenance/ensure-ready")
 def ensure_ready(request: Request):
     _ensure()
-    require_owner(request)
+    _require_owner(request)
     return SEM.ensure_ready()
 
 
