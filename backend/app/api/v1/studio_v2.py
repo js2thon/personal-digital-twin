@@ -570,6 +570,52 @@ def save_canvas_layout(session_id: str, body: CanvasLayoutRequest) -> Dict[str, 
     return {"ok": True, "saved": len(positions), "storage": "process_session"}
 
 
+@router.post("/sessions/{session_id}/compare-dataset/{dataset_id}")
+def compare_source_dataset(session_id: str, dataset_id: str) -> Dict[str, Any]:
+    """Compare a newly uploaded dataset with the source schema without mutating the ontology."""
+    try:
+        sess = _store().require(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    from app.modules.ontology.automodel import versions as am_versions
+    dataset = am_versions.load_dataset(dataset_id, "default")
+    if dataset is None:
+        raise HTTPException(404, f"数据集不存在：{dataset_id}")
+    current = sess.ontology.data_mapping
+    incoming = {table.name: table for table in dataset.tables.values()}
+    added_tables = sorted(set(incoming) - set(current))
+    removed_tables = sorted(set(current) - set(incoming))
+    table_diffs = []
+    for table_name in sorted(set(current) & set(incoming)):
+        old = current[table_name]
+        table = incoming[table_name]
+        new_columns = [str(c) for c in table.df.columns]
+        old_columns = list(old.get("columns", []))
+        old_types = old.get("column_types", {})
+        new_types = {str(col): str(dtype) for col, dtype in table.df.dtypes.items()}
+        table_diffs.append({
+            "table": table_name,
+            "added_columns": [c for c in new_columns if c not in old_columns],
+            "removed_columns": [c for c in old_columns if c not in new_columns],
+            "type_changes": [{"column": c, "before": old_types.get(c), "after": new_types.get(c)}
+                             for c in new_columns if c in old_types and old_types.get(c) != new_types.get(c)],
+            "rows_before": old.get("row_count", 0),
+            "rows_after": len(table.df),
+        })
+    changed = bool(added_tables or removed_tables or any(
+        d["added_columns"] or d["removed_columns"] or d["type_changes"] or d["rows_before"] != d["rows_after"]
+        for d in table_diffs
+    ))
+    return {
+        "ok": True, "requires_review": changed, "mutated": False,
+        "current_dataset_id": sess.meta.get("source_info", {}).get("dataset_id"),
+        "incoming_dataset_id": dataset_id,
+        "added_tables": added_tables, "removed_tables": removed_tables,
+        "table_diffs": table_diffs,
+        "message": "发现上游数据变化，已生成差异报告；本次比较不会自动修改本体或映射。" if changed else "数据结构与记录数未发现变化。",
+    }
+
+
 @router.get("/sessions/{session_id}/source-lineage")
 def get_source_lineage(session_id: str) -> Dict[str, Any]:
     try:
