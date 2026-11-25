@@ -56,7 +56,7 @@ def ensure_schema() -> dict:
     for stmt in stmts:
         db.execute(stmt)
     return {"statements": len(stmts), "schema_file": SCHEMA_PATH.name,
-            "tables": 11, "durable": True}
+            "tables": 7, "durable": True}
 
 
 def ping() -> bool:
@@ -69,8 +69,7 @@ def ping() -> bool:
 def counts() -> dict:
     """各语义表规模，供 health / metrics 自证。"""
     tables = ["semantic_schemas", "entity_instances", "instance_relations",
-              "business_rules", "runtime_task_snapshots", "cq_idempotency",
-              "cq_semantic_runs", "cq_regression_sets", "cq_regression_runs",
+              "business_rules", "runtime_task_snapshots",
               "decision_rule_trace", "semantic_write_audit"]
     out: dict[str, int] = {}
     for t in tables:
@@ -270,7 +269,7 @@ def _decode(row: dict) -> dict:
     d = dict(row)
     for key in ("properties", "source_fact_ids", "definition", "condition", "action",
                 "schema_snapshot", "server_context", "cases", "parameters", "answer",
-                "evidence_refs", "applied_rules", "result", "cq_results",
+                "evidence_refs", "applied_rules", "result",
                 "derived_candidates", "violations", "result_fingerprint"):
         if key in d and isinstance(d[key], str):
             d[key] = jload(d[key], d[key])
