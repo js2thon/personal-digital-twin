@@ -162,3 +162,24 @@ def test_relation_editor_can_clear_source_field_binding():
     )
     assert onto.link_types[relation_name]["source_property"] == ""
     assert onto.link_types[relation_name]["target_property"] == ""
+
+
+def test_studio_session_json_snapshot_round_trip_preserves_schema_and_lineage():
+    from app.modules.ontology.studio_v2.service import PersistentStudioV2Store
+
+    sess = _session()
+    try:
+        sess.meta["source_info"] = {"kind": "dataset", "dataset_id": "dataset-1"}
+        sess.meta["canvas_layout"] = {"CLASS:Employee": {"x": 90.0, "y": 180.0}}
+        payload = PersistentStudioV2Store._dump(sess)
+        restored = PersistentStudioV2Store._restore(payload)
+        assert restored.session_id == sess.session_id
+        assert restored.meta["source_info"]["dataset_id"] == "dataset-1"
+        assert restored.meta["canvas_layout"]["CLASS:Employee"]["x"] == 90.0
+        assert restored.ontology.object_types == sess.ontology.object_types
+        assert restored.ontology.objects == sess.ontology.objects
+        assert restored.ontology.data_mapping == sess.ontology.data_mapping
+        assert restored.ontology.links.number_of_nodes() == sess.ontology.links.number_of_nodes()
+        assert restored.ontology.links.number_of_edges() == sess.ontology.links.number_of_edges()
+    finally:
+        default_store.delete(sess.session_id)
