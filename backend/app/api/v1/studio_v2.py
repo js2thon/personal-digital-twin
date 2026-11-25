@@ -267,14 +267,22 @@ def _studio_v2_automodel_schema(sess, source_id: str) -> Dict[str, Any]:
         target_column = target_binding.get("source_column") or relation.get("target_property") or ""
         source_column = connectors._table_name(str(source_column)) if source_column else ""
         target_column = connectors._table_name(str(target_column)) if target_column else ""
-        relation_types[relation_name] = {
+        canonical_relation = canonical_relations.get(relation_name, {})
+        cardinality = canonical_relation.get("cardinality", "many_to_one")
+        relation_spec = {
             "label": relation.get("description") or relation_name,
             "source": source_type, "target": target_type,
-            "cardinality": canonical_relations.get(relation_name, {}).get("cardinality", "many_to_one"),
+            "cardinality": cardinality,
             "table": source_tables[source_type], "column": source_column,
             "target_table": source_tables[target_type],
             "target_column": target_column,
         }
+        if cardinality == "many_to_many":
+            junction = canonical_relation.get("data_binding") or {}
+            relation_spec["via_table"] = connectors._table_name(
+                str(junction.get("junction_table") or "")
+            )
+        relation_types[relation_name] = relation_spec
 
     schema = {
         "schema_version": f"studio-v2-{sess.session_id}",
