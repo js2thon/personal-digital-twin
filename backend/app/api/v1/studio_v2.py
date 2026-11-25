@@ -523,6 +523,7 @@ class SchemaEditOp(BaseModel):
     property_type: str = "string"
     source_table: str = ""
     source_column: str = ""
+    clear_source_mapping: bool = False
     label: str = ""
     description: str = ""
     source_property: str = ""
@@ -668,7 +669,7 @@ def schema_edit(session_id: str, body: SchemaEditRequest) -> Dict[str, Any]:
         elif o.op == "update_property":
             if onto.update_property(o.type_name, o.property_name, new_name=o.new_name,
                                     source_column=o.source_column, property_type=o.property_type,
-                                    description=o.description):
+                                    description=o.description, clear_source_mapping=o.clear_source_mapping):
                 done.append(f"更新属性 {o.type_name}.{o.property_name}")
         elif o.op == "delete_property":
             if onto.remove_property(o.type_name, o.property_name):
