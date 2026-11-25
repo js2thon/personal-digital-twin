@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
 from typing import Iterable, Iterator
 
 from app.db import session as db
@@ -90,6 +89,23 @@ def ensure_schema() -> None:
     END $migrate$;
     """)
     db.execute("""
+    CREATE TABLE IF NOT EXISTS ontology.dataset_ingestion_snapshots (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id VARCHAR(120) NOT NULL,
+        mapping_set_id UUID NOT NULL REFERENCES ontology.dataset_mapping_sets(id),
+        source_namespace VARCHAR(500) NOT NULL DEFAULT 'default',
+        snapshot_id VARCHAR(200) NOT NULL,
+        source_sha256 VARCHAR(64) NOT NULL,
+        batch_count INTEGER,
+        total_rows INTEGER,
+        status VARCHAR(20) NOT NULL CHECK (status IN ('running','succeeded','failed')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CONSTRAINT uq_dataset_ingestion_snapshots_source
+            UNIQUE (tenant_id, mapping_set_id, source_namespace, snapshot_id)
+    )
+    """)
+    db.execute("""
     ALTER TABLE ontology.dataset_source_records
     ADD COLUMN IF NOT EXISTS source_active BOOLEAN NOT NULL DEFAULT TRUE
     """)
@@ -120,11 +136,37 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
     if not mapping_set or mapping_set.get("status") != "approved":
         raise PermissionError("只有当前租户已审核的映射版本可以执行")
     mapping_name = str(mapping_set.get("name") or "")
-    snapshot_started = datetime.now(timezone.utc)
+    snapshot_started = None
+    if reconcile_missing:
+        started = db.fetch_one("SELECT clock_timestamp() AS started_at")
+        if not started or not started.get("started_at"):
+            raise RuntimeError("无法读取目标数据库时间，拒绝执行缺失记录对账")
+        snapshot_started = started["started_at"]
     base_sha = source_sha256 or _digest({"source": source_name, "snapshot": snapshot_id})
+    manifest = db.fetch_one(
+        "SELECT source_sha256, batch_count, status FROM ontology.dataset_ingestion_snapshots "
+        "WHERE tenant_id=:t AND mapping_set_id=CAST(:m AS uuid) "
+        "AND source_namespace=:ns AND snapshot_id=:s",
+        {"t": tenant_id, "m": mapping_set_id, "ns": namespace, "s": snapshot_id})
+    if manifest and manifest["source_sha256"] != base_sha:
+        raise ValueError("同一 snapshot_id 的源快照指纹发生变化；请使用新的 snapshot_id")
+    expected_batch_count = (
+        int(manifest["batch_count"])
+        if manifest and manifest.get("status") == "succeeded"
+        and manifest.get("batch_count") is not None else None
+    )
+    if not manifest:
+        db.execute(
+            "INSERT INTO ontology.dataset_ingestion_snapshots "
+            "(tenant_id, mapping_set_id, source_namespace, snapshot_id, source_sha256, status) "
+            "VALUES (:t, CAST(:m AS uuid), :ns, :s, :h, 'running') "
+            "ON CONFLICT (tenant_id, mapping_set_id, source_namespace, snapshot_id) DO NOTHING",
+            {"t": tenant_id, "m": mapping_set_id, "ns": namespace, "s": snapshot_id, "h": base_sha})
     summaries, offset, total_rows = [], 0, 0
 
     for batch_index, batch in _chunks(rows, size):
+        if expected_batch_count is not None and batch_index >= expected_batch_count:
+            raise ValueError("同一 snapshot_id 的批次数量发生变化；请使用新的 snapshot_id")
         batch_sha = _digest({"base": base_sha, "index": batch_index, "rows": batch})
         checkpoint = db.fetch_one(
             "SELECT batch_sha256, status, run_id::text AS run_id FROM ontology.dataset_ingestion_checkpoints "
@@ -188,6 +230,9 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
         offset += len(batch)
         total_rows += len(batch)
 
+    if expected_batch_count is not None and len(summaries) != expected_batch_count:
+        raise ValueError("同一 snapshot_id 的批次数量发生变化；请使用新的 snapshot_id")
+
     tombstones = 0
     if reconcile_missing and total_rows == 0:
         raise ValueError("空快照不会执行缺失记录对账；请确认源数据后再重试")
@@ -200,6 +245,13 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
             {"t": tenant_id, "mn": mapping_name, "ns": namespace,
              "started": snapshot_started})
         tombstones = int((result or {}).get("n") or 0)
+
+    db.execute(
+        "UPDATE ontology.dataset_ingestion_snapshots SET status='succeeded', "
+        "batch_count=:b, total_rows=:n, updated_at=now() WHERE tenant_id=:t "
+        "AND mapping_set_id=CAST(:m AS uuid) AND source_namespace=:ns AND snapshot_id=:s",
+        {"b": len(summaries), "n": total_rows, "t": tenant_id, "m": mapping_set_id,
+         "ns": namespace, "s": snapshot_id})
 
     return {
         "status": "succeeded", "snapshot_id": snapshot_id,
