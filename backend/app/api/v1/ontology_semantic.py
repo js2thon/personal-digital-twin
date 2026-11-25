@@ -12,9 +12,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.api.v1.cq_v2 import require_owner
-from app.modules.ontology.semantic import (alignment, cq_executor, metrics,
-                                            regression, store, versioning)
+from app.modules.ontology.semantic import (alignment, metrics, regression,
+                                            store, versioning)
 from app.modules.ontology.semantic import constraints as C
 from app.modules.ontology.semantic import reasoning as R
 from app.modules.ontology.semantic import rules as RU
@@ -42,6 +41,16 @@ def _ensure() -> None:
 def _principal(request: Request) -> dict:
     p = getattr(getattr(request, "state", None), "principal", None)
     return p if isinstance(p, dict) else {}
+
+
+def _require_owner(request: Request) -> dict:
+    """语义本体写操作的通用权限闸门，不依赖 CQ 子系统。"""
+    from app.policy import is_owner_class
+
+    principal = _principal(request)
+    if not principal or not is_owner_class(principal):
+        raise HTTPException(403, "本体治理写操作要求 owner 级主体")
+    return principal
 
 
 def _semantic_context(request: Request, space_id: str | None = None) -> dict:
@@ -121,19 +130,6 @@ class ValidatePayload(BaseModel):
 
 class FreezePayload(BaseModel):
     task_id: str
-
-
-class ExecutePayload(BaseModel):
-    parameters: dict = {}
-    idempotency_key: str = ""
-    task_snapshot_id: str | None = None
-    # 下面这些字段即便伪造也会被服务端剥离（用于自证，不参与判定）
-    tenant_id: str | None = None
-    user_id: str | None = None
-    actor: str | None = None
-    role: str | None = None
-    space_id: str | None = None
-    ontology_version: str | None = None
 
 
 class RegressionSetPayload(BaseModel):
@@ -234,7 +230,7 @@ def derive_relations_from_facts(payload: dict, request: Request):
     携带 source_fact_ids 回链；解析不到的进 unresolved 照实返回，不编造。
     """
     _ensure()
-    p = require_owner(request)
+    p = _require_owner(request)
     from app.modules.ontology.semantic import fact_derive
     return fact_derive.derive(tenant_id=str(p.get("tenant_id") or "default"),
                               commit=bool(payload.get("commit")))
@@ -326,11 +322,17 @@ def register_rule(payload: RulePayload, request: Request):
 def freeze_snapshot(payload: FreezePayload, request: Request):
     _ensure()
     p = require_owner(request)
-    built = cq_executor.build_server_context(p, _semantic_context(request),
-                                             schema=SEM.load_schema())
-    return versioning.freeze(payload.task_id, SEM.load_schema(),
+    schema = SEM.load_schema()
+    context = {
+        **_semantic_context(request),
+        "ontology_version": versioning.current_version()["ontology_version"],
+        "schema_version": schema.get("schema_version"),
+        "policy": {"engine": "app/policy.decide", "fail_closed": True},
+        "source": "global_middleware",
+    }
+    return versioning.freeze(payload.task_id, schema,
                              tenant_id=str(p.get("tenant_id") or "default"),
-                             server_context=built["context"],
+                             server_context=context,
                              created_by=str(p.get("actor") or "system"))
 
 
@@ -346,50 +348,6 @@ def resolve_snapshot(task_id: str, request: Request):
     _ensure()
     p = _principal(request)
     return _call(versioning.resolve, task_id, str(p.get("tenant_id") or "default"))
-
-
-# ---------------------------------------------------------------- CQ execute（验收 1/4/5）
-@router.post("/ontology/semantic/cq/{cq_id}/execute")
-def execute_cq(cq_id: str, payload: ExecutePayload, request: Request):
-    """服务端自动注入 tenant/identity/space/ontology_version/policy；同键同结果。"""
-    _ensure()
-    p = _principal(request)
-    body = payload.model_dump(exclude_none=True)
-    return _call(cq_executor.execute, cq_id, body.get("parameters") or {},
-                 body.get("idempotency_key") or "",
-                 principal=p,
-                 semantic_context=_semantic_context(request),
-                 schema=SEM.load_schema(),
-                 task_snapshot_id=body.get("task_snapshot_id"),
-                 client_body=body)
-
-
-@router.get("/ontology/semantic/cq/runs")
-def cq_runs(request: Request, limit: int = 50):
-    _ensure()
-    p = _principal(request)
-    return {"items": cq_executor.list_runs(str(p.get("tenant_id") or "default"), limit)}
-
-
-@router.get("/ontology/semantic/cq/runs/{run_id}")
-def cq_run(run_id: str, request: Request):
-    _ensure()
-    p = _principal(request)
-    row = cq_executor.get_run(run_id, str(p.get("tenant_id") or "default"))
-    if not row:
-        raise HTTPException(404, f"执行记录 {run_id} 不存在")
-    return row
-
-
-@router.get("/ontology/semantic/decision-trace/{run_id}")
-def decision_trace(run_id: str, request: Request):
-    """验收 5：展示应用了哪些本体规则 / CQ 结果。"""
-    _ensure()
-    p = _principal(request)
-    row = cq_executor.decision_trace(run_id, str(p.get("tenant_id") or "default"))
-    if not row:
-        raise HTTPException(404, f"决策 Trace {run_id} 不存在")
-    return row
 
 
 # ---------------------------------------------------------------- 回归集（验收 4）
