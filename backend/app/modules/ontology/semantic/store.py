@@ -1,8 +1,8 @@
 """语义层持久化（PostgreSQL 权威存储 · 全新增量表）。
 
 只依赖 app.db.session 的标准 fetch/execute/transaction；JSONB 一律用
-`CAST(:p AS jsonb)` + json.dumps 字符串（与 cq_v2.store 同款写法，避免驱动
-类型歧义）。DDL 幂等，逐条独立执行，可反复调用。所有读路径带 tenant_id，
+`CAST(:p AS jsonb)` + json.dumps 字符串，避免驱动类型歧义。
+DDL 幂等，逐条独立执行，可反复调用。所有读路径带 tenant_id，
 供 app/policy.read_clause 逐点过滤。
 """
 from __future__ import annotations
