@@ -982,6 +982,38 @@ def eval_run(job_id: str, payload: EvalRunIn, request: Request):
     return res
 
 
+@router.post("/automodel/jobs/{job_id}/eval/run-production")
+def eval_run_production(job_id: str, payload: EvalRunIn, request: Request):
+    """Run question-quality evaluation against the same version-pinned production snapshot as QA."""
+    tenant, actor = _tenant(request)
+    job = _job(job_id, request)
+    if job.get("status") not in ("published", "written"):
+        raise HTTPException(409, "生产问答评测仅允许使用已发布的本体版本")
+    materialized, snapshot = _production_snapshot(job, request)
+    F, L = mx.frames(materialized, job["draft"]["schema"])
+    questions = payload.questions or job.get("eval_questions") or ev.generate(
+        job["draft"]["schema"], F
+    )
+    llm = _llm() if payload.use_llm else None
+    result = ev.run(
+        questions,
+        lambda question: qa.ask(
+            question, job["draft"]["schema"],
+            job.get("metrics") or {"metrics": {}}, F, L,
+            llm=llm, contract=job.get("contract"),
+        ),
+    )
+    result["run_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    result["use_llm"] = payload.use_llm
+    result["data_scope"] = "production"
+    result["production_snapshot"] = snapshot
+    job["eval_last"] = {
+        key: value for key, value in result.items() if key != "items"
+    }
+    jobs.save(job, tenant, actor)
+    return result
+
+
 @router.post("/automodel/admin/restart")
 def admin_restart(request: Request):
     """本机重启 API（仅回环地址）：进程退出后由 start_hidden.py 守护在约 10 秒内拉起。"""
