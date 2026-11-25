@@ -1018,6 +1018,7 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
                     **(info.get("property_mappings", {}).get(prop) or {
                         "source_table": type_name, "source_column": prop,
                     }),
+                    "dataset_id": (ontology.data_mapping.get(type_name) or {}).get("dataset_id"),
                     "mapped": (
                         info.get("property_mappings", {}).get(prop, {}).get("source_column", prop)
                         in (ontology.data_mapping.get(type_name) or {}).get("columns", [])
@@ -1048,7 +1049,13 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
                 "source_column": info.get("source_property", ""),
                 "target_table": target,
                 "target_column": info.get("target_property", ""),
-                "mapped": bool(info.get("source_property") and info.get("target_property")),
+                "source_dataset_id": (ontology.data_mapping.get(source) or {}).get("dataset_id"),
+                "target_dataset_id": (ontology.data_mapping.get(target) or {}).get("dataset_id"),
+                "mapped": bool(
+                    info.get("source_property") and info.get("target_property")
+                    and info.get("source_property") in (ontology.data_mapping.get(source) or {}).get("columns", [])
+                    and info.get("target_property") in (ontology.data_mapping.get(target) or {}).get("columns", [])
+                ),
             },
         })
 
