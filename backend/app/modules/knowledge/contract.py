@@ -375,6 +375,23 @@ def ensure_schema() -> None:
                 db.execute(stmt)
             except Exception:  # noqa: BLE001
                 continue
+        # Integrity objects that do not require historical backfill belong to
+        # schema initialization, not the opt-in data-hardening operation.
+        # Keep the temporal check and updated_at trigger present on a fresh DB.
+        for stmt in (
+            "DO $ BEGIN ALTER TABLE knowledge.facts ADD CONSTRAINT facts_valid_window "
+            "CHECK (valid_from IS NULL OR valid_to IS NULL OR valid_to >= valid_from); "
+            "EXCEPTION WHEN duplicate_object THEN NULL; END $",
+            "CREATE OR REPLACE FUNCTION knowledge.touch_updated_at() RETURNS trigger AS "
+            "$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END $ LANGUAGE plpgsql",
+            "DROP TRIGGER IF EXISTS trg_facts_touch_updated_at ON knowledge.facts",
+            "CREATE TRIGGER trg_facts_touch_updated_at BEFORE UPDATE ON knowledge.facts "
+            "FOR EACH ROW EXECUTE FUNCTION knowledge.touch_updated_at()",
+        ):
+            try:
+                db.execute(stmt)
+            except Exception:  # noqa: BLE001
+                continue
         _ensured = True
 
 
