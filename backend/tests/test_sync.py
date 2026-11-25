@@ -115,7 +115,8 @@ def test_upsert_fact_edge_prefers_entity_id_over_name(fake, monkeypatch):
         {"id": "a", "canonical_name": "某某", "entity_type": "Person", "aliases": []},
         {"id": "b", "canonical_name": "某某乙", "entity_type": "Person", "aliases": []},
     ])
-    f = fake(one=[fact, None])
+    # fetch_one 顺序：事实、查重无命中、INSERT RETURNING 新边 ID
+    f = fake(one=[fact, None, {"id": "rel-new"}])
     out = sync.upsert_fact_edge("f-4")
     assert out["created"] is True
     assert out["target"] == "某某乙"
