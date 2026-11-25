@@ -296,14 +296,29 @@ def execute_approved_database_snapshot(*, tenant_id: str, mapping_set_id: str,
     mappings = definition.get("mappings") or []
     table_mapping = next((item for item in mappings
                           if item.get("table") == table_name), None)
+    # Backward compatibility: older approved contracts may contain one
+    # unqualified mapping object. It is safe to bind it to the explicitly
+    # selected source table only when there is exactly one such mapping.
+    if not table_mapping and len(mappings) == 1 and not mappings[0].get("table"):
+        table_mapping = mappings[0]
     junction_mapping = next((item for item in (definition.get("links") or [])
                              if item.get("table") == table_name), None)
     if not table_mapping and not junction_mapping:
         raise ValueError(f"已审核映射版本中不存在源表：{table_name}")
     source_columns = set()
     if table_mapping:
-        source_columns.update(str(column) for column in
-                              (table_mapping.get("attributes") or {}).values() if column)
+        attributes = table_mapping.get("attributes") or {}
+        if isinstance(attributes, dict):
+            source_columns.update(str(column) for column in attributes.values() if column)
+        elif isinstance(attributes, list):
+            source_columns.update(
+                str(item.get("source") or item.get("source_column"))
+                for item in attributes if isinstance(item, dict)
+                and (item.get("source") or item.get("source_column"))
+            )
+        # Legacy field-level mapping shape: {source, entity_type, property}.
+        if table_mapping.get("source"):
+            source_columns.add(str(table_mapping["source"]))
         source_columns.update(str(item.get("column")) for item in
                               (table_mapping.get("relations") or []) if item.get("column"))
         if table_mapping.get("name"):
