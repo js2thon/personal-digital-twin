@@ -284,6 +284,18 @@ def _studio_v2_automodel_schema(sess, source_id: str) -> Dict[str, Any]:
             relation_spec["via_table"] = connectors._table_name(
                 str(junction.get("junction_table") or "")
             )
+            relation_spec["junction_source_column"] = connectors._table_name(
+                str(junction.get("junction_source_column") or "")
+            )
+            relation_spec["junction_target_column"] = connectors._table_name(
+                str(junction.get("junction_target_column") or "")
+            )
+            relation_spec["junction_source_table"] = connectors._table_name(
+                str(junction.get("source_table") or source_tables[source_type])
+            )
+            relation_spec["junction_target_table"] = connectors._table_name(
+                str(junction.get("target_table") or source_tables[target_type])
+            )
         relation_types[relation_name] = relation_spec
 
     schema = {
