@@ -262,7 +262,8 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
         raw_links or any(item.get("relations") for item in raw_mappings if isinstance(item, dict))
     )
     pk_columns = list((table_contracts[0].get("primary_key") or [])
-                      if table_contracts else [])
+                      if table_contracts else
+                      (junction_specs[0].get("primary_key") or [] if junction_specs else []))
     if sync_mode == "upsert" and not source_id_column and not pk_columns:
         raise ValueError("upsert 模式需要指定 source_id_column，或映射契约提供主键")
     if source_id_column:
@@ -378,6 +379,14 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                         continue
 
                     if (source_state and source_state.get("instance_id")
+                            and sync_mode == "append"
+                            and (source_state.get("row_hash") != row_hash
+                                 or source_state.get("mapping_checksum") != mapping_checksum)):
+                        raise ValueError(
+                            "该源记录已存在且内容或映射版本发生变化；请使用 upsert 模式更新，"
+                            "避免 append 模式隐式覆盖生产实例"
+                        )
+                    if (source_state and source_state.get("instance_id")
                             and source_state.get("row_hash") == row_hash
                             and source_state.get("mapping_checksum") == mapping_checksum):
                         iid = source_state["instance_id"]
@@ -481,6 +490,13 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                             )
                         fk_value = row.get(relation.get("column"))
                         if fk_value is None or not str(fk_value).strip():
+                            db.execute(
+                                "UPDATE ontology.instance_relations SET status='superseded' "
+                                "WHERE tenant_id=:t AND source_id=CAST(:s AS uuid) "
+                                "AND relation_type=:rt AND derived=false AND status='active'",
+                                {"t": tenant_id, "s": source_instance_id,
+                                 "rt": str(relation.get("type") or "")},
+                            )
                             continue
                         target_table = str(relation.get("target_table") or "")
                         target_instance_id = resolve_source_instance(target_table, str(fk_value).strip())
