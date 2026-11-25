@@ -1,20 +1,14 @@
-# Personal Digital Twin - 常用命令
-.PHONY: up down seed test logs
+# Personal Digital Twin - 本地原生开发命令
+.PHONY: install start test lint
 
-up:            ## 启动基础底座（PostgreSQL/Redis/MinIO/API/Worker/Web）
-	docker compose up -d --build
+install:
+	cd backend && python -m pip install -e ".[dev]"
 
-up-ai:         ## 启动含 vLLM 的完整 AI 栈（需要 GPU）
-	docker compose --profile ai up -d --build
+start:
+	cd backend && python -m uvicorn app.main:app --host 127.0.0.1 --port 8100
 
-down:
-	docker compose down
-
-seed:          ## 写入示例数据（演示审批闭环）
-	docker compose exec twin-api python scripts/seed_demo.py
-
-test:          ## 后端冒烟测试
+test:
 	cd backend && python -m pytest tests -q
 
-logs:
-	docker compose logs -f twin-api twin-worker
+lint:
+	cd backend && python -m compileall -q app
