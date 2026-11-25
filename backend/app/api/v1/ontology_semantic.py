@@ -271,7 +271,7 @@ def rules_trigger(payload: dict, request: Request):
 @router.post("/ontology/semantic/instances")
 def write_instance(payload: InstancePayload, request: Request):
     _ensure()
-    p = _require_owner(request)
+    p = require_owner(request)
     svc = SEM.OntologyService(tenant_id=str(p.get("tenant_id") or "default"),
                               actor=str(p.get("actor") or "system"))
     return _call(svc.write_instance, payload.model_dump())
@@ -281,7 +281,7 @@ def write_instance(payload: InstancePayload, request: Request):
 def write_relation(payload: RelationPayload, request: Request):
     """验收 2：不符合类型约束的关系被拒绝，返回 400 + 逐条违规。"""
     _ensure()
-    p = _require_owner(request)
+    p = require_owner(request)
     svc = SEM.OntologyService(tenant_id=str(p.get("tenant_id") or "default"),
                               actor=str(p.get("actor") or "system"))
     d = payload.model_dump()
@@ -292,7 +292,7 @@ def write_relation(payload: RelationPayload, request: Request):
 @router.post("/ontology/semantic/rules")
 def register_rule(payload: RulePayload, request: Request):
     _ensure()
-    p = _require_owner(request)
+    p = require_owner(request)
     d = payload.model_dump()
     check = RU.validate_rule_payload(d)
     if not check["valid"]:
@@ -305,7 +305,7 @@ def register_rule(payload: RulePayload, request: Request):
 @router.post("/ontology/semantic/snapshots/freeze")
 def freeze_snapshot(payload: FreezePayload, request: Request):
     _ensure()
-    p = _require_owner(request)
+    p = require_owner(request)
     schema = SEM.load_schema()
     context = {
         **_semantic_context(request),
@@ -352,7 +352,7 @@ def get_metrics(request: Request):
 @router.post("/ontology/semantic/maintenance/ensure-ready")
 def ensure_ready(request: Request):
     _ensure()
-    _require_owner(request)
+    require_owner(request)
     return SEM.ensure_ready()
 
 
