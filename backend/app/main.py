@@ -7,8 +7,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
 
-from app.api.v1 import (  # noqa: F401
-    ontology_mapping,    documents,
+from app.api.v1 import (
+    ontology_mapping,  # noqa: F401
+    documents,
     evaluation,
     kg,
     knowledge,
