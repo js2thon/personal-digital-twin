@@ -242,6 +242,8 @@ class Ontology:
         target: str = "",
         target_property: str = "",
         new_name: str = "",
+        clear_source_property: bool = False,
+        clear_target_property: bool = False,
     ) -> bool:
         """编辑关系：名称 / 描述 / 起点 / 终点 / 起点属性 / 终点属性。
 
@@ -258,8 +260,12 @@ class Ontology:
             info["target"] = target
         if source_property:
             info["source_property"] = source_property
+        elif clear_source_property:
+            info["source_property"] = ""
         if target_property:
             info["target_property"] = target_property
+        elif clear_target_property:
+            info["target_property"] = ""
         if description is not None:
             info["description"] = description
         if new_name and new_name != name and new_name not in self.link_types:
