@@ -62,3 +62,58 @@ def test_canvas_layout_is_saved_and_restored_in_session():
         assert studio_v2.get_canvas_layout(sess.session_id)["positions"][node_id] == {"x": 120.0, "y": 240.0}
     finally:
         default_store.delete(sess.session_id)
+
+
+
+def test_schema_edit_endpoint_adds_source_bound_property():
+    sess = _session()
+    try:
+        result = studio_v2.schema_edit(
+            sess.session_id,
+            studio_v2.SchemaEditRequest(ops=[
+                studio_v2.SchemaEditOp(
+                    op="add_property", type_name="Employee",
+                    property_name="displayName", source_column="employee_name",
+                )
+            ]),
+        )
+        assert result["ok"] is True
+        graph = schema_graph_payload(sess.ontology)
+        prop = next(n for n in graph["nodes"] if n["id"] == "PROP:Employee:displayName")
+        assert prop["source"]["source_column"] == "employee_name"
+        assert prop["source"]["mapped"] is True
+    finally:
+        default_store.delete(sess.session_id)
+
+
+def test_dataset_compare_reports_diff_without_mutating_session(monkeypatch):
+    from types import SimpleNamespace
+    from app.modules.ontology.automodel import versions
+
+    sess = _session()
+    sess.meta["source_info"] = {"kind": "dataset", "dataset_id": "old-dataset"}
+    incoming = SimpleNamespace(tables={
+        "Employee": SimpleNamespace(
+            name="Employee",
+            df=pd.DataFrame([{
+                "employee_id": "E1", "department_id": "D1",
+                "employee_name": "Ada", "employee_level": "L5",
+            }]),
+        ),
+        "Department": SimpleNamespace(
+            name="Department",
+            df=pd.DataFrame([{"department_id": "D1", "department_name": "Engineering"}]),
+        ),
+    })
+    monkeypatch.setattr(versions, "load_dataset", lambda dataset_id, tenant: incoming)
+    before = list(sess.ontology.object_types["Employee"]["properties"])
+    try:
+        diff = studio_v2.compare_source_dataset(sess.session_id, "new-dataset")
+        assert diff["requires_review"] is True
+        assert diff["mutated"] is False
+        assert diff["dataset_changed"] is True
+        employee = next(d for d in diff["table_diffs"] if d["table"] == "Employee")
+        assert "employee_level" in employee["added_columns"]
+        assert sess.ontology.object_types["Employee"]["properties"] == before
+    finally:
+        default_store.delete(sess.session_id)
