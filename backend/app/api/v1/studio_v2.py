@@ -771,6 +771,7 @@ def run_tool(session_id: str, body: ToolCallRequest) -> Dict[str, Any]:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     result = execute_ontology_tool(sess.ontology, body.name, body.arguments)
+    sess.touch()
     return {"tool": body.name, "result": result}
 
 
