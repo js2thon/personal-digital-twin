@@ -163,6 +163,11 @@ def _studio_v2_automodel_schema(sess, source_id: str) -> Dict[str, Any]:
     from app.modules.ontology.automodel import connectors
 
     ontology = sess.ontology
+    from app.modules.ontology.canonical_model import canonical_model_from_studio
+
+    canonical_model = canonical_model_from_studio(ontology, session_id=sess.session_id)
+    canonical_objects = {item["name"]: item for item in canonical_model["objects"]}
+    canonical_relations = {item["name"]: item for item in canonical_model["relationships"]}
     entity_types: Dict[str, Any] = {}
     relation_types: Dict[str, Any] = {}
     attributes: Dict[str, Any] = {}
@@ -234,7 +239,7 @@ def _studio_v2_automodel_schema(sess, source_id: str) -> Dict[str, Any]:
             "key": pk, "name_column": "",
             "attributes": object_attributes,
             "title_property": title_property,
-            "object_kind": "entity",
+            "object_kind": canonical_objects.get(type_name, {}).get("object_kind", "static_entity"),
             "identity_rules": ([{
                 "source_system": source_id, "key_properties": [key_property],
                 "normalization": "trim", "priority": 100, "unique": True,
@@ -265,7 +270,7 @@ def _studio_v2_automodel_schema(sess, source_id: str) -> Dict[str, Any]:
         relation_types[relation_name] = {
             "label": relation.get("description") or relation_name,
             "source": source_type, "target": target_type,
-            "cardinality": "many_to_one",
+            "cardinality": canonical_relations.get(relation_name, {}).get("cardinality", "many_to_one"),
             "table": source_tables[source_type], "column": source_column,
             "target_table": source_tables[target_type],
             "target_column": target_column,
@@ -279,6 +284,19 @@ def _studio_v2_automodel_schema(sess, source_id: str) -> Dict[str, Any]:
         "validation_rules": {}, "status": "draft",
     }
     return {"schema": schema, "class_map": class_map}
+
+
+@router.get("/sessions/{session_id}/canonical-model")
+def get_canonical_business_object_model(session_id: str) -> Dict[str, Any]:
+    """Return the canonical business-object model used by Studio V2 handoff."""
+    try:
+        sess = _store().require(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    from app.modules.ontology.canonical_model import canonical_model_from_studio
+
+    return canonical_model_from_studio(sess.ontology, session_id=sess.session_id)
 
 
 @router.post("/sessions/{session_id}/to-automodel")
