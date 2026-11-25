@@ -127,11 +127,17 @@ def test_relation_rebuild_uses_configured_non_primary_target_property():
             {"department_id": "D1", "dept_code": "D-ENG"},
         ]),
     })
+    assert onto.add_property("Employee", "departmentCode", source_column="dept_code")
+    assert onto.add_property("Department", "departmentCode", source_column="dept_code")
     onto.add_link_type(
         "belongsToDepartment", "Employee", "Department",
-        source_property="dept_code", target_property="dept_code",
+        source_property="departmentCode", target_property="departmentCode",
     )
     onto.rebuild_links()
+    graph = schema_graph_payload(onto)
+    relation = next(e for e in graph["edges"] if e.get("label") == "belongsToDepartment")
+    assert relation["source_binding"]["source_column"] == "dept_code"
+    assert relation["source_binding"]["mapped"] is True
     edges = list(onto.links.edges(data=True, keys=True))
     assert len(edges) == 1
     assert edges[0][0] == "Employee:E1"
