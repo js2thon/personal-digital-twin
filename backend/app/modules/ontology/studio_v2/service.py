@@ -141,6 +141,18 @@ class PersistentStudioV2Store(StudioV2Store):
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS studio_v2_session_versions (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL REFERENCES studio_v2_sessions(session_id) ON DELETE CASCADE,
+                version_no INTEGER NOT NULL,
+                label TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT '',
+                payload TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE(session_id, version_no)
+            )
+        """)
 
     @staticmethod
     def _dump(sess: StudioSession) -> str:
@@ -215,6 +227,48 @@ class PersistentStudioV2Store(StudioV2Store):
         """, {"session_id": sess.session_id, "payload": payload})
         with self._lock:
             self._sessions[sess.session_id] = self._attach(sess)
+
+    def create_version(self, session_id: str, label: str = "", note: str = "") -> Dict[str, Any]:
+        self._ensure_loaded()
+        sess = self.require(session_id)
+        self._ensure_table()
+        row = self._db().fetch_one(
+            "SELECT COALESCE(MAX(version_no), 0) AS n FROM studio_v2_session_versions WHERE session_id=:s",
+            {"s": session_id},
+        )
+        no = int(row["n"] or 0) + 1
+        item = {"id": uuid.uuid4().hex[:16], "session_id": session_id, "version_no": no,
+                "label": label or f"v{no}", "note": note, "payload": self._dump(sess)}
+        self._db().execute(
+            "INSERT INTO studio_v2_session_versions (id, session_id, version_no, label, note, payload) "
+            "VALUES (:id,:session_id,:version_no,:label,:note,:payload)", item)
+        return {k: v for k, v in item.items() if k != "payload"}
+
+    def list_versions(self, session_id: str) -> List[Dict[str, Any]]:
+        self._ensure_loaded()
+        return self._db().fetch_all(
+            "SELECT id, session_id, version_no, label, note, created_at "
+            "FROM studio_v2_session_versions WHERE session_id=:s ORDER BY version_no DESC",
+            {"s": session_id},
+        )
+
+    def restore_version(self, session_id: str, version_id: str) -> StudioSession:
+        self._ensure_loaded()
+        row = self._db().fetch_one(
+            "SELECT payload FROM studio_v2_session_versions WHERE session_id=:s AND id=:i",
+            {"s": session_id, "i": version_id},
+        )
+        if row is None:
+            raise KeyError(f"本体草案版本不存在：{version_id}")
+        restored = self._restore(row["payload"])
+        current = self.require(session_id)
+        current.ontology = restored.ontology
+        current.name = restored.name
+        current.source_tables = restored.source_tables
+        current.primary_keys = restored.primary_keys
+        current.meta = restored.meta
+        current.touch()
+        return current
 
     def list_sessions(self) -> List[Dict[str, Any]]:
         self._ensure_loaded()
