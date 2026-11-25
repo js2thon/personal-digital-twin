@@ -179,7 +179,8 @@ def test_embed_chunks_writes_ontology_coordinates(monkeypatch):
             assert n == 1
             assert row["entity_ids"] == ["e-test"]
             assert row["entity_types"] == ["Person"]
-            assert row["ontology_version"] == "v2.1.0"
+            from app.modules.ontology.semantic import versioning
+            assert row["ontology_version"] == versioning.current_version()["ontology_version"]
             assert row["embedding_model"] == emb.settings.embedding_model
             assert row["embedding_version"] == emb.EMBEDDING_VERSION
             assert row["embedded_at"] is not None
