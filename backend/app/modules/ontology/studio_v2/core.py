@@ -304,6 +304,20 @@ class Ontology:
         for name, info in self.link_types.items():
             src_type, tgt_type = info["source"], info["target"]
             src_col = info.get("source_property", "")
+            target_info = self.object_types.get(tgt_type) or {}
+            target_pk = target_info.get("primary_key", "")
+            target_col = info.get("target_property") or target_pk
+            target_index: Dict[str, str] = {}
+            ambiguous: set[str] = set()
+            for target_id, target_obj in self.objects.get(tgt_type, {}).items():
+                target_value = target_obj.get(target_col) if target_col else target_id
+                if target_value is None:
+                    continue
+                key = str(target_value)
+                if key in target_index:
+                    ambiguous.add(key)
+                else:
+                    target_index[key] = str(target_id)
             for pk_value, obj in self.objects.get(src_type, {}).items():
                 if not src_col:
                     continue
@@ -311,11 +325,12 @@ class Ontology:
                 if value is None:
                     continue
                 value = str(value)
-                if value not in self.objects.get(tgt_type, {}):
-                    continue  # 悬空引用跳过
+                target_id = target_index.get(value)
+                if target_id is None or value in ambiguous:
+                    continue  # 悬空或非唯一目标引用不生成实例边
                 self.links.add_edge(
                     make_node_id(src_type, pk_value),
-                    make_node_id(tgt_type, value),
+                    make_node_id(tgt_type, target_id),
                     key=name,
                     label=name,
                     relation_type=name,
