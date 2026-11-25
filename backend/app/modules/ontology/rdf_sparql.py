@@ -27,8 +27,8 @@ from typing import Any
 from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import OWL, RDF, RDFS, SKOS, XSD
 
-from app.modules.ontology.modelling import jsonld as JL
-from app.modules.ontology.modelling import rdf_import as RI
+from app.modules.ontology import rdf_jsonld as JL
+from app.modules.ontology import rdf_import as RI
 
 # 查询里出现这些关键字就是「不是只读查询」或者「会出网」，直接拒
 _FORBIDDEN = ("SERVICE", "LOAD", "INSERT", "DELETE", "DROP", "CLEAR",

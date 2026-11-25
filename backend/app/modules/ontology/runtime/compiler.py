@@ -39,7 +39,7 @@ import json
 import re
 from typing import Any
 
-from ..modelling.node_schema import NODE_TYPES, WORKFLOW_ORDER, kind_of
+from ..node_contract import NODE_TYPES, WORKFLOW_ORDER, kind_of
 from . import expr as EX
 from .metrics import ALL_ALGOS, METRIC_ALGOS, algo_label, is_official
 

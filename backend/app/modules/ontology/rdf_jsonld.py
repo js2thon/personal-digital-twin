@@ -23,7 +23,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from ..runtime.compiler import compile_spec
+from .runtime.compiler import compile_spec
 
 DEFAULT_BASE_IRI = "https://pdt.example.org/ontology/employee-organization/"
 DEFAULT_TITLE = "Personal Digital Twin — Employee & Organization Ontology"

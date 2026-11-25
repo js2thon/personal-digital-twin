@@ -28,9 +28,9 @@ from rdflib import Graph, Literal, RDF, RDFS, URIRef
 from rdflib.namespace import OWL, SKOS
 
 from app.modules.llm.client import llm_client
-from app.modules.ontology.kg import model as kg_model
-from app.modules.ontology.kg import query as kg_query
-from app.modules.ontology.modelling import sparql as SP
+from app.modules.ontology import rdf_model as kg_model
+from app.modules.ontology import rdf_query as kg_query
+from app.modules.ontology import rdf_sparql as SP
 
 # 导出时顺带写进去的通用词表：不是业务概念，不进问答上下文，也不参与类名匹配
 _NOISE_NS = (

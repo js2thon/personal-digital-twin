@@ -20,10 +20,10 @@ def test_execution_persists_field_level_lineage_and_version_binding():
 
 
 def test_api_exposes_execution_run_and_lineage_routes():
-    source = Path("app/api/v1/ontology_modelling.py").read_text(encoding="utf-8")
-    assert '"/ontology/modelling/dataset/execute"' in source
-    assert '"/ontology/modelling/ingestion-runs/{run_id}"' in source
-    assert '"/ontology/modelling/instances/{instance_id}/lineage"' in source
+    source = Path("app/api/v1/ontology_mapping.py").read_text(encoding="utf-8")
+    assert '"/ontology/mapping/dataset/execute"' in source
+    assert '"/ontology/mapping/ingestion-runs/{run_id}"' in source
+    assert '"/ontology/mapping/instances/{instance_id}/lineage"' in source
 
 
 

@@ -1,4 +1,4 @@
-"""本体建模工作流 · 7 类建模设计节点契约（JSON Schema Draft-07）。
+"""本体节点类型契约（供指标编译与兼容解析使用）（JSON Schema Draft-07）。
 
 设计原则（与用户确认的方案一致）：
 - 建模即流程：本体定义是一条可反复运行的工作流，不是静态图。
@@ -8,10 +8,7 @@
   发布门禁按四类完整验证报告判定，不再依赖画布上的 publish 节点。
 - 最小完备集：7 类节点按执行顺序固定，可扩展不可减少。
 
-本模块是前后端共享的唯一契约来源：
-- GET /api/v1/ontology/modelling/node-schema 返回 node_json_schema()；
-- validator.py 的字段要求从 NODE_TYPES 派生，避免两处漂移；
-- 前端 mdNormalizeSpec() 负责把旧草稿映射到这 7 类标准结构。
+本模块保留节点类型和旧 kind 归一化契约，供指标编译器兼容解析使用。
 
 无外部依赖，纯数据 + 纯函数。
 """
@@ -208,7 +205,7 @@ def node_json_schema() -> dict[str, Any]:
         }
     return {
         "$schema": "http://json-schema.org/draft-07/schema#",
-        "$id": "https://local/ontology/modelling/workflow.schema.json",
+        "$id": "https://local/ontology/node-contract.schema.json",
         "title": "本体建模工作流（7 类建模设计节点）",
         "description": "画布 7 类节点覆盖 Schema/Instance/Semantic/Executable 四层；"
                        "Schema 映射内化到属性/类型；实例化/验证/发布在收尾区，按验证报告判定门禁",

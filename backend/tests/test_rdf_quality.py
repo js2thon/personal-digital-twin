@@ -59,6 +59,6 @@ def test_selftest():
 
 
 def test_quality_report_route_is_registered():
-    from app.api.v1 import ontology_modelling
-    paths = {route.path for route in ontology_modelling.router.routes}
-    assert "/ontology/modelling/quality-report" in paths
+    from app.api.v1 import ontology
+    paths = {route.path for route in ontology.router.routes}
+    assert "/ontology/validate" in paths
