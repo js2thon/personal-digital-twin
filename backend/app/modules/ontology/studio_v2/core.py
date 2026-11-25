@@ -802,6 +802,7 @@ class AutoOntologyBuilder:
                 "source_table": table_name,
                 "primary_key": pk,
                 "columns": list(df.columns),
+                "column_types": {str(col): str(dtype) for col, dtype in df.dtypes.items()},
                 "row_count": len(df),
                 "loaded_count": len(self.ontology.objects[table_name]),
                 "source_kind": "uploaded_table",
