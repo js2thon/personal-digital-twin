@@ -51,6 +51,7 @@ class DatasetExecuteIn(DatasetInspectIn):
     max_rows: int = 500
     sync_mode: str = "append"
     source_id_column: str | None = None
+    source_table: str | None = None
 
 class DatasetStreamExecuteIn(DatasetInspectIn):
     """完整文件快照按 <=500 行分批执行；缺失记录仅支持显式软停用。"""
@@ -251,7 +252,8 @@ def dataset_execute(payload: DatasetExecuteIn, request: Request):
             rows=parsed["rows"], source_name=payload.file_name,
             source_sha256=hashlib.sha256(raw).hexdigest(), actor=actor,
             max_rows=payload.max_rows, sync_mode=payload.sync_mode,
-            source_id_column=payload.source_id_column)
+            source_id_column=payload.source_id_column,
+            source_table=payload.source_table)
         result["dataset"] = {k: v for k, v in parsed.items() if k != "rows"}
         return result
     except LookupError as exc:
