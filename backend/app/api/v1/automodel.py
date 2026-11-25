@@ -654,6 +654,29 @@ def _production_snapshot(job: dict, request: Request, limit: int = 5000) -> tupl
     }
 
 
+def _production_frames(materialized: dict, schema: dict):
+    """Build stable frames for every schema class, including classes with zero instances."""
+    import pandas as pd
+
+    frames, links = mx.frames(materialized, schema)
+    for class_name, definition in (schema.get("entity_types") or {}).items():
+        properties = [
+            item.get("name") for item in (definition.get("attributes") or [])
+            if isinstance(item, dict) and item.get("name")
+        ]
+        frames.setdefault(
+            class_name, pd.DataFrame(columns=list(dict.fromkeys(["_id", "_name", *properties])))
+        )
+    for relation_name, relation in (schema.get("relation_types") or {}).items():
+        if relation.get("cardinality") == "many_to_one":
+            source_type = relation.get("source")
+            if source_type in frames and relation_name not in frames[source_type]:
+                frames[source_type][relation_name] = pd.Series(dtype="object")
+        elif relation.get("cardinality") == "many_to_many":
+            links.setdefault(relation_name, pd.DataFrame(columns=["source", "target"]))
+    return frames, links
+
+
 @router.post("/automodel/jobs/{job_id}/metrics/evaluate-production")
 def evaluate_production(job_id: str, payload: EvalIn, request: Request):
     """Evaluate the job's metric definitions against complete production instances."""
@@ -661,7 +684,7 @@ def evaluate_production(job_id: str, payload: EvalIn, request: Request):
     if job.get("status") not in ("published", "written"):
         raise HTTPException(409, "生产指标计算仅允许使用已发布的本体版本")
     materialized, snapshot = _production_snapshot(job, request)
-    F, L = mx.frames(materialized, job["draft"]["schema"])
+    F, L = _production_frames(materialized, job["draft"]["schema"])
     ms, schema = (job.get("metrics") or {}).get("metrics") or {}, job["draft"]["schema"]
     ids = payload.metric_ids or [
         key for key, metric in ms.items()
@@ -701,7 +724,7 @@ def ask_production(job_id: str, payload: AskIn, request: Request):
     if job.get("status") not in ("published", "written"):
         raise HTTPException(409, "生产问答仅允许使用已发布的本体版本")
     materialized, snapshot = _production_snapshot(job, request)
-    F, L = mx.frames(materialized, job["draft"]["schema"])
+    F, L = _production_frames(materialized, job["draft"]["schema"])
     result = qa.ask(
         payload.question, job["draft"]["schema"],
         job.get("metrics") or {"metrics": {}}, F, L,
