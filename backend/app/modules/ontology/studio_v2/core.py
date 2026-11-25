@@ -313,6 +313,12 @@ class Ontology:
             target_info = self.object_types.get(tgt_type) or {}
             target_pk = target_info.get("primary_key", "")
             target_col = info.get("target_property") or target_pk
+            source_mapping = (self.object_types.get(src_type) or {}).get("property_mappings", {}).get(src_col)
+            target_mapping = target_info.get("property_mappings", {}).get(target_col)
+            if source_mapping is not None and not source_mapping.get("source_column"):
+                continue
+            if target_mapping is not None and not target_mapping.get("source_column"):
+                continue
             target_index: Dict[str, str] = {}
             ambiguous: set[str] = set()
             for target_id, target_obj in self.objects.get(tgt_type, {}).items():
