@@ -61,6 +61,7 @@ class DatasetStreamExecuteIn(DatasetInspectIn):
     source_id_column: str | None = None
     batch_size: int = 500
     reconcile_missing: bool = False
+    source_table: str | None = None
 
 
 class DatabaseInspectIn(BaseModel):
@@ -295,7 +296,8 @@ def dataset_execute_stream(payload: DatasetStreamExecuteIn, request: Request):
             snapshot_id=payload.snapshot_id, actor=actor,
             source_sha256=hashlib.sha256(raw).hexdigest(),
             sync_mode=payload.sync_mode, source_id_column=payload.source_id_column,
-            batch_size=payload.batch_size, reconcile_missing=payload.reconcile_missing)
+            batch_size=payload.batch_size, reconcile_missing=payload.reconcile_missing,
+            source_table=payload.source_table)
         result["dataset"] = {k: v for k, v in parsed.items() if k != "rows"}
         return result
     except HTTPException:
