@@ -11,8 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.modules.ontology.semantic import (alignment, metrics, regression,
-                                            store, versioning)
+from app.modules.ontology.semantic import (alignment, metrics, store, versioning)
 from app.modules.ontology.semantic import constraints as C
 from app.modules.ontology.semantic import reasoning as R
 from app.modules.ontology.semantic import rules as RU
@@ -130,11 +129,6 @@ class ValidatePayload(BaseModel):
 class FreezePayload(BaseModel):
     task_id: str
 
-
-class RegressionSetPayload(BaseModel):
-    set_id: str
-    name: str
-    cases: list[dict] = []
 
 
 # ---------------------------------------------------------------- 读：健康/Schema
@@ -347,36 +341,6 @@ def resolve_snapshot(task_id: str, request: Request):
     _ensure()
     p = _principal(request)
     return _call(versioning.resolve, task_id, str(p.get("tenant_id") or "default"))
-
-
-# ---------------------------------------------------------------- 回归集（验收 4）
-@router.get("/ontology/semantic/regression/sets")
-def regression_sets(request: Request):
-    _ensure()
-    return {"items": regression.list_sets(), "core_set_id": regression.CORE_SET_ID}
-
-
-@router.post("/ontology/semantic/regression/sets")
-def create_regression_set(payload: RegressionSetPayload, request: Request):
-    _ensure()
-    _require_owner(request)
-    return _call(regression.upsert_set, payload.set_id, payload.name, payload.cases)
-
-
-@router.post("/ontology/semantic/regression/sets/{set_id}/run")
-def run_regression(set_id: str, request: Request, task_snapshot_id: str | None = None):
-    _ensure()
-    p = _principal(request)
-    return _call(regression.run_set, set_id, principal=p, schema=SEM.load_schema(),
-                 task_snapshot_id=task_snapshot_id,
-                 tenant_id=str(p.get("tenant_id") or "default"))
-
-
-@router.get("/ontology/semantic/regression/runs")
-def regression_runs(request: Request, set_id: str | None = None):
-    _ensure()
-    p = _principal(request)
-    return {"items": regression.list_runs(set_id, str(p.get("tenant_id") or "default"))}
 
 
 # ---------------------------------------------------------------- 对齐 / 指标 / 维护
