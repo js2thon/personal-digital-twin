@@ -88,7 +88,7 @@ def canonical_model_from_studio(ontology: Any, *, session_id: str = "",
         source_binding = (source_info.get("property_mappings") or {}).get(source_prop) or {}
         target_binding = (target_info.get("property_mappings") or {}).get(target_prop) or {}
         raw_cardinality = info.get("cardinality") or info.get("relation_type") or "N:1"
-        cardinality = CARDINALITY_MAP.get(str(raw_cardinality), "many_to_one")
+        cardinality = CARDINALITY_MAP.get(str(raw_cardinality), str(raw_cardinality))
         relations.append({
             "id": str(name),
             "name": str(name),
@@ -122,6 +122,9 @@ def canonical_model_from_studio(ontology: Any, *, session_id: str = "",
         if relation["source_object"] not in object_names or relation["target_object"] not in object_names:
             errors.append({"code": "RELATION_ENDPOINT_MISSING", "target": relation["name"],
                            "message": f"关系 {relation['name']} 的起点或终点对象不存在"})
+        if relation["cardinality"] not in {"one_to_one", "one_to_many", "many_to_one", "many_to_many"}:
+            errors.append({"code": "RELATION_CARDINALITY_INVALID", "target": relation["name"],
+                           "message": f"关系 {relation['name']} 的基数定义无效"})
         if relation["cardinality"] == "many_to_many":
             binding = relation["data_binding"]
             if not (binding["junction_table"] and binding["junction_source_column"]
