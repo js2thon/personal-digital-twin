@@ -239,7 +239,9 @@ def _studio_v2_automodel_schema(sess, source_id: str) -> Dict[str, Any]:
             "key": pk, "name_column": "",
             "attributes": object_attributes,
             "title_property": title_property,
-            "object_kind": canonical_objects.get(type_name, {}).get("object_kind", "static_entity"),
+            "object_kind": {
+                "static_entity": "entity", "transaction": "transaction", "derived": "association",
+            }.get(canonical_objects.get(type_name, {}).get("object_kind"), "entity"),
             "identity_rules": ([{
                 "source_system": source_id, "key_properties": [key_property],
                 "normalization": "trim", "priority": 100, "unique": True,
