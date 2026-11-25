@@ -154,6 +154,133 @@ def build_from_dataset(dataset_id: str) -> Dict[str, Any]:
             "dataset_id": dataset_id, **sess.summary()}
 
 
+def _studio_v2_automodel_schema(sess, source_id: str) -> Dict[str, Any]:
+    """将 Studio V2 已编辑的业务对象模型转换为 Automodel 规范 Schema。
+
+    以 Studio V2 的对象/属性/关系和字段绑定为准；仅保留实际存在于源表的
+    字段映射，避免把未绑定的业务属性误当成源字段。
+    """
+    from app.modules.ontology.automodel import connectors
+
+    ontology = sess.ontology
+    entity_types: Dict[str, Any] = {}
+    relation_types: Dict[str, Any] = {}
+    attributes: Dict[str, Any] = {}
+    class_map: Dict[str, str] = {}
+    used_properties: set[str] = set()
+    source_tables: Dict[str, str] = {}
+
+    for type_name, info in ontology.object_types.items():
+        source_meta = ontology.data_mapping.get(type_name) or {}
+        table = connectors._table_name(str(source_meta.get("source_table") or type_name))
+        source_tables[type_name] = table
+        class_map[table] = type_name
+
+    for type_name, info in ontology.object_types.items():
+        source_meta = ontology.data_mapping.get(type_name) or {}
+        table = source_tables[type_name]
+        columns = {
+            connectors._table_name(str(c))
+            for c in (source_meta.get("columns") or [])
+        }
+        pk = connectors._table_name(str(info.get("primary_key") or source_meta.get("primary_key") or ""))
+        property_mappings: Dict[str, str] = {}
+        object_attributes: List[Dict[str, Any]] = []
+        title_property = ""
+        for prop in info.get("properties") or []:
+            definition = (info.get("property_definitions") or {}).get(prop) or {}
+            binding = (info.get("property_mappings") or {}).get(prop) or {}
+            source_column = binding.get("source_column") or prop
+            source_column = connectors._table_name(str(source_column)) if source_column else ""
+            canonical_prop = str(prop)
+            if canonical_prop in used_properties:
+                canonical_prop = f"{type_name}_{canonical_prop}"
+            used_properties.add(canonical_prop)
+            range_name = str(definition.get("type") or "string").lower()
+            range_name = {
+                "str": "string", "text": "string", "int": "integer",
+                "float": "decimal", "number": "decimal", "bool": "boolean",
+            }.get(range_name, range_name)
+            mapped = bool(source_column and source_column in columns)
+            attributes[canonical_prop] = {
+                "range": range_name, "owner": type_name,
+                "column": source_column if mapped else "",
+                "role": "identifier" if prop == info.get("primary_key") else "attribute",
+                "semantic_type": "identifier" if prop == info.get("primary_key") else "attribute",
+                "sensitivity": "internal",
+                "label": prop,
+                "description": definition.get("description") or "",
+                "identifier": prop == info.get("primary_key"),
+                "required": prop == info.get("primary_key"),
+            }
+            object_attributes.append({
+                "name": canonical_prop, "range": range_name,
+                "required": prop == info.get("primary_key"),
+                "semantic_type": "identifier" if prop == info.get("primary_key") else "attribute",
+                "sensitivity": "internal", "identifier": prop == info.get("primary_key"),
+                "description": definition.get("description") or "",
+            })
+            if mapped:
+                property_mappings[source_column] = canonical_prop
+            if prop == info.get("title_property"):
+                title_property = canonical_prop
+
+        key_property = next((a["name"] for a in object_attributes
+                             if a.get("identifier")), "")
+        entity_types[type_name] = {
+            "label": info.get("label") or type_name,
+            "description": info.get("description") or "",
+            "aliases": [type_name], "parent": "", "source_table": table,
+            "key": pk, "name_column": "",
+            "attributes": object_attributes,
+            "title_property": title_property,
+            "object_kind": "entity",
+            "identity_rules": ([{
+                "source_system": source_id, "key_properties": [key_property],
+                "normalization": "trim", "priority": 100, "unique": True,
+            }] if key_property else []),
+            "backing_sources": [{
+                "source_id": source_id, "dataset": source_id, "table": table,
+                "primary_key": [pk] if pk else [],
+                "property_mappings": property_mappings,
+                "mode": "materialized",
+            }],
+        }
+
+    for relation_name, relation in ontology.link_types.items():
+        source_type = relation.get("source")
+        target_type = relation.get("target")
+        if source_type not in source_tables or target_type not in source_tables:
+            continue
+        source_info = ontology.object_types[source_type]
+        target_info = ontology.object_types[target_type]
+        source_binding = (source_info.get("property_mappings") or {}).get(
+            relation.get("source_property") or "") or {}
+        target_binding = (target_info.get("property_mappings") or {}).get(
+            relation.get("target_property") or "") or {}
+        source_column = source_binding.get("source_column") or relation.get("source_property") or ""
+        target_column = target_binding.get("source_column") or relation.get("target_property") or ""
+        source_column = connectors._table_name(str(source_column)) if source_column else ""
+        target_column = connectors._table_name(str(target_column)) if target_column else ""
+        relation_types[relation_name] = {
+            "label": relation.get("description") or relation_name,
+            "source": source_type, "target": target_type,
+            "cardinality": "many_to_one",
+            "table": source_tables[source_type], "column": source_column,
+            "target_table": source_tables[target_type],
+            "target_column": target_column,
+        }
+
+    schema = {
+        "schema_version": f"studio-v2-{sess.session_id}",
+        "entity_types": entity_types, "relation_types": relation_types,
+        "attributes": attributes, "interfaces": {},
+        "constraints": {"max_hops": 3, "single_valued": []},
+        "validation_rules": {}, "status": "draft",
+    }
+    return {"schema": schema, "class_map": class_map}
+
+
 @router.post("/sessions/{session_id}/to-automodel")
 def session_to_automodel(session_id: str) -> Dict[str, Any]:
     """把 Studio V2 会话导入 automodel 流水线。
@@ -188,7 +315,10 @@ def session_to_automodel(session_id: str) -> Dict[str, Any]:
         ts.tables[safe] = connectors.Table(name=safe, df=df, row_count=len(df))
 
     # 2) 跑完整 automodel 流水线（含指标生成）
-    job = am_pipeline.run(ts, existing_schema=None, llm=None)
+    schema_override = _studio_v2_automodel_schema(sess, source_id)
+    job = am_pipeline.run(
+        ts, existing_schema=None, llm=None, schema_override=schema_override
+    )
 
     # 3) 落库（与 /automodel/upload 同款持久化路径）
     from app.modules.ontology.automodel import jobs as am_jobs, versions as am_versions
