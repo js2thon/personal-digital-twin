@@ -44,8 +44,9 @@ def test_many_to_one_limits_targets_per_source_not_sources_per_target():
 
 
 def test_one_to_many_limits_sources_per_target_not_targets_per_source():
-    assert _validate("one_to_many", "p1", "d2", [_edge("p1", "d1")])["blocking"]
-    assert not _validate("one_to_many", "p2", "d1", [_edge("p1", "d1")])["blocking"]
+    # One source may own multiple targets; one target may have only one source.
+    assert not _validate("one_to_many", "p1", "d2", [_edge("p1", "d1")])["blocking"]
+    assert _validate("one_to_many", "p2", "d1", [_edge("p1", "d1")])["blocking"]
 
 
 def test_one_to_one_limits_both_ends():
