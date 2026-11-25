@@ -166,7 +166,7 @@
         h("button", { className: "primary", disabled: busy, onClick: function () {
           var ops = [{ op: isClass ? "update_class" : "update_relation", ref: sel.ref,
             description: desc }].map(function (o) {
-            if (isClass) { o.label = label; } else { o.new_name = relName.trim(); o.source = relSrc; o.target = relTgt; o.source_property = srcCol; o.target_property = tgtCol; }
+            if (isClass) { o.label = label; } else { o.new_name = relName.trim(); o.source = relSrc; o.target = relTgt; o.source_property = srcCol; o.target_property = tgtCol; o.clear_source_property = !srcCol; o.clear_target_property = !tgtCol; }
             return o; });
           run(ops, "已保存并重建");
         } }, "保存"),
