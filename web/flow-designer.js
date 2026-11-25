@@ -399,5 +399,132 @@
   async function pipeline(el, data, opts = {}) { await ready(); mount(el, React.createElement(RFWrap, null, React.createElement(PipelineView, { data, ...opts }))); }
   async function designer(el, job, opts = {}) { await ready(); mount(el, React.createElement(RFWrap, null, React.createElement(Designer, { job, ...opts }))); }
   function RFWrap({ children }) { return React.createElement(ReactFlow.ReactFlowProvider, null, children); }
-  window.RF = { ready, pipeline, designer, unmount, buildSvg };
+
+  /* ================================================================ 3. Studio V2 本体关系图编辑器
+   * designerV2(el, {nodes, edges}, {onEdit}) —— 类节点（属性列表）+ 关系边
+   * 交互：点击类/边 → 侧栏编辑（中文名/描述/依据列）；Delete 删除；拖动布局
+   * 编辑提交后由调用方 onEdit(ops) 自动保存并重建模
+   */
+  function V2ClassNode({ data, selected }) {
+    const h = React.createElement, T = TH(), RF = ReactFlow;
+    const props = (data.props || []).slice(0, 8);
+    return h("div", { style: { background: selected ? T.raised : T.surf, border: `1.5px solid ${selected ? T.accent : T.border}`, borderRadius: 10, padding: "8px 12px", minWidth: 170, fontSize: 12, color: T.text, boxShadow: "var(--shadow-low)" } },
+      h(RF.Handle, { type: "target", position: RF.Position.Left, style: { width: 9, height: 9, background: T.accent } }),
+      h("div", { style: { fontWeight: 700, fontSize: 13 } }, data.label),
+      h("div", { style: { color: T.sub, fontSize: 10, margin: "2px 0 4px" } }, "🔑 " + (data.pk || "—")),
+      props.length ? h("div", { style: { borderTop: `1px solid ${T.border}`, paddingTop: 4, lineHeight: 1.7, color: T.sub } },
+        props.map(p => h("div", { key: p }, "· " + p))) : null,
+      h(RF.Handle, { type: "source", position: RF.Position.Right, style: { width: 9, height: 9, background: T.accent } }));
+  }
+  const V2NT = { v2cls: V2ClassNode };
+
+  function V2Designer({ graph, onEdit }) {
+    const h = React.createElement, T = TH(), RF = ReactFlow;
+    const [nodes, setNodes, onNodesChange] = RF.useNodesState(graph.nodes);
+    const [edges, setEdges, onEdgesChange] = RF.useEdgesState(graph.edges);
+    const [sel, setSel] = React.useState(null);   // {kind:'class'|'relation', ref}
+    const [msg, setMsg] = React.useState("");
+    const [busy, setBusy] = React.useState(false);
+    const [label, setLabel] = React.useState("");
+    const [desc, setDesc] = React.useState("");
+    const [srcCol, setSrcCol] = React.useState("");
+    // 关系配置：名称 / 起点 / 终点（业务对象） / 起点属性 / 终点属性
+    const [relName, setRelName] = React.useState("");
+    const [relSrc, setRelSrc] = React.useState("");
+    const [relTgt, setRelTgt] = React.useState("");
+    const [relTgtCol, setRelTgtCol] = React.useState("");
+    React.useEffect(() => { setEdges(es => es.map(e => ({ ...e, animated: sel && sel.kind === "relation" && sel.ref === e.id }))); }, [sel]);
+    React.useEffect(() => {
+      if (!sel) return;
+      if (sel.kind === "class") { const n = graph.nodes.find(n => n.id === sel.ref); setLabel(n ? n.data.label : ""); setDesc(n ? n.data.desc : ""); }
+      else {
+        const e = graph.edges.find(e => e.id === sel.ref);
+        setDesc(e ? (e.data && e.data.desc || "") : "");
+        setSrcCol(e ? (e.data && e.data.source_property || "") : "");
+        setRelName(sel.ref);
+        setRelSrc(e ? e.source : "");
+        setRelTgt(e ? e.target : "");
+        setRelTgtCol(e ? (e.data && e.data.target_property || "") : "");
+      }
+    }, [sel && sel.kind, sel && sel.ref]);
+    async function run(ops, okMsg) {
+      if (!onEdit) return;
+      setBusy(true); setMsg("");
+      try { const r = await onEdit(ops); setMsg(okMsg || ("已保存：" + (r.done || []).join("；"))); }
+      catch (e) { setMsg("失败：" + e.message); } finally { setBusy(false); }
+    }
+    const onDel = (items) => {
+      if (!items.length) return;
+      if (!confirm(`删除 ${items.map(i => i.ref).join("、")}？`)) return;
+      run(items.map(i => ({ op: i.kind === "class" ? "delete_class" : "delete_relation", ref: i.ref })), "已删除并重建");
+      setSel(null);
+    };
+    // 类 id（CLASS:xxx）→ 业务对象名；属性列表
+    const clsName = id => (id || "").replace(/^CLASS:/, "");
+    const clsProps = id => { const n = graph.nodes.find(n => n.id === id); return n ? (n.data.props || []) : []; };
+    const clsOptions = graph.nodes.map(n => clsName(n.id));
+    const side = (() => {
+      if (!sel) return h("div", { style: { color: T.sub, fontSize: 12, lineHeight: 1.9 } },
+        h("b", { style: { color: T.text } }, "操作说明"), h("br"),
+        "· 点击类节点 / 关系边 → 在此编辑", h("br"),
+        "· 选中后按 Delete → 删除（自动保存重建）", h("br"),
+        "· 拖动节点调整布局；滚轮缩放", h("br"),
+        h("b", { style: { color: T.text } }, `共 ${graph.nodes.length} 个类 · ${graph.edges.length} 个关系`));
+      const isClass = sel.kind === "class";
+      const selCls = "CLASS:" + relSrc, tgtCls = "CLASS:" + relTgt;
+      const sel = isClass ? null : { ref: sel.ref };   // 保存时用
+      return h("div", null,
+        h("div", { style: { fontWeight: 700, marginBottom: 8, color: T.text } }, (isClass ? "类：" : "关系：") + sel.ref),
+        isClass ? h("div", { style: { marginBottom: 8 } },
+          h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "中文名"),
+          h("input", { value: label, onChange: e => setLabel(e.target.value), style: { width: "100%", marginBottom: 6 } })) : null,
+        h("div", { style: { marginBottom: 8 } },
+          h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "描述"),
+          h("textarea", { value: desc, onChange: e => setDesc(e.target.value), rows: 3, style: { width: "100%" } })),
+        !isClass ? h("div", { style: { marginBottom: 8 } },
+          h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "关系名称"),
+          h("input", { value: relName, onChange: e => setRelName(e.target.value), style: { width: "100%" } })) : null,
+        !isClass ? h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 } },
+          h("div", null,
+            h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "关系起点（业务对象）"),
+            h("select", { value: relSrc, onChange: e => { setRelSrc(e.target.value); setSrcCol(""); }, style: { width: "100%" } },
+              clsOptions.map(c => h("option", { key: c, value: c }, c)))),
+          h("div", null,
+            h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "关系终点（业务对象）"),
+            h("select", { value: relTgt, onChange: e => { setRelTgt(e.target.value); setRelTgtCol(""); }, style: { width: "100%" } },
+              clsOptions.map(c => h("option", { key: c, value: c }, c))))) : null,
+        !isClass ? h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 } },
+          h("div", null,
+            h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "起点属性"),
+            h("select", { value: srcCol, onChange: e => setSrcCol(e.target.value), style: { width: "100%" } },
+              h("option", { key: "", value: "" }, "—"),
+              clsProps(selCls).map(p => h("option", { key: p, value: p }, p)))),
+          h("div", null,
+            h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "终点属性"),
+            h("select", { value: relTgtCol, onChange: e => setRelTgtCol(e.target.value), style: { width: "100%" } },
+              h("option", { key: "", value: "" }, "—"),
+              clsProps(tgtCls).map(p => h("option", { key: p, value: p }, p))))) : null,
+        h("div", { style: { display: "flex", gap: 6 } },
+          h("button", { className: "primary", disabled: busy, onClick: () => run([{ op: isClass ? "update_class" : "update_relation", ref: sel.ref, ...(isClass ? { label } : { new_name: relName.trim(), source: relSrc, target: relTgt, source_property: srcCol, target_property: relTgtCol }), description: desc }], "已保存并重建") }, "保存"),
+          h("button", { className: "ghost", disabled: busy, onClick: () => { onDel([sel]); } }, "删除")));
+    })();
+    return h("div", { style: { display: "grid", gridTemplateColumns: "1fr 280px", gap: 12, height: "620px" } },
+      h("div", { style: { position: "relative", border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden", background: T.raised } },
+        h(RF.default, { nodes, edges, nodeTypes: V2NT, onNodesChange, onEdgesChange, fitView: true, fitViewOptions: { padding: .15 },
+          minZoom: .1, maxZoom: 2, deleteKeyCode: ["Delete"], proOptions: { hideAttribution: true },
+          onNodeClick: (_, n) => setSel({ kind: "class", ref: n.id }),
+          onEdgeClick: (_, e) => setSel({ kind: "relation", ref: e.id }),
+          onPaneClick: () => setSel(null),
+          onNodesDelete: ns => onDel(ns.map(n => ({ kind: "class", ref: n.id }))),
+          onEdgesDelete: es => onDel(es.map(e => ({ kind: "relation", ref: e.id }))) },
+          h(RF.Background, { color: T.border, gap: 18 }), h(RF.Controls, null),
+          h(RF.MiniMap, { pannable: true, zoomable: true, maskColor: dark() ? "rgba(0,0,0,.5)" : "rgba(240,240,240,.6)", style: { background: T.surf } }),
+          busy ? h(RF.Panel, { position: "top-right" }, h("span", { className: "tag" }, "保存中…")) : null)),
+      h("div", { style: { border: `1px solid ${T.border}`, borderRadius: 10, padding: 12, overflowY: "auto", background: T.surf } },
+        msg ? h("div", { style: { fontSize: 12, marginBottom: 8, color: msg.startsWith("失败") ? T.bad : T.ok } }, msg) : null, side));
+  }
+
+  async function designerV2(el, graph, opts = {}) { await ready(); mount(el, React.createElement(RFWrap, null, React.createElement(V2Designer, { graph, ...opts }))); }
+
+  window.RF = { ready, pipeline, designer, designerV2, unmount, buildSvg };
 })();

@@ -770,6 +770,70 @@ def ds_delete(dataset_id: str, request: Request):
     return {"deleted": vs.delete_dataset(dataset_id, tenant)}
 
 
+class DsRenameIn(BaseModel):
+    name: str
+
+
+@router.patch("/automodel/datasets/{dataset_id}")
+def ds_rename(dataset_id: str, payload: DsRenameIn, request: Request):
+    """重命名数据集（仅改展示名）。"""
+    tenant, _ = _tenant(request)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(400, "名称不能为空")
+    row = vs.rename_dataset(dataset_id, name, tenant)
+    if not row:
+        raise HTTPException(404, "数据集不存在")
+    return {"ok": True, **row}
+
+
+@router.get("/automodel/datasets/{dataset_id}/metadata")
+def ds_metadata(dataset_id: str, request: Request):
+    """提取数据集元数据：表清单 + 每表列画像（类型/空值率/去重数/样例/主外键）。"""
+    tenant, _ = _tenant(request)
+    meta = vs.dataset_metadata(dataset_id, tenant)
+    if meta is None:
+        raise HTTPException(404, "数据集不存在")
+    return meta
+
+
+class DsMetaSaveIn(BaseModel):
+    """保存元数据编辑：列的中文名 / 描述 / 角色增删改。"""
+
+    tables: list[dict] = Field(description="[{name, columns:[{name, label, comment, role}]}]")
+
+
+@router.put("/automodel/datasets/{dataset_id}/metadata")
+def ds_metadata_save(dataset_id: str, payload: DsMetaSaveIn, request: Request):
+    """保存元数据编辑：把列的中文名/描述/角色写回 TableSet 的 column_labels /
+    column_comments / column_roles，并重新落库（生成新 sha256 数据集记录）。"""
+    tenant, actor = _tenant(request)
+    ts = vs.load_dataset(dataset_id, tenant)
+    if ts is None:
+        raise HTTPException(404, "数据集不存在")
+    changed = 0
+    for t in payload.tables:
+        tbl = ts.tables.get(t.get("name") or "")
+        if tbl is None:
+            continue
+        for c in t.get("columns") or []:
+            col = c.get("name") or ""
+            if col not in tbl.df.columns:
+                continue
+            if c.get("label"):
+                tbl.column_labels[col] = str(c["label"])
+            if c.get("comment") is not None:
+                tbl.column_comments[col] = str(c.get("comment") or "")
+            if c.get("role"):
+                tbl.column_roles[col] = str(c["role"])
+            changed += 1
+    if not changed:
+        raise HTTPException(400, "没有可保存的列修改")
+    ds = vs.save_dataset(ts, name=f"metadata:{dataset_id[:8]}", tenant=tenant, actor=actor)
+    return {"ok": True, "columns_updated": changed, "dataset_id": ds.get("id"),
+            "dedup": bool(ds.get("dedup"))}
+
+
 class FromDsIn(BaseModel):
     use_llm: bool = False
     version_id: str | None = None        # 可选：直接套用某个历史版本的本体（复用审核结果）

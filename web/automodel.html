@@ -117,7 +117,6 @@ a{color:var(--ax-info)}
 .edit .row>div{min-width:160px}
 tr.dirty td:first-child{box-shadow:inset 3px 0 var(--ax-warning,#c2410c)}
 tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
-#profile input,#profile select{min-width:0;padding:3px 6px}
 </style>
 </head>
 <body>
@@ -138,13 +137,11 @@ tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
 </div>
 <nav class="tabs" id="tabs">
   <button data-t="src" class="on">1 数据源</button>
-  <button data-t="model">2 本体与审核</button>
-  <button data-t="map">3 映射与发布</button>
-  <button data-t="inst">4 实例与关系</button>
-  <button data-t="metrics">5 指标</button>
-  <button data-t="ask">6 问答</button>
-  <button data-t="eval">7 评测</button>
-  <button data-t="ver">8 版本</button>
+  <button data-t="v2">2 本体建模</button>
+  <button data-t="metrics">3 指标</button>
+  <button data-t="ask">4 问答</button>
+  <button data-t="eval">5 评测</button>
+  <button data-t="ver">6 版本</button>
   <button data-t="jobs">任务</button>
 </nav>
 <div id="empty" class="card hidden"><h2>还没有打开建模任务</h2><span class="hint">请先在「1 数据源」上传文件或连接数据库，或在「任务」中打开已有任务。</span></div>
@@ -157,8 +154,7 @@ tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
       <div class="drop" id="drop">拖入文件，或 <label><input id="files" type="file" multiple class="hidden" accept=".csv,.xlsx,.xlsm">选择文件</label>
         <div id="fileList" style="margin-top:6px"></div></div>
       <div class="row" style="margin-top:10px">
-        <input id="srcId" value="upload" title="数据源标识" style="flex:0 0 160px">
-        <button class="primary auto" id="btnUpload">生成本体</button>
+        <button class="primary auto" id="btnUpload">加载数据</button>
       </div>
     </div>
     <div class="card">
@@ -168,96 +164,47 @@ tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
         <input id="dbSchema" placeholder="schema（可选）" style="flex:0 0 150px">
         <input id="dbTables" placeholder="表名，逗号分隔（可选）">
         <label class="hint auto" style="margin:0" title="默认只保存脱敏来源描述"><input type="checkbox" id="dbStore"> 数据落库</label>
-        <button class="primary auto" id="btnDb">读取并建模</button>
+        <button class="primary auto" id="btnDb">连接数据库</button>
       </div>
     </div>
   </div>
   <div class="card"><h2>数据集库 <span class="hint">上传的数据已压缩落库（按内容去重），服务重启后自动恢复；可直接复用建新任务</span>
       <button class="ghost" id="btnDsReload" style="float:right">刷新</button></h2><div class="scroll" id="dsList" style="max-height:320px"><span class="hint">加载中…</span></div></div>
-  <div class="card needjob"><h2>元数据 <span class="hint">Recharts 可视化 · 点击柱子或在表格中编辑列的中文名 / 描述 / 角色；保存后同步到本体并生成新版本</span></h2>
-    <div id="metaViz"></div>
-    <div id="metaEdit" class="edit hidden"></div>
-    <div class="row" style="margin:10px 0 6px"><input id="metaQ" placeholder="筛选列（列名 / 中文名 / 角色）" style="flex:0 0 260px"><label class="hint auto" style="margin:0"><input type="checkbox" id="metaHideEmpty"> 隐藏全空列</label>
-      <span class="hint" id="metaDirty"></span><button class="primary auto" id="btnMetaSave" disabled>保存元数据修改</button></div>
-    <div class="scroll" id="profile" style="max-height:560px"></div></div>
+  <div class="card hidden" id="dsMetaCard"><h2>数据集元数据 <span class="hint" id="dsMetaHint"></span>
+      <button class="ghost" id="btnDsMetaClose" style="float:right">收起</button></h2>
+    <div class="row" style="margin-bottom:8px"><span class="hint auto" id="dsMetaDirty"></span>
+      <button class="ghost auto" id="btnDsMetaAddCol">＋ 新增列</button>
+      <button class="primary auto" id="btnDsMetaSave" disabled>保存修改</button></div>
+    <div class="scroll" id="dsMetaBody" style="max-height:560px"></div>
+    <div class="row" style="margin-top:8px"><button class="ghost auto" id="btnDsMetaPrev">上一页</button>
+      <span class="hint auto" id="dsMetaPage"></span>
+      <button class="ghost auto" id="btnDsMetaNext">下一页</button></div></div>
 </section>
 
-<!-- 2 本体与审核 -->
-<section id="t-model" class="hidden needjob">
-  <div class="kpis" id="ovKpis"></div>
-  <div class="card"><h2>建模流水线 <span class="hint">React Flow · 各阶段状态、耗时与产物；点击阶段跳转到对应标签</span></h2><div id="pipeFlow" style="height:300px"></div></div>
-  <div class="card"><h2>本体设计图 <span class="hint">React Flow · 拖连接点新增关系 · 点击编辑 · Delete 删除 · 查找高亮 · 导出 PNG / SVG / JSON</span></h2><div id="designFlow" style="height:680px"></div></div>
-  <div class="card"><h2>本体图 <span class="hint">类 · 属性 · 对象属性；拖动节点、滚轮缩放、悬停查看</span>
-      <span style="float:right;display:flex;gap:10px;align-items:center"><label class="hint" style="margin:0"><input type="checkbox" id="sgProps" checked> 显示属性节点</label>
-      <span class="seg" id="sgMode"><button data-v="2d" class="on">2D</button><button data-v="3d">3D</button></span></span></h2>
-    <div class="graph" id="sg"></div><div class="legend" id="sgLegend"></div>
-    <div id="edBox" class="edit hidden"></div></div>
-  <div class="card"><h2>审核队列 <span class="hint" id="reviewHint"></span></h2><div class="scroll" id="review"></div>
-    <div id="autoFixBox" style="margin-top:12px"></div>
-    <div class="row" style="margin-top:10px"><button class="primary auto" id="btnReview">提交审核</button></div></div>
+<!-- 2 本体建模（Studio V2：独立会话，调用 /api/v1/studio-v2/*） -->
+<section id="t-v2">
   <div class="cols">
-    <div class="card"><h2>主键配置 <span class="hint">已自动推断，可修改</span></h2><div id="pkBox" class="row"></div></div>
-    <div class="card"><h2>手动关系 <span class="hint">可选</span></h2><div id="mlBox"></div>
-      <div class="row" style="margin-top:8px"><button class="ghost auto" id="btnAddML">+ 添加关系</button><button class="primary auto" id="btnRegen">按配置重新生成本体</button></div></div>
-  </div>
-  <div class="card"><h2>本体摘要</h2><div id="ovSummary"></div></div>
-  <div class="card"><h2>关系定义</h2><div class="scroll" id="ovLinks"></div></div>
-</section>
-
-<!-- 3 映射与发布 -->
-<section id="t-map" class="hidden needjob">
-  <div class="cols">
-    <div class="card"><h2>映射契约 <span class="hint">物化的唯一依据（YAML）</span></h2><pre id="contract">—</pre></div>
-    <div class="card"><h2>发布与写入</h2>
-      <div class="kpis" id="qKpis"></div>
-      <div class="row"><button class="primary auto" id="btnPublish">发布本体 + 指标草稿</button></div>
-      <div class="hint">本体发布与业务数据写入分离。Discovery 只产生预览样本，不会直接写入正式实例库。</div>
-      <div class="card" style="margin-top:12px;border:1px solid var(--ax-border)">
-        <h2>正式数据映射执行 <span class="hint">Mapping Set 审核通过后，按 IngestionRun 分批写入</span></h2>
-        <div class="row"><div style="flex:1"><label class="f">本体来源表</label><select id="ingTable"></select></div><div style="flex:1"><label class="f">映射方案名称</label><input id="ingMapName" placeholder="例如 HR-员工映射"></div></div>
-        <div class="row"><div style="flex:2"><label class="f">正式数据文件（完整源文件，非 Discovery 样本）</label><input id="ingFile" type="file" accept=".csv,.xlsx,.xlsm"></div><div style="flex:1"><label class="f">Excel Sheet（可选）</label><input id="ingSheet" placeholder="Sheet1"></div></div>
-        <div class="row"><div><label class="f">源记录主键</label><select id="ingKey"></select></div><div><label class="f">同步方式</label><select id="ingMode"><option value="upsert">Upsert（需稳定主键）</option><option value="append">Append</option></select></div><div><label class="f">批次大小</label><select id="ingBatch"><option>100</option><option>250</option><option selected>500</option></select></div><div class="auto" style="padding-top:22px"><label class="hint"><input type="checkbox" id="ingReconcile"> 全量成功后软停用缺失记录</label></div></div>
-        <div class="row"><button class="ghost auto" id="btnMapSave">保存映射草稿</button><button class="ghost auto" id="btnMapApprove" disabled>审核映射版本</button><button class="primary auto" id="btnIngestExecute" disabled>执行正式数据写入</button></div>
-        <div class="hint" id="ingHint">先选择来源表并保存映射草稿；审核通过后才能执行。正式文件仅支持完整 CSV / XLSX / XLSM，不能使用建模采样数据代替。</div>
-        <div id="ingRuns" class="scroll" style="margin-top:10px"></div>
-      </div>
-      <h2 style="margin-top:16px">导出</h2>
-      <div class="row"><button class="ghost auto" id="btnJson">下载 JSON</button><button class="ghost auto" id="btnOwl">下载 OWL</button><button class="ghost auto" id="btnYaml">下载映射契约 YAML</button></div>
+    <div class="card">
+      <h2>从数据源建模 <span class="hint">选择「1 数据源」上传后落库的数据集，自动推断主键与关系</span></h2>
+      <div class="row"><select id="v2Ds"></select><button class="primary auto" id="btnV2FromDs">自动建模</button></div>
+      <div class="hint" id="v2DsHint" style="margin-top:6px">下拉列出已落库的数据集；建模完成后自动打开会话。</div>
+    </div>
+    <div class="card">
+      <h2>建模会话 <span class="hint">Studio V2 会话列表；点击打开</span>
+        <button class="ghost" id="btnV2Reload" style="float:right">刷新</button></h2>
+      <div class="scroll" id="v2Sessions" style="max-height:320px"><span class="hint">加载中…</span></div>
     </div>
   </div>
-  <div id="qOut"></div>
-</section>
-
-<!-- 4 实例与关系 -->
-<section id="t-inst" class="hidden needjob">
-  <div class="card">
-    <h2>实例图谱</h2>
-    <div class="row"><div style="flex:2"><label class="f">实体类型</label><div id="igTypes" class="row"></div></div>
-      <div><label class="f">最大节点数</label><input id="igMax" type="number" value="300" min="10" max="3000"></div></div>
-    <div class="row"><div style="flex:2"><label class="f">实体搜索</label><input id="igQ" placeholder="主键或属性关键词"></div>
-      <div style="flex:2"><label class="f">焦点实体（展开邻居）</label><select id="igFocus"></select></div>
-      <div><label class="f">邻居层数</label><select id="igHops"><option>1</option><option>2</option><option>3</option></select></div>
-      <div class="auto" style="padding-top:22px"><button class="primary" id="btnIg">刷新图谱</button></div></div>
-    <div class="kpis" style="margin-top:12px" id="igKpis"></div>
-    <div class="row" style="margin:6px 0"><span class="seg auto" id="igMode"><button data-v="2d" class="on">2D</button><button data-v="3d">3D</button></span></div>
-    <div class="graph" id="ig"></div><div class="legend" id="igLegend"></div>
-  </div>
-  <div class="cols">
-    <div class="card"><h2>关联路径</h2>
-      <div class="row"><select id="pSrc"></select><select id="pDst"></select></div>
-      <div class="row" style="margin-top:8px"><label class="hint auto" style="margin:0"><input type="checkbox" id="pDir"> 仅有向</label><button class="primary auto" id="btnPath">查询最短路径</button></div>
-      <div id="pathOut" style="margin-top:10px"></div></div>
-    <div class="card"><h2>一跳邻居</h2><div class="row"><select id="nSel"></select><button class="ghost auto" id="btnNb">查询</button></div><div id="nbOut" style="margin-top:10px"></div></div>
-  </div>
-  <div class="card"><h2>实体对象</h2><div class="row" style="margin-bottom:8px"><select id="ovCls" style="flex:0 0 220px"></select><input id="ovQ" placeholder="搜索对象（主键 / 属性关键词）"></div>
-    <div class="scroll" id="ovTable"></div><div class="hint" id="ovMore"></div></div>
-  <div class="cols">
-    <div class="card"><h2>对象 Action <span class="hint">修改后需「写入」才落库</span></h2>
-      <div class="row"><select id="acKind" style="flex:0 0 120px"><option value="update">更新对象</option><option value="create">新建对象</option><option value="delete">删除对象</option></select>
-        <select id="acCls" style="flex:0 0 160px"></select><select id="acObj"></select></div>
-      <div id="acForm" style="margin-top:10px"></div>
-      <div class="row" style="margin-top:10px"><button class="primary auto" id="btnAction">执行</button></div></div>
-    <div class="card"><h2>Action 日志</h2><pre id="acLog">—</pre></div>
+  <div id="v2Body" class="hidden">
+    <div class="kpis" id="v2Kpis"></div>
+    <div class="card"><h2>进入流水线 <span class="hint">把当前会话导入 automodel 任务，打通 指标 / 问答 / 评测 / 版本</span></h2>
+      <div class="row"><span class="hint auto" id="v2JobHint">尚未导入。导入后即可在「3 指标」「4 问答」「5 评测」「6 版本」中使用本会话的本体。</span>
+        <button class="primary auto" id="btnV2ToJob">导入流水线（生成任务）</button></div></div>
+    <div class="card"><h2>对象关系图 <span class="hint">AntV X6 + dagre 自动布局 · 点击节点/边编辑 · 拖拽连线 · Delete 删除</span></h2>
+      <div class="graph" id="v2Sg"></div><div class="legend" id="v2SgLegend"></div></div>
+    <div class="card"><h2>本体摘要</h2><div class="scroll" id="v2Summary" style="max-height:420px"></div></div>
+    <div class="card"><h2>导出</h2>
+      <div class="row"><a id="v2Json" class="hint">下载 JSON</a> <a id="v2Owl" class="hint">下载 OWL</a></div></div>
   </div>
 </section>
 
@@ -348,172 +295,30 @@ const drop=$('drop');['dragover','dragenter'].forEach(e=>drop.addEventListener(e
 drop.addEventListener('drop',v=>{FILES=[...v.dataTransfer.files];listFiles()});$('files').onchange=e=>{FILES=[...e.target.files];listFiles()};
 function listFiles(){$('fileList').innerHTML=FILES.map(f=>esc(f.name)+' · '+Math.ceil(f.size/1024)+'KB').join('<br>')}
 $('btnUpload').onclick=function(){busy(this,async()=>{if(!FILES.length)throw new Error('请先选择文件');const fd=new FormData();FILES.forEach(f=>fd.append('files',f));
- const s=await api(`/automodel/upload?source_id=${encodeURIComponent($('srcId').value||'upload')}&use_llm=${$('useLlm').checked}`,{method:'POST',body:fd});await openJob(s.id);loadJobs();loadDatasets();show('model');note('本体生成成功：'+s.stats.classes+' 个类、'+s.stats.relations+' 种关系、'+s.stats.attributes+' 个属性')})};
-$('btnDb').onclick=function(){busy(this,async()=>{const b={url:$('dbUrl').value.trim(),schema:$('dbSchema').value.trim()||null,source_id:$('srcId').value||'db',
+ const s=await api(`/automodel/upload?source_id=${encodeURIComponent('upload')}&use_llm=${$('useLlm').checked}`,{method:'POST',body:fd});await openJob(s.id);loadJobs();loadDatasets();show('v2');note('本体生成成功：'+s.stats.classes+' 个类、'+s.stats.relations+' 种关系、'+s.stats.attributes+' 个属性')})};
+$('btnDb').onclick=function(){busy(this,async()=>{const b={url:$('dbUrl').value.trim(),schema:$('dbSchema').value.trim()||null,source_id:'db',
  include:$('dbTables').value.trim()?$('dbTables').value.split(',').map(s=>s.trim()).filter(Boolean):null,use_llm:$('useLlm').checked,store_data:$('dbStore').checked};if(!b.url)throw new Error('请填写连接串');
- const s=await post('/automodel/database',b);$('dbUrl').value='';await openJob(s.id);loadJobs();show('model')})};
+ const s=await post('/automodel/database',b);$('dbUrl').value='';await openJob(s.id);loadJobs();show('v2')})};
 $('btnReload').onclick=loadJobs;
 async function loadJobs(){try{const r=await api('/automodel/jobs');$('jobList').innerHTML=(r.items||[]).map(j=>`<div data-id="${esc(j.id)}" class="${JOB&&JOB.id===j.id?'on':''}"><b>${esc(j.source_id||j.source)}</b> ${tag(j.status,j.status==='written'?'ok':j.status==='needs_review'?'warn':'')}<div class="muted">${esc(String(j.created_at||'').slice(0,16).replace('T',' '))} · ${esc(String(j.id).slice(0,8))}</div></div>`).join('')||'<span class="muted">暂无任务</span>';
- $('jobList').querySelectorAll('div[data-id]').forEach(d=>d.onclick=()=>openJob(d.dataset.id).then(()=>show('model')).catch(e=>note(e.message,true)))}catch(e){$('jobList').innerHTML='<span class="muted">'+esc(e.message)+'</span>'}}
-async function openJob(id){JOB=await api(`/automodel/jobs/${id}?full=true`);MAPSET=null;INGEST_SNAPSHOT=null;MAP_TABLE_SELECTED=null;METRICS=null;OV=null;ML=[];EVQ=null;EVR=null;$('work').classList.remove('hidden');$('empty').classList.add('hidden');REL_INIT=false;
+ $('jobList').querySelectorAll('div[data-id]').forEach(d=>d.onclick=()=>openJob(d.dataset.id).then(()=>show('v2')).catch(e=>note(e.message,true)))}catch(e){$('jobList').innerHTML='<span class="muted">'+esc(e.message)+'</span>'}}
+async function openJob(id){JOB=await api(`/automodel/jobs/${id}?full=true`);METRICS=null;OV=null;ML=[];EVQ=null;EVR=null;$('work').classList.remove('hidden');$('empty').classList.add('hidden');REL_INIT=false;
  $('jobTitle').textContent=(JOB.source||'')+' · '+String(JOB.id).slice(0,8);
  const st=JOB.draft&&JOB.draft.stats||{};$('jobMeta').innerHTML=`${tag(JOB.status,JOB.status==='written'?'ok':JOB.status==='needs_review'?'warn':'')} 类 ${st.classes} · 关系 ${st.relations} · 属性 ${st.attributes} · 待审核 ${st.needs_review} · 版本 ${esc(JOB.schema_version||'未发布')}`;
- $('btnPublish').disabled=!!(JOB.draft.review||[]).length||['published','written'].includes(JOB.status);
  document.querySelectorAll('#jobList div[data-id]').forEach(d=>d.classList.toggle('on',d.dataset.id===JOB.id));
- try{OV=await api(J()+'/studio/overview')}catch(e){note(e.message,true)}renderConfig();renderOverview();}
-$('btnPublish').onclick=function(){busy(this,async()=>{const r=await post(J()+'/publish',{});note('已发布本体版本 '+r.schema_version+'；指标草稿 '+((r.metrics||{}).saved||0)+' 条');await openJob(JOB.id);loadJobs()})};
-
+ try{OV=await api(J()+'/studio/overview')}catch(e){note(e.message,true)}}
 // ---------------- tabs
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
-const TABS=['src','model','map','inst','metrics','ask','eval','ver','jobs'];
+const TABS=['src','v2','metrics','ask','eval','ver','jobs'];
 function show(t){document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
- const need=!JOB&&!['src','jobs'].includes(t);$('empty').classList.toggle('hidden',!need);
+ const need=!JOB&&!['src','jobs','v2'].includes(t);$('empty').classList.toggle('hidden',!need);
  TABS.forEach(x=>$('t-'+x).classList.toggle('hidden',x!==t||need));
  document.querySelectorAll('#t-src .needjob').forEach(e=>e.classList.toggle('hidden',!JOB));
- if(t==='jobs')loadJobs();if(!JOB)return;
- ({model:()=>{loadSchema();loadFlows()},map:()=>{loadContract();loadQuality();initMappingExecution()},inst:()=>{initInst();initRel();initAction()},metrics:loadMetrics,ver:loadVersions,ask:loadSuggest,eval:()=>{if(EVR)renderEvR();else if(EVQ)renderEvQ()}})[t]?.()}
-let MAPSET=null, INGEST_SNAPSHOT=null, MAP_TABLE_SELECTED=null;
-async function loadContract(){try{const r=await fetch(base()+J()+'/contract.yaml',{headers:hdr()});$('contract').textContent=await r.text()}catch(e){}}
-function mappingRowsForTable(table){
- const m=(JOB.contract&&JOB.contract.mappings||[]).find(x=>x.table===table);if(!m)return [];
- return Object.entries(m.attributes||{}).map(([property,source])=>({source,entity_type:m.class,property}));
-}
-function initMappingExecution(){
- if(!JOB)return;const maps=(JOB.contract&&JOB.contract.mappings)||[];
- $('ingTable').innerHTML=maps.map(m=>'<option value="'+esc(m.table)+'">'+esc(m.table)+' → '+esc(m.class)+'</option>').join('');
- if(MAP_TABLE_SELECTED&&maps.some(m=>m.table===MAP_TABLE_SELECTED))$('ingTable').value=MAP_TABLE_SELECTED;
- const sync=(reset)=>{const table=$('ingTable').value,m=maps.find(x=>x.table===table)||{},keys=m.primary_key||[];
-  $('ingKey').innerHTML=keys.map(k=>'<option value="'+esc(k)+'">'+esc(k)+'</option>').join('');
-  $('ingKey').disabled=$('ingMode').value!=='upsert'||keys.length!==1;
-  $('btnMapSave').disabled=!maps.length;
-  if(reset){MAPSET=null;INGEST_SNAPSHOT=null;$('btnMapApprove').disabled=true;$('btnIngestExecute').disabled=true;}
-  if(!MAPSET){$('btnMapApprove').disabled=true;$('btnIngestExecute').disabled=true;}
-  $('ingHint').textContent=keys.length===1?'稳定源键：'+keys[0]:(keys.length>1?'当前为复合主键，执行器暂不支持复合源键，请选择 Append。':'该表无稳定主键，Upsert 不可用，请先完善主键或选择 Append。');};
- $('ingTable').onchange=()=>{MAP_TABLE_SELECTED=$('ingTable').value;sync(true)};$('ingMode').onchange=()=>sync(false);
- $('ingFile').onchange=()=>{INGEST_SNAPSHOT=null;$('btnIngestExecute').disabled=!MAPSET||MAPSET.status!=='approved'};
- sync(false);loadIngestionRuns();
-}
-async function loadIngestionRuns(){
- try{const r=await api('/ontology/modelling/mapping-sets?limit=20'),items=r.items||[];
-  const showRetired=!!window.ING_SHOW_RETIRED,retired=items.filter(x=>x.status==='retired').length,vis=items.filter(x=>showRetired||x.status!=='retired');
-  const ST={draft:'草稿',approved:'已审核',retired:'已停用'};
-  $('ingRuns').innerHTML='<div class="row" style="margin-bottom:6px"><label class="hint" style="margin:0"><input type="checkbox" id="ingShowRetired" style="width:auto" '+(showRetired?'checked':'')+'> 显示已停用（'+retired+'）</label></div>'+
-   (vis.length?'<table><tr><th>映射方案</th><th>版本</th><th>状态</th><th>创建时间</th><th></th></tr>'+vis.map(x=>'<tr><td>'+esc(x.name)+'</td><td>v'+esc(x.version)+'</td><td>'+tag(ST[x.status]||x.status,x.status==='approved'?'ok':x.status==='retired'?'':'warn')+'</td><td>'+esc(String(x.created_at||'').slice(0,19))+'</td><td>'+(x.status==='retired'?'':'<button class="ghost" data-retire="'+esc(x.id)+'" data-name="'+esc(x.name)+'" data-st="'+esc(x.status)+'">停用</button>')+'</td></tr>').join('')+'</table>':'<span class="muted">暂无映射版本</span>');
-  $('ingShowRetired').onchange=e=>{window.ING_SHOW_RETIRED=e.target.checked;loadIngestionRuns()};
-  $('ingRuns').querySelectorAll('[data-retire]').forEach(b=>b.onclick=function(){
-   const appr=b.dataset.st==='approved';if(!confirm('停用映射版本「'+b.dataset.name+'」？'+(appr?'\n该版本已审核，停用后不能再用于正式写入。':'')+'\n停用不删除记录，已写入的数据不受影响。'))return;
-   busy(this,async()=>{await post('/ontology/modelling/mapping-sets/'+encodeURIComponent(b.dataset.retire)+'/retire',{});
-    if(MAPSET&&MAPSET.id===b.dataset.retire){MAPSET=null;$('btnMapApprove').disabled=true;$('btnIngestExecute').disabled=true;$('ingHint').textContent='当前映射版本已停用，请重新保存映射草稿。'}
-    note('已停用映射版本「'+b.dataset.name+'」');loadIngestionRuns()})});
- }catch(e){$('ingRuns').textContent='映射版本列表暂不可用：'+e.message}
-}
-function bindMappingExecution(){
- $('btnMapSave').onclick=function(){busy(this,async()=>{
-  const table=$('ingTable').value,mappings=mappingRowsForTable(table);if(!mappings.length)throw new Error('当前来源表没有可执行的属性映射');
-  const name=$('ingMapName').value.trim()||((JOB.source||'source')+'-'+table+'-r'+(JOB.metadata_revision||0));
-  const r=await post('/ontology/modelling/mapping-sets',{name,mappings,ontology_schema:JOB.draft.schema});
-  MAPSET=r;INGEST_SNAPSHOT=null;$('btnMapApprove').disabled=false;$('btnIngestExecute').disabled=true;
-  $('ingHint').textContent='映射草稿 v'+r.version+' 已保存，请审核后执行。';note('已保存映射草稿 v'+r.version);loadIngestionRuns();
- })};
- $('btnMapApprove').onclick=function(){if(!MAPSET)throw new Error('请先保存映射草稿');if(!confirm('确认审核并批准该不可变映射版本？批准后才能写入正式数据。'))return;
-  busy(this,async()=>{const r=await post('/ontology/modelling/mapping-sets/'+encodeURIComponent(MAPSET.id)+'/approve',{});
-   MAPSET=r;$('btnIngestExecute').disabled=false;$('ingHint').textContent='映射版本 v'+r.version+' 已批准。选择完整正式数据文件后执行。';note('映射版本已批准');loadIngestionRuns();});
- };
- $('btnIngestExecute').onclick=function(){busy(this,async()=>{
-  if(!MAPSET||MAPSET.status!=='approved')throw new Error('必须先批准映射版本');
-  const file=$('ingFile').files[0];if(!file)throw new Error('请选择完整正式数据文件');if(file.size>10*1024*1024)throw new Error('当前接口单文件限制为 10 MiB，请先拆分数据文件');
-  const mode=$('ingMode').value,key=$('ingKey').value||null;
-  const selectedMapping=(JOB.contract&&JOB.contract.mappings||[]).find(x=>x.table===$('ingTable').value)||{};
-  if(mode==='upsert'&&(selectedMapping.primary_key||[]).length!==1)throw new Error('Upsert 当前只支持单列稳定主键；复合主键请先选择 Append。');
-  if(mode==='upsert'&&!key)throw new Error('Upsert 必须选择稳定源主键');
-  if($('ingReconcile').checked&&mode!=='upsert')throw new Error('软停用对账仅支持 Upsert');
-  const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=0x8000)binary+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
-  const content_base64=btoa(binary);INGEST_SNAPSHOT=INGEST_SNAPSHOT||('automodel-'+JOB.id+'-'+Date.now());
-  const result=await post('/ontology/modelling/dataset/execute-stream',{file_name:file.name,content_base64,
-   sheet_name:$('ingSheet').value.trim()||null,ontology_schema:JOB.draft.schema,mapping_set_id:MAPSET.id,
-   snapshot_id:INGEST_SNAPSHOT,sync_mode:mode,source_id_column:mode==='upsert'?key:null,
-   batch_size:Number($('ingBatch').value),reconcile_missing:$('ingReconcile').checked});
-  $('ingRuns').innerHTML='<div class="kpis"><div class="kpi"><div class="n">'+fmt(result.rows_received)+'</div><div class="l">接收行数</div></div><div class="kpi"><div class="n">'+fmt(result.batches)+'</div><div class="l">批次数</div></div><div class="kpi"><div class="n">'+fmt((result.runs||[]).filter(x=>x.status==='succeeded').length)+'</div><div class="l">成功批次</div></div></div><pre>'+esc(JSON.stringify(result,null,2))+'</pre>';
-  $('ingHint').textContent='正式执行状态：'+result.status+'；snapshot_id='+result.snapshot_id+'。同一快照重试可恢复已完成批次。';
-  note('正式数据执行完成：'+result.batches+' 批，'+result.rows_received+' 行');
- })};
-}
-
+ if(t==='jobs')loadJobs();if(t==='v2'){initV2();return}
+ if(!JOB)return;
+ ({metrics:loadMetrics,ver:loadVersions,ask:loadSuggest,eval:()=>{if(EVR)renderEvR();else if(EVQ)renderEvQ()}})[t]?.()}
 // ---------------- 建模配置
-function renderConfig(){const P=JOB.profiles||{};
- $('pkBox').innerHTML=Object.values(P).map(p=>`<div style="min-width:180px"><label class="f">${esc(p.name)} 主键</label><select data-t="${esc(p.name)}">${Object.keys(p.columns).map(c=>`<option ${((p.primary_key||[])[0]===c)?'selected':''}>${esc(c)}</option>`).join('')}</select></div>`).join('');
- renderML();
- const rv=JOB.draft.review||[];$('reviewHint').textContent=rv.length?`${rv.length} 项待审核（置信度 < 0.8）`:'无待审核项';
- $('review').innerHTML=rv.length?`<table><tr><th>类型</th><th>对象</th><th class="num">置信度</th><th>依据</th><th>决定</th><th>新名称</th><th>中文标签</th></tr>${rv.map((r,i)=>`<tr data-i="${i}"><td>${tag(r.kind)}</td><td>${esc(r.ref)}</td><td class="num">${r.confidence}</td><td class="muted">${esc(r.reason)}</td><td><select class="act"><option value="accept">接受</option><option value="reject">拒绝</option><option value="rename">改名</option></select></td><td><input class="nn"></td><td><input class="lb"></td></tr>`).join('')}</table>`:'<span class="muted">—</span>';
-  const fix=JOB.auto_fix_report||{applied:[],count:0};
-  const objects=JOB.draft.schema.entity_types||{};
-  $('autoFixBox').innerHTML=`<div class="card" style="border:1px solid var(--ax-border);margin:8px 0">
-   <b>规范自动修正</b> <span class="muted">本轮自动修正 ${fix.count||0} 项；业务中文名称和源字段名保留</span>
-   <div class="muted" style="margin:6px 0">${(fix.applied||[]).map(x=>esc(x.ref)+'：'+esc(x.before)+' → <b>'+esc(x.after)+'</b>').join('<br>')||'本轮没有自动修正项'}</div>
-   <b>人工调整技术标识（可选）</b>
-   <div class="muted">可为对象填写 PascalCase 技术标识；不修改中文展示名及源字段名。提交后会重新构建映射契约并重新校验。</div>
-   ${Object.entries(objects).map(([name,obj])=>`<div class="row" style="margin:5px 0;align-items:center"><span style="min-width:150px">${esc(obj.label||name)}</span><input class="tn" data-ref="${esc(name)}" placeholder="例如 DataManagementDepartmentPersonnel" value="${esc(obj.technical_name||'')}" style="flex:1"></div>`).join('')}
-  </div>`;
-  renderMeta()}
- // ---------------- 元数据可视化与编辑（Recharts）
-let META_EDITS={},META_TABLES={},META_SEL=null;
-const ROLE_OPTS=['identifier','name','enum','measure','temporal','text','boolean'],ROLE_CN={identifier:'标识',name:'名称',enum:'枚举',measure:'度量',temporal:'时间',text:'文本',boolean:'布尔'};
-function attrOf(t,c){const cls=(JOB.draft.class_map||{})[t];return Object.values(JOB.draft.schema.attributes||{}).find(a=>a.owner===cls&&a.column===c)}
-function metaRO(){return ['published','written'].includes(JOB.status)}
-async function renderMeta(){if(!JOB)return;const P=JOB.profiles||{};
- try{await RC.meta($('metaViz'),P,{onPick:(t,c)=>openMetaEdit(t,c),selected:META_SEL})}catch(e){$('metaViz').innerHTML=tag('Recharts 不可用：'+e.message,'bad')}
- renderMetaTable()}
-function renderMetaTable(){const P=JOB.profiles||{},q=($('metaQ').value||'').trim().toLowerCase(),hide=$('metaHideEmpty').checked,ro=metaRO();
- $('profile').innerHTML=Object.values(P).map(p=>{const cols=Object.values(p.columns).filter(c=>{const a=attrOf(p.name,c.name)||{};const e=META_EDITS[p.name+'.'+c.name]||{};
-   if(hide&&c.null_ratio>=1)return false;return !q||[c.name,e.label??a.label??'',ROLE_CN[c.role]||c.role].join(' ').toLowerCase().includes(q)});
-  return `<div style="margin-bottom:12px"><b>${esc(p.name)}</b> <span class="muted">${p.rows} 行 × ${Object.keys(p.columns).length} 列 · 主键 ${esc((p.primary_key||[]).join(',')||'无')}${p.pk_inferred?'（推断）':''}${p.is_junction?' · 关联表':''}</span>
-  <div class="row" style="margin:4px 0"><input class="mtc" data-t="${esc(p.name)}" placeholder="表描述" value="${esc((META_TABLES[p.name]??p.comment)||'')}" ${ro?'disabled':''}></div>
-  <table><tr><th>列</th><th>中文名</th><th>描述</th><th>角色</th><th>类型</th><th class="num">空值率</th><th class="num">去重</th><th>样例</th></tr>${cols.map(c=>{const a=attrOf(p.name,c.name)||{};const k=p.name+'.'+c.name,e=META_EDITS[k]||{};const role=e.role??c.role;
-   return `<tr data-k="${esc(k)}" class="${META_SEL&&META_SEL.table===p.name&&META_SEL.column===c.name?'on':''}${Object.keys(e).length?' dirty':''}"><td><b>${esc(c.name)}</b>${(p.primary_key||[]).includes(c.name)?' 🔑':''}</td>
-   <td><input class="ml" value="${esc(e.label??a.label??'')}" ${ro?'disabled':''}></td><td><input class="mc" value="${esc(e.comment??c.comment??a.description??'')}" ${ro?'disabled':''}></td>
-   <td><select class="mr" ${ro?'disabled':''}>${ROLE_OPTS.map(r=>`<option value="${r}" ${r===role?'selected':''}>${ROLE_CN[r]}</option>`).join('')}</select></td>
-   <td class="muted">${c.dtype}</td><td class="num">${(c.null_ratio*100).toFixed(0)}%</td><td class="num">${c.distinct}</td><td class="muted">${esc((c.samples||[]).slice(0,3).join(' / '))}</td></tr>`}).join('')}</table></div>`}).join('');
- $('profile').querySelectorAll('tr[data-k]').forEach(tr=>{const k=tr.dataset.k;const set=(f,v)=>{META_EDITS[k]=Object.assign(META_EDITS[k]||{},{[f]:v});tr.classList.add('dirty');metaDirty()};
-  tr.querySelector('.ml').oninput=e=>set('label',e.target.value);tr.querySelector('.mc').oninput=e=>set('comment',e.target.value);tr.querySelector('.mr').onchange=e=>set('role',e.target.value)});
- $('profile').querySelectorAll('.mtc').forEach(i=>i.oninput=()=>{META_TABLES[i.dataset.t]=i.value;metaDirty()});
- metaDirty()}
-function metaDirty(){const n=Object.keys(META_EDITS).length+Object.keys(META_TABLES).length;$('btnMetaSave').disabled=!n||metaRO();
- $('metaDirty').textContent=metaRO()?'已发布任务的元数据只读（可在数据集库复用建模后编辑）':(n?`${n} 处未保存修改`:'')}
-function openMetaEdit(t,c){META_SEL={table:t,column:c};const col=JOB.profiles[t].columns[c];const a=attrOf(t,c)||{};const k=t+'.'+c,e=META_EDITS[k]||{};const ro=metaRO();
- $('metaEdit').classList.remove('hidden');
- $('metaEdit').innerHTML=`<b>${esc(t)}.${esc(c)}</b> <span class="muted">${col.dtype} · 空值率 ${(col.null_ratio*100).toFixed(0)}% · 去重 ${col.distinct} · 样例 ${esc((col.samples||[]).slice(0,5).join(' / '))}</span>
-  <div class="row" style="margin-top:8px"><div><label class="f">中文名</label><input id="meL" value="${esc(e.label??a.label??'')}" ${ro?'disabled':''}></div>
-  <div style="flex:2"><label class="f">描述</label><input id="meC" value="${esc(e.comment??col.comment??'')}" ${ro?'disabled':''}></div>
-  <div><label class="f">角色</label><select id="meR" ${ro?'disabled':''}>${ROLE_OPTS.map(r=>`<option value="${r}" ${r===(e.role??col.role)?'selected':''}>${ROLE_CN[r]}</option>`).join('')}</select></div>
-  <div class="auto" style="padding-top:22px"><button class="primary" id="meOk" ${ro?'disabled':''}>暂存</button> <button class="ghost" id="meX">关闭</button></div></div>
-  <div class="hint">角色决定指标生成：度量 → 合计/平均/最高；时间 → 按月/年、同比环比；枚举/名称 → 分组维度</div>`;
- $('meX').onclick=()=>{$('metaEdit').classList.add('hidden');META_SEL=null;renderMeta()};
- $('meOk').onclick=()=>{META_EDITS[k]={label:$('meL').value,comment:$('meC').value,role:$('meR').value};metaDirty();renderMeta();note('已暂存，点击「保存元数据修改」提交')};
- renderMeta()}
-function renderML(){const tables=Object.keys(JOB.profiles||{});const cols=t=>Object.keys((JOB.profiles[t]||{}).columns||{});
- $('mlBox').innerHTML=ML.length?ML.map((m,i)=>`<div class="row" style="margin-bottom:6px" data-i="${i}"><input class="nm" value="${esc(m.name)}" placeholder="关系名（英文）"><select class="src">${tables.map(t=>`<option ${t===m.source?'selected':''}>${esc(t)}</option>`).join('')}</select><select class="col">${cols(m.source).map(c=>`<option ${c===m.source_col?'selected':''}>${esc(c)}</option>`).join('')}</select><span class="auto muted">→</span><select class="tgt">${tables.map(t=>`<option ${t===m.target?'selected':''}>${esc(t)}</option>`).join('')}</select><input class="ds" value="${esc(m.description||'')}" placeholder="中文描述"><button class="ghost auto del">删除</button></div>`).join(''):'<span class="muted">未配置手动关系</span>';
- $('mlBox').querySelectorAll('div[data-i]').forEach(d=>{const m=ML[+d.dataset.i];d.querySelector('.nm').onchange=e=>m.name=e.target.value;d.querySelector('.src').onchange=e=>{m.source=e.target.value;m.source_col=cols(m.source)[0];renderML()};
-  d.querySelector('.col').onchange=e=>m.source_col=e.target.value;d.querySelector('.tgt').onchange=e=>m.target=e.target.value;d.querySelector('.ds').onchange=e=>m.description=e.target.value;d.querySelector('.del').onclick=()=>{ML.splice(+d.dataset.i,1);renderML()}})}
-$('btnAddML').onclick=()=>{const t=Object.keys(JOB.profiles||{});ML.push({name:`manual_relation_${ML.length+1}`,source:t[0],source_col:Object.keys(JOB.profiles[t[0]].columns)[0],target:t[1]||t[0],description:'手动指定'});renderML()};
-$('btnRegen').onclick=function(){busy(this,async()=>{const pk={};$('pkBox').querySelectorAll('select').forEach(s=>pk[s.dataset.t]=s.value);
- const s=await post(J()+'/configure',{primary_keys:pk,manual_links:ML});note('本体已按配置重新生成：'+s.stats.classes+' 类 / '+s.stats.relations+' 关系');await openJob(JOB.id);show('model')})};
-$('btnReview').onclick=function(){busy(this,async()=>{const rv=JOB.draft.review||[];const ds=[...document.querySelectorAll('#review tr[data-i]')].map(tr=>{const r=rv[+tr.dataset.i],d={kind:r.kind,ref:r.ref,action:tr.querySelector('.act').value};
- const nn=tr.querySelector('.nn').value.trim(),lb=tr.querySelector('.lb').value.trim();if(nn)d.new_name=nn;if(lb)d.label=lb;return d});
- $('autoFixBox').querySelectorAll('.tn').forEach(input=>{const value=input.value.trim(),obj=(JOB.draft.schema.entity_types||{})[input.dataset.ref];if(value&&value!==(obj.technical_name||''))ds.push({kind:'class',ref:input.dataset.ref,action:'accept',technical_name:value,comment:'人工调整对象技术标识'})});
- await post(J()+'/review',{decisions:ds});await openJob(JOB.id);note('审核已提交')})};
-
-// ---------------- 概览
-function renderOverview(){if(!OV)return;
- $('ovKpis').innerHTML=[['实体类型',OV.object_types.length],['实体实例',OV.nodes],['关系类型',OV.link_types.length],['关系实例',OV.edges],['Action 次数',OV.actions]].map(([l,n])=>`<div class="kpi"><div class="n">${fmt(n)}</div><div class="l">${l}</div></div>`).join('');
- $('ovSummary').innerHTML='<ul style="margin:0;padding-left:18px">'+OV.object_types.map(o=>`<li><code>${esc(o.label)}</code>（${esc(o.name)}）：<b>${o.count}</b> 个对象；主键 <code>${esc(o.primary_key||'—')}</code>；属性数 ${o.properties.length}</li>`).join('')+`<li>Link Types：${OV.link_types.map(l=>esc(l.label)).join('、')||'—'}</li></ul>`;
- $('ovCls').innerHTML=OV.object_types.map(o=>`<option value="${esc(o.name)}">${esc(o.label)}（${o.count}）</option>`).join('');$('ovCls').onchange=loadObjects;$('ovQ').oninput=debounce(loadObjects,300);loadObjects();
- $('ovLinks').innerHTML=`<table><tr><th>关系</th><th>中文名</th><th>源</th><th>目标</th><th>基数</th><th>依据列</th><th class="num">实例数</th></tr>${OV.link_types.map(l=>`<tr><td>${esc(l.name)}</td><td>${esc(l.label)}</td><td>${esc(l.source)}</td><td>${esc(l.target)}</td><td>${esc(l.cardinality)}</td><td class="muted">${esc(l.via||'')}</td><td class="num">${l.count}</td></tr>`).join('')}</table>`}
-function debounce(f,ms){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>f(...a),ms)}}
-async function loadObjects(){const r=await api(J()+`/studio/objects?cls=${encodeURIComponent($('ovCls').value)}&q=${encodeURIComponent($('ovQ').value)}&limit=200`);
- $('ovTable').innerHTML=`<table><tr><th>名称</th>${r.columns.map(c=>`<th title="${esc(c.key)}">${esc(c.label)}</th>`).join('')}</tr>${r.rows.map(x=>`<tr><td><b>${esc(x._name)}</b></td>${r.columns.map(c=>`<td>${esc(x[c.key]??'')}</td>`).join('')}</tr>`).join('')}</table>`;
- $('ovMore').textContent=r.total>r.rows.length?`共 ${r.total} 条，显示前 ${r.rows.length} 条`:`共 ${r.total} 条`}
-
-// ---------------- 力导向图（无外部依赖）
+ // ---------------- 力导向图（无外部依赖）
 function forceGraph(el,data,opt={}){const W=el.clientWidth||900,H=el.clientHeight||620;const groups=[...new Set(data.nodes.map(n=>n.group))];const col=g=>COLORS[groups.indexOf(g)%COLORS.length];
  const N=data.nodes.map((n,i)=>({...n,x:W/2+Math.cos(i)*W/3*Math.random(),y:H/2+Math.sin(i)*H/3*Math.random(),vx:0,vy:0}));const idx=new Map(N.map((n,i)=>[n.id,i]));
  const E=data.edges.map(e=>({...e,s:idx.get(e.from),t:idx.get(e.to)})).filter(e=>e.s!=null&&e.t!=null);
@@ -548,50 +353,6 @@ function forceGraph(el,data,opt={}){const W=el.clientWidth||900,H=el.clientHeigh
  draw();tick();apply();return {groups,col}}
 function legend(el,groups,col,extra=''){el.innerHTML=groups.map(g=>`<span><i style="background:${col(g)}"></i>${esc(g)}</span>`).join('')+extra}
 
-// ---------------- Schema 图谱
-async function loadSchema(){const d=await api(J()+`/studio/schema-graph?props=${$('sgProps').checked}`);let L;if(SGM==='3d'){L=await draw3d('sg',$('sg'),d,{onClick:openEditor});if(L){legend($('sgLegend'),L.groups,L.col,'<span>单击节点 = 编辑 · 拖拽旋转 · 滚轮缩放 · Shift 拖动平移</span>');return}SGM='2d'}useMode('sg',$('sg'),'2d');L=forceGraph($('sg'),d,{spread:1.1,onClick:openEditor});legend($('sgLegend'),L.groups,L.col,'<span><i style="background:var(--g-prop)"></i>属性 Property</span><span style="color:var(--ax-info)">━ Object Property</span><span>┄ hasProperty</span>')}
-$('sgProps').onchange=loadSchema;
-
-// ---------------- 实例图谱
-function initInst(){if(!OV)return;$('igTypes').innerHTML=OV.object_types.map(o=>`<label class="muted auto"><input type="checkbox" value="${esc(o.name)}" checked style="width:auto"> ${esc(o.label)}</label>`).join('');fillEntitySelect($('igFocus'),true);loadInst()}
-async function fillEntitySelect(sel,allowNone){const opts=[];for(const o of OV.object_types){const r=await api(J()+`/studio/objects?cls=${encodeURIComponent(o.name)}&limit=500`);r.rows.forEach(x=>opts.push([x._id,`${o.label}：${x._name}`]))}
- sel.innerHTML=(allowNone?'<option value="">不指定焦点</option>':'')+opts.map(([v,l])=>`<option value="${esc(v)}">${esc(l)}</option>`).join('');return opts}
-$('btnIg').onclick=loadInst;
-async function loadInst(){const types=[...$('igTypes').querySelectorAll('input:checked')].map(i=>i.value);if(!types.length){note('请至少选择一种实体类型',true);return}
- const d=await post(J()+'/studio/instance-graph',{types,q:$('igQ').value,focus:$('igFocus').value||null,hops:+$('igHops').value,max_nodes:+$('igMax').value||300});
- $('igKpis').innerHTML=[['当前显示节点',d.nodes.length],['当前显示关系',d.edges.length],['全量节点',d.total_nodes],['全量关系',d.total_edges]].map(([l,n])=>`<div class="kpi"><div class="n">${fmt(n)}</div><div class="l">${l}</div></div>`).join('');
- if(d.truncated)note('当前图谱节点超过显示上限，已截断部分节点。可提高最大节点数或缩小筛选范围。');
- const fo=n=>{$('igFocus').value=n.id;loadInst()};if(IGM==='3d'){const L=await draw3d('ig',$('ig'),d,{onDblClick:fo});if(L){legend($('igLegend'),L.groups,L.col,'<span>单击 = 高亮邻居 · 双击 = 以其为焦点展开</span>');return}}useMode('ig',$('ig'),'2d');const L=forceGraph($('ig'),d,{onClick:fo});legend($('igLegend'),L.groups,L.col,'<span>双击节点 = 以其为焦点展开邻居</span>')}
-
-// ---------------- 关系分析
-async function initRel(){if(REL_INIT)return;REL_INIT=true;const o=await fillEntitySelect($('pSrc'));$('pDst').innerHTML=$('pSrc').innerHTML;if(o[1])$('pDst').value=o[1][0];$('nSel').innerHTML=$('pSrc').innerHTML}
-$('btnPath').onclick=function(){busy(this,async()=>{const r=await api(J()+`/studio/path?source=${encodeURIComponent($('pSrc').value)}&target=${encodeURIComponent($('pDst').value)}&directed=${$('pDir').checked}`);
- $('pathOut').innerHTML=r.found?`<div class="ok-text">找到路径，共 ${r.hops} 条关系边</div><pre>${esc([r.steps[0]?.from||''].concat(r.steps.map(s=>`${s.direction==='→'?'—'+s.relation+'→':'←'+s.relation+'—'} ${s.to}`)).join('  '))}</pre><table style="margin-top:8px"><tr><th>起点</th><th>关系</th><th>终点</th></tr>${r.steps.map(s=>`<tr><td>${esc(s.from)}</td><td>${esc(s.relation)} ${s.direction}</td><td>${esc(s.to)}</td></tr>`).join('')}</table>`:'<span class="warn-text">两个实体之间没有找到关系路径。</span>'})};
-$('btnNb').onclick=function(){busy(this,async()=>{const r=await api(J()+`/studio/neighbors?entity=${encodeURIComponent($('nSel').value)}`);$('nbOut').innerHTML=`<div class="muted">直接关联实体：${r.count} 个</div><table><tr><th>实体</th><th>类型</th><th>关系</th><th>方向</th></tr>${r.items.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.type)}</td><td>${esc(x.relation)}</td><td>${esc(x.direction)}</td></tr>`).join('')}</table>`})};
-
-// ---------------- 质量
-async function loadQuality(){const q=await api(J()+'/studio/quality');$('qKpis').innerHTML=[['实体节点',q.node_count],['关系边',q.edge_count],['孤立节点',q.isolated_nodes.length],['悬空引用',q.dangling_references.length],['重复关系',q.duplicate_edges.length],['待审核推断',q.review_pending.length]].map(([l,n])=>`<div class="kpi"><div class="n">${fmt(n)}</div><div class="l">${l}</div></div>`).join('');
- const sec=(t,ok,body)=>`<div class="card"><h2>${t} ${ok?tag('通过','ok'):tag('需关注','warn')}</h2>${body||''}</div>`;
- $('qOut').innerHTML=sec('悬空引用（源对象引用的目标主键不存在）',!q.dangling_references.length,q.dangling_references.length?`<div class="scroll"><table><tr><th>关系</th><th>源</th><th>目标值</th></tr>${q.dangling_references.map(d=>`<tr><td>${esc(d.relation)}</td><td>${esc(d.source)}</td><td>${esc(d.target_value)}</td></tr>`).join('')}</table></div>`:'')+
-  sec('孤立节点',!q.isolated_nodes.length,q.isolated_nodes.length?`<details><summary>查看 ${q.isolated_nodes.length} 个</summary><pre>${esc(q.isolated_nodes.join('\n'))}</pre></details>`:'')+
-  sec('无效关系定义 / 自环 / 重复',!(q.invalid_relation_types.length||q.self_loops.length||q.duplicate_edges.length),`<div class="muted">无效关系 ${q.invalid_relation_types.length} · 自环 ${q.self_loops.length} · 重复 ${q.duplicate_edges.length}</div>`)+
-  sec('映射契约校验',!q.contract_issues.length,q.contract_issues.map(i=>tag(i.level,i.level==='error'?'bad':'warn')+' '+esc(i.table+'：'+i.msg)).join('<br>'))+
-  `<div class="muted">说明：质量检测基于已导入数据与关系定义；完整 OWL 推理与 SHACL 约束验证由平台本体中心提供。</div>`}
-
-// ---------------- Action
-let AC_OBJS={};function initAction(){if(!OV)return;$('acCls').innerHTML=OV.object_types.map(o=>`<option value="${esc(o.name)}">${esc(o.label)}</option>`).join('');$('acCls').onchange=acLoad;$('acKind').onchange=acLoad;$('acObj').onchange=acForm;acLoad();acLogLoad()}
-async function acLoad(){const r=await api(J()+`/studio/objects?cls=${encodeURIComponent($('acCls').value)}&limit=500`);AC_OBJS={cols:r.columns,rows:Object.fromEntries(r.rows.map(x=>[x._id,x]))};
- $('acObj').classList.toggle('hidden',$('acKind').value==='create');$('acObj').innerHTML=r.rows.map(x=>`<option value="${esc(x._id)}">${esc(x._name)}（${esc(x._id)}）</option>`).join('');acForm()}
-function acForm(){const k=$('acKind').value,cur=AC_OBJS.rows[$('acObj').value]||{};const pk=(OV.object_types.find(o=>o.name===$('acCls').value)||{}).primary_key;
- if(k==='delete'){$('acForm').innerHTML=`<div class="warn-text">删除对象会同时删除图谱中与该对象关联的边。</div><pre>${esc(JSON.stringify(cur,null,2))}</pre>`;return}
- $('acForm').innerHTML=`<div class="row">${AC_OBJS.cols.map(c=>`<div style="min-width:200px"><label class="f">${esc(c.label)} <span class="muted">${esc(c.key)}${c.key===pk?' · 主键':''}</span></label><input data-k="${esc(c.key)}" value="${k==='update'?esc(cur[c.key]??''):''}" ${k==='update'&&c.key===pk?'disabled':''}></div>`).join('')}</div>`}
-$('btnAction').onclick=function(){const k=$('acKind').value;if(k==='delete'&&!confirm('确认删除该对象？'))return;busy(this,async()=>{const data={};const cur=AC_OBJS.rows[$('acObj').value]||{};
- $('acForm').querySelectorAll('input[data-k]').forEach(i=>{if(i.disabled)return;if(k==='create'?i.value!=='':String(cur[i.dataset.k]??'')!==i.value)data[i.dataset.k]=i.value});
- if(k==='update'&&!Object.keys(data).length)throw new Error('没有修改任何字段');
- const r=await post(J()+'/studio/action',{action:k,cls:$('acCls').value,entity:k==='create'?null:$('acObj').value,data});note(({create:'创建成功：',update:'更新成功：',delete:'对象已删除：'})[k]+r.entity+'（未落库，需「写入数据库」）');
- OV=await api(J()+'/studio/overview');renderOverview();acLoad();acLogLoad();JOB.status=r.status;$('btnWrite').disabled=JOB.status!=='published'})};
-async function acLogLoad(){const r=await api(J()+'/studio/actions');$('acLog').textContent=r.items.length?JSON.stringify(r.items.slice(-10),null,2):'—'}
-
 // ---------------- 指标
 const KIND={atomic:'原子',derived:'派生',composite:'复合'};let CURM=null;
 async function loadMetrics(){if(!METRICS)METRICS=await api(J()+'/metrics');const s=METRICS.stats;$('mKpis').innerHTML=[['原子指标',s.atomic],['派生指标',s.derived],['复合指标',s.composite]].map(([l,n])=>`<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');renderMList();
@@ -611,30 +372,91 @@ async function draw3d(id,el,d,opt){useMode(id,el,'3d');try{const M=await m3();co
  catch(e){note('3D 不可用，已回落 2D：'+e.message,true);return null}}
 
 // ---------------- 本体元素编辑（点选本体图节点）
-function openEditor(n){if(!JOB)return;const sc=JOB.draft.schema;let kind,ref,obj;
- if(String(n.id).startsWith('CLASS:')){kind='class';ref=n.id.slice(6);obj=sc.entity_types[ref]}
- else if(String(n.id).startsWith('PROP:')){kind='attribute';ref=n.id.split(':').slice(2).join(':');obj=sc.attributes[ref]}
- if(!obj)return;const ro=['published','written'].includes(JOB.status);
- const types=['string','integer','float','boolean','date','datetime'];
- $('edBox').classList.remove('hidden');
- $('edBox').innerHTML=`<b>编辑${kind==='class'?'类':'属性'}：${esc(ref)}</b> ${ro?tag('已发布，只读；可在「8 版本」回滚或复用数据集新建任务后修改','warn'):''}
-  <div class="row" style="margin-top:8px"><div><label class="f">中文名</label><input id="edLabel" value="${esc(obj.label||'')}"></div>
-  <div style="flex:2"><label class="f">描述</label><input id="edDesc" value="${esc(obj.description||'')}"></div>
-  ${kind==='attribute'?`<div><label class="f">数据类型</label><select id="edType">${types.map(t=>`<option ${obj.range===t?'selected':''}>${t}</option>`).join('')}</select></div>`:''}
-  <div class="auto" style="padding-top:22px"><button class="primary" id="edSave" ${ro?'disabled':''}>保存</button> <button class="ghost" id="edClose">关闭</button></div></div>
-  ${kind==='class'?`<div class="hint">主键：${esc((obj.key||[]).join(',')||'—')}；改主键或关系请用下方「主键配置 / 手动关系」</div>`:`<div class="hint">所属类：${esc(obj.owner)} · 来源列：${esc(obj.column||'')} · 角色：${esc(obj.role||'')}</div>`}`;
- $('edClose').onclick=()=>$('edBox').classList.add('hidden');
- $('edSave').onclick=function(){busy(this,async()=>{const b={kind,ref,label:$('edLabel').value,description:$('edDesc').value};if(kind==='attribute')b.datatype=$('edType').value;
-  await post(J()+'/schema/edit',b);Object.assign(obj,{label:b.label,description:b.description},b.datatype?{range:b.datatype}:{});note('已保存，并生成新版本快照');loadSchema()})}}
-
 // ---------------- 数据集库
 async function loadDatasets(){try{const r=await api('/automodel/datasets');const it=r.items||[];
  $('dsList').innerHTML=it.length?`<table><tr><th>数据集</th><th>表</th><th class="num">大小</th><th class="num">任务</th><th>时间</th><th></th></tr>${it.map(d=>`<tr><td><b>${esc(d.name)}</b><div class="muted">${esc(d.source_id)} · ${esc(String(d.id).slice(0,8))}</div></td>
   <td class="muted">${(d.tables||[]).map(t=>esc(t.name)+' '+t.rows+'×'+t.cols).join('<br>')}</td><td class="num">${fmt((d.size_bytes||0)/1024)}KB</td><td class="num">${d.jobs??'—'}</td>
-  <td class="muted">${esc(String(d.created_at||'').slice(0,16).replace('T',' '))}</td><td style="white-space:nowrap"><button class="ghost" data-new="${esc(d.id)}">复用建模</button> <button class="ghost" data-del="${esc(d.id)}">删除</button></td></tr>`).join('')}</table>`:'<span class="muted">还没有落库的数据集。上传文件后会自动保存。</span>';
- $('dsList').querySelectorAll('[data-new]').forEach(b=>b.onclick=function(){busy(this,async()=>{const s=await post(`/automodel/datasets/${b.dataset.new}/jobs`,{use_llm:$('useLlm').checked});await openJob(s.id);loadJobs();loadDatasets();show('model');note('已基于落库数据集新建任务')})});
+  <td class="muted">${esc(String(d.created_at||'').slice(0,16).replace('T',' '))}</td><td style="white-space:nowrap"><button class="ghost" data-meta="${esc(d.id)}">提取元数据</button> <button class="ghost" data-ren="${esc(d.id)}" data-name="${esc(d.name)}">重命名</button> <button class="ghost" data-del="${esc(d.id)}">删除</button></td></tr>`).join('')}</table>`:'<span class="muted">还没有落库的数据集。上传文件后会自动保存。</span>';
+ $('dsList').querySelectorAll('[data-meta]').forEach(b=>b.onclick=function(){busy(this,async()=>{showDsMetadata(b.dataset.meta)})});
+ $('dsList').querySelectorAll('[data-ren]').forEach(b=>b.onclick=function(){
+  const name=prompt('新的数据集名称',b.dataset.name);if(name==null||!name.trim())return;
+  busy(this,async()=>{await api(`/automodel/datasets/${b.dataset.ren}`,{method:'PATCH',body:JSON.stringify({name:name.trim()})});loadDatasets();note('已重命名')})});
  $('dsList').querySelectorAll('[data-del]').forEach(b=>b.onclick=function(){if(!confirm('删除该数据集？关联任务在服务重启后将无法恢复数据'))return;busy(this,async()=>{await api(`/automodel/datasets/${b.dataset.del}`,{method:'DELETE'});loadDatasets()})})}
  catch(e){$('dsList').innerHTML='<span class="muted">'+esc(e.message)+'</span>'}}
+// ---------------- 数据集元数据表单（数据集库下方画布，编辑/删除/新增/保存/翻页）
+let DSM=null, DSM_PAGE=0, DSM_EDITS={}, DSM_NEW=[], DSM_DEL=new Set();
+const DSM_PAGE_SIZE=10;
+const ROLE_CN2={identifier:'标识',name:'名称',enum:'枚举',measure:'度量',temporal:'时间',text:'文本',boolean:'布尔'};
+async function showDsMetadata(id){
+ try{const m=await api(`/automodel/datasets/${id}/metadata`);
+  DSM=m;DSM_PAGE=0;DSM_EDITS={};DSM_NEW=[];DSM_DEL=new Set();
+  $('dsMetaCard').classList.remove('hidden');
+  $('dsMetaHint').textContent=`${esc(m.source_id)} · ${esc(m.kind)} · ${(m.tables||[]).length} 张表`;
+  renderDsMeta();
+ }catch(e){note(e.message,true)}}
+function dsMetaCols(){
+ // 全部列（含新增），按 表.列 唯一
+ const out=[];
+ (DSM.tables||[]).forEach(t=>(t.columns||[]).forEach(c=>out.push({table:t.name,...c})));
+ DSM_NEW.forEach((c,i)=>out.push({table:c.table,name:c.name,dtype:c.dtype||'string',null_ratio:0,distinct:0,samples:[],role:c.role||'',label:c.label||'',comment:c.comment||'',_new:true,_ni:i}));
+ return out.filter(c=>!DSM_DEL.has(c.table+'.'+c.name))}
+function renderDsMeta(){
+ const cols=dsMetaCols();
+ const total=cols.length,pages=Math.max(1,Math.ceil(total/DSM_PAGE_SIZE));
+ if(DSM_PAGE>=pages)DSM_PAGE=pages-1;
+ const page=cols.slice(DSM_PAGE*DSM_PAGE_SIZE,(DSM_PAGE+1)*DSM_PAGE_SIZE);
+ const dirty=Object.keys(DSM_EDITS).length+DSM_NEW.length+DSM_DEL.size;
+ $('dsMetaDirty').textContent=dirty?`${dirty} 处未保存修改`:'';
+ $('btnDsMetaSave').disabled=!dirty;
+ $('dsMetaPage').textContent=`第 ${DSM_PAGE+1} / ${pages} 页 · 共 ${total} 列`;
+ $('btnDsMetaPrev').disabled=DSM_PAGE<=0;$('btnDsMetaNext').disabled=DSM_PAGE>=pages-1;
+ const tables=[...new Set(page.map(c=>c.table))];
+ $('dsMetaBody').innerHTML=tables.map(tn=>{
+  const t=(DSM.tables||[]).find(t=>t.name===tn)||{name:tn,rows:'?',cols:'?'};
+  const tcols=page.filter(c=>c.table===tn);
+  return `<div class="card" style="border:1px solid var(--ax-border);margin:8px 0"><h2>${esc(tn)} <span class="hint">${t.rows} 行 × ${t.cols} 列</span></h2>
+   <table><tr><th>列</th><th>中文名</th><th>描述</th><th>角色</th><th>类型</th><th class="num">空值率</th><th class="num">去重</th><th>样例</th><th></th></tr>
+   ${tcols.map(c=>{const k=tn+'.'+c.name,e=DSM_EDITS[k]||{};const role=e.role??c.role;const label=e.label??(c.label||'');const comment=e.comment??(c.comment||'');
+    return `<tr data-k="${esc(k)}" class="${c._new?'dirty':''}"><td><b>${esc(c.name)}</b>${role==='identifier'?' 🔑':''}${c._new?' '+tag('新增','ok'):''}</td>
+    <td><input class="dm dmL" value="${esc(label)}" placeholder="中文名"></td>
+    <td><input class="dm dmC" value="${esc(comment)}" placeholder="描述"></td>
+    <td><select class="dm dmR">${['','identifier','name','enum','measure','temporal','text','boolean'].map(r=>`<option value="${r}" ${r===role?'selected':''}>${r?ROLE_CN2[r]:'—'}</option>`).join('')}</select></td>
+    <td class="muted">${esc(c.dtype)}</td><td class="num">${(c.null_ratio*100).toFixed(0)}%</td><td class="num">${fmt(c.distinct)}</td><td class="muted">${esc((c.samples||[]).join(' / '))}</td>
+    <td><button class="ghost dmDel">删除</button></td></tr>`}).join('')}</table></div>`}).join('')||'<span class="muted">没有列</span>';
+ // 绑定编辑
+ $('dsMetaBody').querySelectorAll('tr[data-k]').forEach(tr=>{
+  const k=tr.dataset.k;
+  const set=(f,v)=>{DSM_EDITS[k]=Object.assign(DSM_EDITS[k]||{},{[f]:v});renderDsMeta()};
+  tr.querySelector('.dmL').oninput=e=>{DSM_EDITS[k]=Object.assign(DSM_EDITS[k]||{},{label:e.target.value});dsMetaDirtyOnly()};
+  tr.querySelector('.dmC').oninput=e=>{DSM_EDITS[k]=Object.assign(DSM_EDITS[k]||{},{comment:e.target.value});dsMetaDirtyOnly()};
+  tr.querySelector('.dmR').onchange=e=>{DSM_EDITS[k]=Object.assign(DSM_EDITS[k]||{},{role:e.target.value});renderDsMeta()};
+  tr.querySelector('.dmDel').onclick=()=>{if(!confirm('删除列 '+k+'？'))return;DSM_DEL.add(k);renderDsMeta()};
+ })}
+function dsMetaDirtyOnly(){const dirty=Object.keys(DSM_EDITS).length+DSM_NEW.length+DSM_DEL.size;
+ $('dsMetaDirty').textContent=dirty?`${dirty} 处未保存修改`:'';
+ $('btnDsMetaSave').disabled=!dirty}
+$('btnDsMetaPrev').onclick=()=>{if(DSM_PAGE>0){DSM_PAGE--;renderDsMeta()}};
+$('btnDsMetaNext').onclick=()=>{DSM_PAGE++;renderDsMeta()};
+$('btnDsMetaClose').onclick=()=>$('dsMetaCard').classList.add('hidden');
+$('btnDsMetaAddCol').onclick=()=>{
+ const tables=(DSM.tables||[]).map(t=>t.name);if(!tables.length){note('没有可加列的表',true);return}
+ const table=prompt('新增到哪张表？\n'+tables.join(' / '),tables[0]);if(table==null||!tables.includes(table))return;
+ const name=prompt('新列名（英文）');if(name==null||!name.trim())return;
+ DSM_NEW.push({table,name:name.trim(),dtype:'string',label:'',comment:'',role:''});
+ DSM_PAGE=Math.floor((dsMetaCols().length-1)/DSM_PAGE_SIZE);renderDsMeta()};
+$('btnDsMetaSave').onclick=function(){busy(this,async()=>{
+ if(!DSM)return;
+ // 组装保存载荷：全部列（含编辑/新增/删除后的最终态）
+ const tables={};
+ dsMetaCols().forEach(c=>{
+  const k=c.table+'.'+c.name,e=DSM_EDITS[k]||{};
+  (tables[c.table]=tables[c.table]||[]).push({name:c.name,
+   label:e.label??(c.label||''),comment:e.comment??(c.comment||''),role:e.role??(c.role||'')})});
+ const r=await api(`/automodel/datasets/${DSM.dataset_id}/metadata`,{method:'PUT',body:JSON.stringify({tables:Object.entries(tables).map(([name,columns])=>({name,columns}))})});
+ note(`已保存 ${r.columns_updated} 列元数据${r.dedup?'（内容与已有数据集相同，未新建记录）':'，新数据集 '+String(r.dataset_id).slice(0,8)}`);
+ DSM_EDITS={};DSM_NEW=[];DSM_DEL=new Set();
+ await showDsMetadata(DSM.dataset_id);loadDatasets();
+})};
 
 // ---------------- 版本
 const TRG={upload:'创建',review:'审核',configure:'配置',edit:'编辑',publish:'发布',restore:'回滚',manual:'手动'};let VERS=[],V3=null;
@@ -650,21 +472,8 @@ async function loadVersions(){const r=await api(J()+'/versions');VERS=r.items||[
 async function renderV3(){V3&&V3.dispose();V3=null;if(!VERS.length){$('v3d').innerHTML='';return}
  try{const M=await m3();const vs=[...VERS].reverse();V3=await M.bars($('v3d'),{title:'各版本属性数',categories:vs.map(v=>'v'+v.version_no+' '+(TRG[v.trigger]||'')),values:vs.map(v=>(v.summary||{}).attributes||0),series:true})}catch(e){$('v3d').innerHTML=tag('3D 不可用：'+e.message,'bad')}}
 
-function bindMeta(){$('metaQ').oninput=renderMetaTable;$('metaHideEmpty').onchange=renderMetaTable;
- $('btnMetaSave').onclick=function(){busy(this,async()=>{const columns=Object.entries(META_EDITS).map(([k,v])=>{const i=k.indexOf('.');return {table:k.slice(0,i),column:k.slice(i+1),...v}});
-  const r=await post(J()+'/metadata',{tables:META_TABLES,columns});META_EDITS={};META_TABLES={};await openJob(JOB.id);METRICS=null;
-  note(`元数据已保存${r.role_changed?'；角色有变化，指标已重新生成（原子 '+(r.metrics||{}).atomic+'，复合 '+(r.metrics||{}).composite+'）':''}，已记录新版本`)})}}
-
 // ---------------- React Flow：流水线 + 本体设计图
-async function loadFlows(){if(!JOB)return;
- try{const d=await api(J()+'/pipeline');await RF.pipeline($('pipeFlow'),d,{onOpen:t=>show(t)})}catch(e){$('pipeFlow').innerHTML=tag('React Flow 不可用：'+e.message,'bad')}
- try{const counts={};(OV&&OV.object_types||[]).forEach(o=>counts[o.name]=o.count);
-  const job={...JOB,counts,_base:base(),_hdr:hdr(true)};
-  await RF.designer($('designFlow'),job,{readOnly:['published','written'].includes(JOB.status),
-   api:ops=>post(J()+'/design/ops',{ops}),
-   onChanged:async()=>{await openJob(JOB.id);loadSchema();loadFlows()}})}
- catch(e){$('designFlow').innerHTML=tag('React Flow 不可用：'+e.message,'bad')}}
-function bindExtra(){bindMeta();segBind('sgMode',v=>{SGM=v;loadSchema()});segBind('igMode',v=>{IGM=v;loadInst()});$('btnDsReload').onclick=loadDatasets;
+function bindExtra(){$('btnDsReload').onclick=loadDatasets;
  $('btnVSave').onclick=function(){busy(this,async()=>{const v=await post(J()+'/versions',{label:$('vLabel').value,note:$('vNote').value});$('vLabel').value='';$('vNote').value='';note(v.unchanged?'内容未变化':'已保存版本 v'+v.version_no);loadVersions()})};
  $('btnVDiff').onclick=function(){busy(this,async()=>{const ids=[...document.querySelectorAll('.vck:checked')].map(x=>x.value);if(ids.length!==2)throw new Error('请勾选两个版本');
   const [b,a]=ids;const d=await api(`/automodel/versions/diff?a=${a}&b=${b}`);const L={classes:'类',attributes:'属性',relations:'关系',mappings:'映射',metrics:'指标'};
@@ -700,6 +509,74 @@ async function rcMetric(r){const el=$('mChart');el.innerHTML='';const dim=$('mDi
 function bars(cats,vals){if(!cats.length)return '<span class="muted">没有数据</span>';const p=cats.map((c,i)=>[c,vals[i]]).sort((a,b)=>b[1]-a[1]).slice(0,30),mx=Math.max(...p.map(x=>x[1]),1);
  return `<table>${p.map(([c,v],i)=>`<tr><td style="width:180px">${esc(c)}</td><td><div class="bar ${i?'dim':''}" style="width:${Math.max(1,v/mx*100)}%"></div></td><td class="num" style="width:90px">${fmt(v)}</td></tr>`).join('')}</table>`}
 
+// ---------------- 本体建模（Studio V2：/api/v1/studio-v2/*）
+let V2=null, V2_INIT=false;
+const V2S=()=>'/studio-v2/sessions/'+encodeURIComponent(V2);
+function initV2(){if(!V2_INIT){V2_INIT=true;bindV2()}loadV2Sessions();loadV2Datasets()}
+function bindV2(){
+ $('btnV2FromDs').onclick=function(){busy(this,async()=>{
+  const ds=$('v2Ds').value;if(!ds)throw new Error('请先选择数据集（在「1 数据源」上传后自动落库）');
+  const r=await post('/studio-v2/build/from-dataset/'+encodeURIComponent(ds),{});
+  note('自动建模完成：'+(r.object_types||[]).length+' 个类 · '+(r.link_types||[]).length+' 个关系');
+  openV2(r.session_id);loadV2Sessions();
+ })};
+ $('btnV2Reload').onclick=loadV2Sessions;
+}
+async function loadV2Datasets(){try{const r=await api('/automodel/datasets');const it=r.items||[];
+ $('v2Ds').innerHTML=it.length?it.map(d=>`<option value="${esc(d.id)}">${esc(d.name)}（${(d.tables||[]).map(t=>esc(t.name)+' '+t.rows+'×'+t.cols).join('、')}）</option>`).join(''):'<option value="">（还没有落库数据集，请先在「1 数据源」上传）</option>';
+ $('v2DsHint').textContent=it.length?`共 ${it.length} 个数据集可选。`:'还没有落库的数据集；请先在「1 数据源」上传文件。';
+}catch(e){$('v2Ds').innerHTML='<option value="">数据集加载失败</option>';$('v2DsHint').textContent=e.message}}
+async function loadV2Sessions(){try{const r=await api('/studio-v2/sessions');
+ $('v2Sessions').innerHTML=(r.sessions||[]).map(s=>`<div data-id="${esc(s.session_id)}" style="cursor:pointer;padding:6px 8px;border-bottom:1px solid var(--ax-border)"><b>${esc(s.name||s.session_id)}</b> <span class="muted">${esc(String(s.created_at||'').slice(0,16).replace('T',' '))}</span><div class="muted">类 ${(s.object_types||[]).length} · 关系 ${(s.link_types||[]).length} · 节点 ${fmt(s.node_count)} · 边 ${fmt(s.edge_count)}</div></div>`).join('')||'<span class="muted">暂无会话</span>';
+ $('v2Sessions').querySelectorAll('div[data-id]').forEach(d=>d.onclick=()=>openV2(d.dataset.id));
+}catch(e){$('v2Sessions').innerHTML='<span class="muted">'+esc(e.message)+'</span>'}}
+async function openV2(id){V2=id;$('v2Body').classList.remove('hidden');
+ // React Flow 在 display:none 容器中初始化会得到 0 尺寸（节点/边渲染失败）：
+ // 打开会话即切到「本体建模」标签，保证画布可见后再渲染
+ show('v2');
+ try{
+  const s=await api(V2S());
+  $('v2Kpis').innerHTML=[['对象类型',(s.object_types||[]).length],['关系类型',(s.link_types||[]).length],['实例节点',fmt(s.node_count)],['关系边',fmt(s.edge_count)]].map(([l,n])=>`<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+  $('v2Summary').innerHTML='<ul style="margin:0;padding-left:18px">'+(s.object_types||[]).map(o=>`<li><code>${esc(o.name)}</code>：<b>${fmt(o.count)}</b> 个对象；主键 <code>${esc(o.primary_key||'—')}</code>；属性 ${o.properties.length} 个</li>`).join('')+'</ul><h3 style="margin-top:10px">关系定义</h3><table><tr><th>关系</th><th>源</th><th>目标</th><th>依据列</th></tr>'+(s.link_types||[]).map(l=>`<tr><td>${esc(l.name)}</td><td>${esc(l.source)}</td><td>${esc(l.target)}</td><td class="muted">${esc(l.source_property||'')}</td></tr>`).join('')+'</table>';
+  // Schema 图：React Flow 编辑器（类节点 + 关系边，编辑后自动保存重建模）
+  await renderV2Designer();
+  // 导出链接
+  $('v2Json').href=base()+V2S()+'/export.json';$('v2Owl').href=base()+V2S()+'/export.owl';
+  // 已导入任务提示
+  $('v2JobHint').textContent=JOB&&JOB.source==='studio_v2'&&V2_JOB===id?`已导入任务 ${String(JOB.id).slice(0,8)}（${JOB.status}），可在「3 指标」「4 问答」「5 评测」「6 版本」中使用。`:'尚未导入。导入后即可在「3 指标」「4 问答」「5 评测」「6 版本」中使用本会话的本体。';
+ }catch(e){note(e.message,true)}}
+
+// ---------------- 对象关系图编辑器（AntV X6 图形引擎 + dagre 自动布局 + React 属性面板）
+async function renderV2Designer(){
+ const el=$('v2Sg');
+ try{
+  if(!window.X6D)await (await import('/console/x6-designer.js')).ready;
+  if(!window.X6D)throw new Error('X6 编辑器加载失败');
+  const sg=await api(V2S()+'/schema-graph');
+  const classes=sg.nodes.filter(n=>n.kind==='class');
+  const rels=sg.edges.filter(e=>e.kind!=='hasProperty');
+  const nodes=classes.map(c=>({id:c.id,data:{label:c.label,props:c.properties||[],pk:c.primary_key,desc:c.description||''}}));
+  const redges=rels.map(r=>({id:r.label||r.source+'_'+r.target,source:r.source,target:r.target,label:r.label,
+   data:{desc:r.description||'',source_property:r.source_property||'',target_property:r.target_property||''}}));
+  window.X6D.designer(el,{nodes,edges:redges},{onEdit:v2SchemaEdit});
+ }catch(e){el.innerHTML='<div class="muted" style="padding:20px">编辑器加载失败：'+esc(e.message)+'</div>'}
+}
+async function v2SchemaEdit(ops){
+ // 编辑后自动保存：提交 schema/edit → 后端应用 + rebuild_links → 前端刷新
+ const r=await post(V2S()+'/schema/edit',{ops});
+ note('已保存：'+(r.done||[]).join('；')+'，实例边已重建');
+ await openV2(V2);loadV2Sessions();
+ return r}
+let V2_JOB=null;
+$('btnV2ToJob').onclick=function(){busy(this,async()=>{
+ if(!V2)throw new Error('请先打开建模会话');
+ const r=await post(V2S()+'/to-automodel',{});
+ V2_JOB=V2;
+ await openJob(r.job_id);loadJobs();
+ $('v2JobHint').textContent=`已导入任务 ${String(r.job_id).slice(0,8)}（${r.status}）：${(r.stats||{}).classes||0} 类 · ${(r.stats||{}).relations||0} 关系 · 指标 ${(r.metrics||{}).atomic||0} 原子 / ${(r.metrics||{}).derived||0} 派生 / ${(r.metrics||{}).composite||0} 复合。可继续在「3 指标」「4 问答」「5 评测」「6 版本」中使用。`;
+ note('已导入流水线：任务 '+String(r.job_id).slice(0,8)+'，指标已生成，可切换到「3 指标」查看');
+})};
+
 // ---------------- 问答
 async function loadSuggest(){try{const s=await api(J()+'/suggest');$('sugg').innerHTML=s.items.map(q=>`<button>${esc(q)}</button>`).join('');$('sugg').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('question').value=b.textContent;ask()})}catch(e){}}
 $('btnAsk').onclick=ask;$('question').addEventListener('keydown',e=>{if(e.key==='Enter')ask()});
@@ -729,11 +606,7 @@ function renderEvR(){const R=EVR;$('evKpis').innerHTML=[['准确率',(R.accuracy
 
 // ---------------- 导出
 async function dl(path,name){const r=await fetch(base()+path,{headers:hdr()});if(!r.ok)throw new Error((await r.text()).slice(0,300));const b=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();a.remove()}
-$('btnJson').onclick=function(){busy(this,()=>dl(J()+'/export.json',`ontology_${JOB.source}.json`))};
-$('btnOwl').onclick=function(){busy(this,()=>dl(J()+'/export.owl',`ontology_${JOB.source}.owl`))};
-$('btnYaml').onclick=function(){busy(this,()=>dl(J()+'/contract.yaml',`contract_${JOB.source}.yaml`))};
-
-bindExtra();bindMappingExecution();show('src');loadJobs();loadDatasets();const qs=new URLSearchParams(location.search);if(qs.get('job'))openJob(qs.get('job')).then(()=>show('model')).catch(e=>note(e.message,true));
+bindExtra();show('src');loadJobs();loadDatasets();const qs=new URLSearchParams(location.search);if(qs.get('job'))openJob(qs.get('job')).then(()=>show('v2')).catch(e=>note(e.message,true));
 </script>
 </body>
 </html>

@@ -380,6 +380,15 @@ except Exception as _automodel_exc:  # noqa: BLE001
     import logging as _logging
     _logging.getLogger("twin").warning(
         "automodel API disabled (pip install pandas pyyaml openpyxl sqlalchemy): %s", _automodel_exc)
+# Ontology Studio V2：schema/实例图、质量报告、最短路径、本体工具执行与问答
+# 依赖 pandas/networkx/rdflib/openpyxl（openai 可选）：缺依赖时只禁用该模块
+try:
+    from app.api.v1 import studio_v2 as studio_v2_api
+    app.include_router(studio_v2_api.router, prefix=API, tags=["ontology-studio-v2"])
+except Exception as _studio_v2_exc:  # noqa: BLE001
+    import logging as _logging
+    _logging.getLogger("twin").warning(
+        "studio-v2 API disabled (pip install pandas networkx rdflib openpyxl): %s", _studio_v2_exc)
 
 
 @app.get("/healthz")

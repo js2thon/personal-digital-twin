@@ -187,6 +187,62 @@ def delete_dataset(dataset_id: str, tenant: str = "default") -> bool:
     return True
 
 
+def rename_dataset(dataset_id: str, name: str, tenant: str = "default") -> dict | None:
+    """重命名数据集（仅改展示名，不动内容与 sha256 去重键）。"""
+    if not ensure_schema():
+        d = _MEM_DS.get(dataset_id)
+        if not d or d["tenant_id"] != tenant:
+            return None
+        d["name"] = name[:200]
+        return {k: v for k, v in d.items() if k != "payload"}
+    row = _db().fetch_one(
+        "UPDATE ontology.automodel_datasets SET name=:n WHERE id=:i AND tenant_id=:t "
+        "RETURNING id, name, source_id, kind, tables, size_bytes, created_by, created_at",
+        {"n": name[:200], "i": dataset_id, "t": tenant})
+    if row:
+        row["tables"] = _j(row["tables"])
+    return row
+
+
+def dataset_metadata(dataset_id: str, tenant: str = "default") -> dict | None:
+    """提取数据集元数据：表清单 + 每表列画像（类型/空值率/去重数/样例）。"""
+    ts = load_dataset(dataset_id, tenant)
+    if ts is None:
+        return None
+    tables = []
+    for t in ts.tables.values():
+        df = t.df
+        cols = []
+        for c in df.columns:
+            s = df[c]
+            nulls = int(s.isna().sum())
+            distinct = int(s.nunique(dropna=True))
+            samples = [str(v) for v in s.dropna().unique()[:3]]
+            cols.append({
+                "name": str(c),
+                "dtype": str(s.dtype),
+                "rows": int(len(s)),
+                "null_ratio": round(nulls / max(len(s), 1), 4),
+                "distinct": distinct,
+                "samples": samples,
+                "role": t.column_roles.get(str(c), "") or ("identifier" if c in (t.primary_key or []) else ""),
+                "label": t.column_labels.get(str(c), ""),
+                "comment": t.column_comments.get(str(c), ""),
+            })
+        tables.append({
+            "name": t.name,
+            "rows": int(len(df)),
+            "cols": int(df.shape[1]),
+            "primary_key": list(t.primary_key or []),
+            "foreign_keys": [{"column": fk.column, "ref_table": fk.ref_table,
+                              "ref_column": fk.ref_column} for fk in t.foreign_keys],
+            "comment": t.comment,
+            "columns": cols,
+        })
+    return {"dataset_id": dataset_id, "source_id": ts.source_id, "kind": ts.kind,
+            "tables": tables}
+
+
 def link_job(job_id: str, dataset_id: str | None) -> None:
     if dataset_id and ensure_schema():
         _db().execute("UPDATE ontology.automodel_jobs SET dataset_id=:d WHERE id=:i", {"d": dataset_id, "i": job_id})
