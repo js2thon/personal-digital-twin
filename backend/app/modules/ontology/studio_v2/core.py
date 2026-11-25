@@ -153,10 +153,10 @@ class Ontology:
         info.setdefault("property_definitions", {})[property_name] = {
             "type": property_type or "string", "description": description or "",
         }
+        info.setdefault("property_mappings", {})[property_name] = {
+            "source_table": type_name, "source_column": source_column,
+        }
         if source_column:
-            info.setdefault("property_mappings", {})[property_name] = {
-                "source_table": type_name, "source_column": source_column,
-            }
             for obj in self.objects.get(type_name, {}).values():
                 obj[property_name] = obj.get(source_column)
         return True
@@ -197,7 +197,9 @@ class Ontology:
             for obj in self.objects.get(type_name, {}).values():
                 obj[target_name] = obj.get(source_column)
         elif clear_source_mapping:
-            info.setdefault("property_mappings", {}).pop(target_name, None)
+            info.setdefault("property_mappings", {})[target_name] = {
+                "source_table": type_name, "source_column": "",
+            }
         return True
 
     def remove_property(self, type_name: str, property_name: str) -> bool:
@@ -999,8 +1001,11 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
                     **(info.get("property_mappings", {}).get(prop) or {
                         "source_table": type_name, "source_column": prop,
                     }),
-                    "mapped": (info.get("property_mappings", {}).get(prop, {}).get("source_column", prop)
-                               in (ontology.data_mapping.get(type_name) or {}).get("columns", [])),
+                    "mapped": (
+                        info.get("property_mappings", {}).get(prop, {}).get("source_column", prop)
+                        in (ontology.data_mapping.get(type_name) or {}).get("columns", [])
+                        and bool(info.get("property_mappings", {}).get(prop, {}).get("source_column", prop))
+                    ),
                 },
                 "definition": info.get("property_definitions", {}).get(prop, {}),
             })
