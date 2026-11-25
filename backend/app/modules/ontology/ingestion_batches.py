@@ -130,6 +130,10 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
     """
     ensure_schema()
     namespace = _normalize_source_namespace(source_namespace)
+    record_namespace = (
+        _normalize_source_namespace(f"{namespace}:{source_table}")
+        if source_table else namespace
+    )
     size = max(1, min(int(batch_size), MAX_EXECUTION_ROWS))
     if reconcile_missing and (sync_mode != "upsert" or not source_id_column):
         raise ValueError("缺失记录对账仅支持提供稳定源记录 ID 的 upsert 模式")
@@ -225,7 +229,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
                         "UPDATE ontology.dataset_source_records SET last_seen_at=now(), source_active=TRUE "
                         "WHERE tenant_id=:t AND mapping_name=:mn AND source_namespace=:ns "
                         "AND source_record_id=:sid",
-                        {"t": tenant_id, "mn": mapping_name, "ns": namespace,
+                        {"t": tenant_id, "mn": mapping_name, "ns": record_namespace,
                          "sid": str(source_id).strip()})
         summaries.append(result)
         offset += len(batch)
@@ -243,7 +247,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
             "WHERE tenant_id=:t AND mapping_name=:mn AND source_namespace=:ns "
             "AND source_active=TRUE AND last_seen_at < :started "
             "RETURNING 1) SELECT count(*) AS n FROM stale",
-            {"t": tenant_id, "mn": mapping_name, "ns": namespace,
+            {"t": tenant_id, "mn": mapping_name, "ns": record_namespace,
              "started": snapshot_started})
         tombstones = int((result or {}).get("n") or 0)
 
