@@ -291,7 +291,7 @@
   .stp-m-h .hint { margin: 0; }
   .stp-m-nav { margin-left: auto; display: flex; align-items: center; gap: 6px; }
   .stp-m-b { padding: var(--spacing-4) var(--spacing-5); overflow: auto; flex: 1 1 auto; min-height: 0; }
-  /* ===== 本体建模：Pipeline 图形化画布 ===== */
+  /* ===== legacy modelling canvas styles (inactive) ===== */
   /* 三栏布局：两侧宽度都写在 CSS 变量上（--md-side-w / --md-detail-w），拖拽时写 inline style 覆盖。
      默认值用 clamp + vw，浏览器缩放（改 CSS 像素视口宽）时不需要 JS 也能跟着收放；
      modAdaptLayout() 再按真实容器宽兜一层（见脚本区），保证窄屏不把中间画布挤没。 */
@@ -1317,8 +1317,7 @@
   .wb-cyl-hint b { color: rgba(58,74,94,.90); font-weight: 600; letter-spacing: .3px; }
   .wb-cyl-hint span { color: rgba(112,126,145,.82); }
   .wb-cyl-hint .sep { color: rgba(108,140,182,.60); }
-  /* 显式页签栏：3D 轮播里的卡片要转到位才点得中，「本体建模」排在第 5 张容易被漏掉，
-     这里给一条始终可见的文字入口，点一下就切（与轮播高亮双向同步）。 */
+  /* 3D 工作区显式页签栏，与轮播高亮双向同步。 */
   .wb-tabbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 10px; }
   .wb-tabbar button { display: inline-flex; align-items: center; gap: 5px;
       padding: 5px 12px; font-size: 12px; border-radius: 999px; cursor: pointer;
@@ -1754,7 +1753,7 @@
   #kgoSvg .kgo-nm { font-size: 10px; fill: var(--ax-text-secondary); }
   #kgoSvg .kgo-ni { font-size: 10px; fill: var(--ax-text-disabled);
                     font-variant-numeric: tabular-nums; }
-  /* 个体药丸：点击跳本体建模 */
+  /* 个体药丸交互样式。 */
   #kgoSvg .kgo-ind { cursor: pointer; }
   #kgoSvg .kgo-ind .kgo-ibg { fill: var(--ax-surface); stroke: var(--ax-border);
                              stroke-width: 1; stroke-dasharray: 3 3; }
@@ -4326,7 +4325,7 @@ function wbBuildBabel() {
   });
 }
 
-/* 显式页签栏：与 3D 轮播互为镜像，解决「第 5 张卡（本体建模）转不到位就看不见」的问题 */
+/* 显式页签栏：与 3D 轮播互为镜像。 */
 function wbBuildTabBar() {
   const bar = document.getElementById("wbTabBar");
   if (!bar || bar.dataset.built) return;
@@ -7080,14 +7079,7 @@ async function gLoadProfile(id) {
 }
 
 /* ================================================================
- * 本体中心（导入驱动）—— /api/v1/kg/*
- *   导入 .ttl/.owl/.rdf/.jsonld/.nt/.n3 → 服务端解析成一张图
- *   → GET /kg/{sid} 返回设计模型 → 这里画设计图 / 列属性 / 跑 SPARQL / 语义问答
- *
- * 设计原则：没有导入就没有内容。旧的四页签工作台（模式视图 / 编辑与测试 /
- * 规则校验 / 本体视图）已整体下线，本页不再调用 wbTab / wbBuildCarousel /
- * runDiagnostics / loadConflicts / loadGraph / loadSchemaGraph / loadRules。
- * 那些函数体仍留在文件里，供其他视图使用，这里一律不碰。
+ * 本体实体与关系列表渲染。
  * ================================================================ */
 function renderEntities() {
   renderPaged("entities", "#entitiesTable tbody", "pg_entities", _lRows.entities || [], e => `
@@ -9841,7 +9833,7 @@ function loadView(v) {
   if (v === "studio") {                       // 本体工作台：首次进入才加载 iframe，避免拖慢控制台首屏
     const f = document.getElementById("studioFrame");
     if (f && !f.src) f.src = f.dataset.src + location.search.replace(/^\?/, "?_=1&");
-  }   // 本体建模：初始化本地草稿，并自动从「本体设计」带出对象
+  }
   if (v === "decision") { loadApprovals(); loadDecisions(); }
   if (v === "messages") loadMessages();
   if (v === "pipeline") loadPipelineRuns();
