@@ -69,6 +69,16 @@
     var newRelTgtState = React.useState(""), newRelTgt = newRelTgtState[0], setNewRelTgt = newRelTgtState[1];
     var newRelSrcColState = React.useState(""), newRelSrcCol = newRelSrcColState[0], setNewRelSrcCol = newRelSrcColState[1];
     var newRelTgtColState = React.useState(""), newRelTgtCol = newRelTgtColState[0], setNewRelTgtCol = newRelTgtColState[1];
+    var newRelCardState = React.useState("many_to_one"), newRelCard = newRelCardState[0], setNewRelCard = newRelCardState[1];
+    var newJunctionTableState = React.useState(""), newJunctionTable = newJunctionTableState[0], setNewJunctionTable = newJunctionTableState[1];
+    var newJunctionSrcState = React.useState(""), newJunctionSrc = newJunctionSrcState[0], setNewJunctionSrc = newJunctionSrcState[1];
+    var newJunctionTgtState = React.useState(""), newJunctionTgt = newJunctionTgtState[0], setNewJunctionTgt = newJunctionTgtState[1];
+    var objectKindState = React.useState(isClass && node ? (node.data.object_kind || "static_entity") : "static_entity"), objectKind = objectKindState[0], setObjectKind = objectKindState[1];
+    var cardinalityState = React.useState(!isClass && edge ? (edge.data && edge.data.cardinality || "many_to_one") : "many_to_one"), cardinality = cardinalityState[0], setCardinality = cardinalityState[1];
+    var junctionState = React.useState(!isClass && edge ? (edge.data && edge.data.junction_binding || {}) : {}), junction = junctionState[0], setJunction = junctionState[1];
+    var junctionTableState = React.useState(junction.table || ""), junctionTable = junctionTableState[0], setJunctionTable = junctionTableState[1];
+    var junctionSrcState = React.useState(junction.source_column || ""), junctionSrc = junctionSrcState[0], setJunctionSrc = junctionSrcState[1];
+    var junctionTgtState = React.useState(junction.target_column || ""), junctionTgt = junctionTgtState[0], setJunctionTgt = junctionTgtState[1];
     var descState = React.useState(isClass ? (node ? node.data.desc : "") : (edge ? (edge.data && edge.data.desc || "") : "")), desc = descState[0], setDesc = descState[1];
     var relNameState = React.useState((!isClass && sel) ? sel.ref : ""), relName = relNameState[0], setRelName = relNameState[1];
     var relSrcState = React.useState(!isClass && edge ? edge.source.replace(/^CLASS:/, "") : ""), relSrc = relSrcState[0], setRelSrc = relSrcState[1];
@@ -97,8 +107,14 @@
         [h("option",{key:"",value:""},"选择关系终点")].concat(clsOptions.map(function(c){return h("option",{key:c,value:c},c);}))),
       h("select", { value:newRelTgtCol, onChange:function(e){setNewRelTgtCol(e.target.value);}, style:{width:"100%",marginBottom:8} },
         [h("option",{key:"",value:""},"选择终点字段")].concat(clsProps(newRelTgt).map(function(p){return h("option",{key:p,value:p},p);}))),
-      h("button", { className:"primary", disabled:busy||!newRelName.trim()||!newRelSrc||!newRelTgt, onClick:function(){
-        run([{op:"create_relation",new_name:newRelName.trim(),source:newRelSrc,target:newRelTgt,source_property:newRelSrcCol,target_property:newRelTgtCol,description:"由本体工作台创建"}],"关系已创建并重建实例边");
+      h("select", { value:newRelCard, onChange:function(e){setNewRelCard(e.target.value);}, style:{width:"100%",marginBottom:8} },
+        [["many_to_one","多对一"],["one_to_one","一对一"],["one_to_many","一对多"],["many_to_many","多对多"]].map(function(x){return h("option",{key:x[0],value:x[0]},x[1]);})),
+      newRelCard==="many_to_many" ? h("div",null,
+        h("input",{value:newJunctionTable,placeholder:"关联表名称",onChange:function(e){setNewJunctionTable(e.target.value);},style:{width:"100%",marginBottom:6}}),
+        h("input",{value:newJunctionSrc,placeholder:"关联表中的起点外键列",onChange:function(e){setNewJunctionSrc(e.target.value);},style:{width:"100%",marginBottom:6}}),
+        h("input",{value:newJunctionTgt,placeholder:"关联表中的终点外键列",onChange:function(e){setNewJunctionTgt(e.target.value);},style:{width:"100%",marginBottom:8}})) : null,
+      h("button", { className:"primary", disabled:busy||!newRelName.trim()||!newRelSrc||!newRelTgt||(newRelCard==="many_to_many"&&(!newJunctionTable||!newJunctionSrc||!newJunctionTgt)), onClick:function(){
+        run([{op:"create_relation",new_name:newRelName.trim(),source:newRelSrc,target:newRelTgt,source_property:newRelSrcCol,target_property:newRelTgtCol,cardinality:newRelCard,junction_table:newJunctionTable,junction_source_column:newJunctionSrc,junction_target_column:newJunctionTgt,description:"由本体工作台创建"}],"关系已创建并重建实例边");
         setNewRelName("");
       } }, "创建关系"),
       h("div", { style:{borderTop:"1px solid "+T.border,marginTop:12,paddingTop:10} },
@@ -116,7 +132,10 @@
         h("div", null, "字段：" + (node.data.sourceInfo.columns || []).length + " 个")) : null,
       isClass ? h("div", { style: { marginBottom: 8 } },
         h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "中文名"),
-        h("input", { value: label, onChange: function (e) { setLabel(e.target.value); }, style: { width: "100%", marginBottom: 6 } })) : null,
+        h("input", { value: label, onChange: function (e) { setLabel(e.target.value); }, style: { width: "100%", marginBottom: 6 } }),
+        h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "业务对象分类"),
+        h("select", { value: objectKind, onChange: function (e) { setObjectKind(e.target.value); }, style: { width: "100%" } },
+          [["static_entity","静态实体对象"],["transaction","事务动态对象"],["derived","派生聚合对象"]].map(function(x){return h("option",{key:x[0],value:x[0]},x[1]);}))) : null,
       h("div", { style: { marginBottom: 8 } },
         h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "描述"),
         h("textarea", { value: desc, onChange: function (e) { setDesc(e.target.value); }, rows: 3, style: { width: "100%" } })),
@@ -136,6 +155,14 @@
           h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "关系终点（业务对象）"),
           h("select", { value: relTgt, onChange: function (e) { setRelTgt(e.target.value); setTgtCol(""); }, style: { width: "100%" } },
             clsOptions.map(function (c) { return h("option", { key: c, value: c }, c); })))) : null,
+      !isClass ? h("div", { style: { marginBottom: 8 } },
+        h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "关系基数"),
+        h("select", { value: cardinality, onChange: function(e){setCardinality(e.target.value);}, style:{width:"100%"} },
+          [["many_to_one","多对一"],["one_to_one","一对一"],["one_to_many","一对多"],["many_to_many","多对多"]].map(function(x){return h("option",{key:x[0],value:x[0]},x[1]);}))) : null,
+      !isClass && cardinality === "many_to_many" ? h("div", { style:{marginBottom:8} },
+        h("input",{value:junctionTable,placeholder:"关联表名称",onChange:function(e){setJunctionTable(e.target.value);},style:{width:"100%",marginBottom:5}}),
+        h("input",{value:junctionSrc,placeholder:"关联表起点外键列",onChange:function(e){setJunctionSrc(e.target.value);},style:{width:"100%",marginBottom:5}}),
+        h("input",{value:junctionTgt,placeholder:"关联表终点外键列",onChange:function(e){setJunctionTgt(e.target.value);},style:{width:"100%"}})) : null,
       !isClass ? h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 } },
         h("div", null,
           h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "起点属性"),
@@ -166,7 +193,7 @@
         h("button", { className: "primary", disabled: busy, onClick: function () {
           var ops = [{ op: isClass ? "update_class" : "update_relation", ref: sel.ref,
             description: desc }].map(function (o) {
-            if (isClass) { o.label = label; } else { o.new_name = relName.trim(); o.source = relSrc; o.target = relTgt; o.source_property = srcCol; o.target_property = tgtCol; o.clear_source_property = !srcCol; o.clear_target_property = !tgtCol; }
+            if (isClass) { o.label = label; o.object_kind = objectKind; } else { o.new_name = relName.trim(); o.source = relSrc; o.target = relTgt; o.source_property = srcCol; o.target_property = tgtCol; o.clear_source_property = !srcCol; o.clear_target_property = !tgtCol; o.cardinality = cardinality; o.junction_table = junctionTable; o.junction_source_column = junctionSrc; o.junction_target_column = junctionTgt; }
             return o; });
           run(ops, "已保存并重建");
         } }, "保存"),
