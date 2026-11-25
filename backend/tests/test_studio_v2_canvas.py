@@ -183,3 +183,26 @@ def test_studio_session_json_snapshot_round_trip_preserves_schema_and_lineage():
         assert restored.ontology.links.number_of_edges() == sess.ontology.links.number_of_edges()
     finally:
         default_store.delete(sess.session_id)
+
+
+def test_studio_v2_database_store_restart_and_version_restore():
+    from app.modules.ontology.studio_v2.service import PersistentStudioV2Store
+
+    sess = _session()
+    restarted_store = PersistentStudioV2Store()
+    try:
+        sess.meta["canvas_layout"] = {"CLASS:Employee": {"x": 30.0, "y": 60.0}}
+        sess.touch()
+        version = default_store.create_version(sess.session_id, "baseline", "before edit")
+        sess.meta["canvas_layout"] = {"CLASS:Employee": {"x": 300.0, "y": 600.0}}
+        sess.touch()
+
+        restored_session = restarted_store.require(sess.session_id)
+        assert restored_session.meta["canvas_layout"]["CLASS:Employee"]["x"] == 300.0
+        versions = restarted_store.list_versions(sess.session_id)
+        assert versions[0]["id"] == version["id"]
+
+        restored_store.restore_version(sess.session_id, version["id"])
+        assert restarted_store.require(sess.session_id).meta["canvas_layout"]["CLASS:Employee"]["x"] == 30.0
+    finally:
+        default_store.delete(sess.session_id)
