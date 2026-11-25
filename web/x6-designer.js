@@ -62,6 +62,8 @@
     var edge = (!isClass && sel) ? graph.edges.find(function (e) { return e.id === sel.ref; }) : null;
     var node = (isClass && sel) ? graph.nodes.find(function (n) { return n.id === sel.ref; }) : null;
     var labelState = React.useState(isClass ? (node ? node.data.label : "") : ""), label = labelState[0], setLabel = labelState[1];
+    var propNameState = React.useState(""), propName = propNameState[0], setPropName = propNameState[1];
+    var sourceColState = React.useState(""), sourceCol = sourceColState[0], setSourceCol = sourceColState[1];
     var descState = React.useState(isClass ? (node ? node.data.desc : "") : (edge ? (edge.data && edge.data.desc || "") : "")), desc = descState[0], setDesc = descState[1];
     var relNameState = React.useState((!isClass && sel) ? sel.ref : ""), relName = relNameState[0], setRelName = relNameState[1];
     var relSrcState = React.useState(!isClass && edge ? edge.source.replace(/^CLASS:/, "") : ""), relSrc = relSrcState[0], setRelSrc = relSrcState[1];
@@ -87,6 +89,11 @@
       h("b", { style: { color: T.text } }, "共 " + graph.nodes.length + " 个类 · " + graph.edges.length + " 个关系"));
     return h("div", null,
       h("div", { style: { fontWeight: 700, marginBottom: 8, color: T.text } }, (isClass ? "类：" : "关系：") + sel.ref),
+      isClass && node && node.data.sourceInfo ? h("div", { style: { padding: 8, marginBottom: 8, borderRadius: 6, background: T.raised, fontSize: 11, color: T.sub } },
+        h("b", { style: { color: T.text } }, "上游数据源"),
+        h("div", null, "数据表：" + (node.data.sourceInfo.source_table || "—")),
+        h("div", null, "记录数：" + (node.data.sourceInfo.row_count ?? "—")),
+        h("div", null, "字段：" + (node.data.sourceInfo.columns || []).length + " 个")) : null,
       isClass ? h("div", { style: { marginBottom: 8 } },
         h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "中文名"),
         h("input", { value: label, onChange: function (e) { setLabel(e.target.value); }, style: { width: "100%", marginBottom: 6 } })) : null,
@@ -114,6 +121,16 @@
           h("label", { style: { display: "block", fontSize: 11, color: T.sub } }, "终点属性"),
           h("select", { value: tgtCol, onChange: function (e) { setTgtCol(e.target.value); }, style: { width: "100%" } },
             [h("option", { key: "", value: "" }, "—")].concat(clsProps(relTgt).map(function (p) { return h("option", { key: p, value: p }, p); }))))) : null,
+      isClass ? h("div", { style: { borderTop: "1px solid " + T.border, paddingTop: 9, marginTop: 8, marginBottom: 9 } },
+        h("b", { style: { display: "block", color: T.text, fontSize: 12, marginBottom: 6 } }, "属性与上游字段绑定"),
+        h("div", { style: { fontSize: 11, color: T.sub, marginBottom: 6 } }, (node.data.props || []).map(function (p) { return p + " ← " + p; }).join(" · ")),
+        h("input", { value: propName, placeholder: "新增属性名称", onChange: function (e) { setPropName(e.target.value); }, style: { width: "100%", marginBottom: 6 } }),
+        h("select", { value: sourceCol, onChange: function (e) { setSourceCol(e.target.value); }, style: { width: "100%", marginBottom: 6 } },
+          [h("option", { key: "", value: "" }, "不绑定上游字段")].concat(((node.data.sourceInfo || {}).columns || []).map(function (p) { return h("option", { key: p, value: p }, p); }))),
+        h("button", { className: "ghost", disabled: busy || !propName.trim(), onClick: function () {
+          run([{ op: "add_property", type_name: clsName(sel.ref), property_name: propName.trim(), source_column: sourceCol }], "属性已新增并保存");
+          setPropName(""); setSourceCol("");
+        } }, "新增属性")) : null,
       h("div", { style: { display: "flex", gap: 6 } },
         h("button", { className: "primary", disabled: busy, onClick: function () {
           var ops = [{ op: isClass ? "update_class" : "update_relation", ref: sel.ref,
@@ -161,6 +178,7 @@
 
     graph.nodes.forEach(function (n) {
       var props = (n.data.props || []).slice(0, 8);
+      var saved = (o.positions || {})[n.id] || {};
       var markup = [
         { tagName: "rect", selector: "body" },
         { tagName: "text", selector: "title" },
@@ -180,7 +198,7 @@
         attrs["prop" + i] = { text: "· " + p, fill: T.sub, fontSize: 11, refX: 12, refY: 52 + i * 16 };
       });
       graph6.addNode({
-        id: n.id, x: (pos[n.id] || { x: 0 }).x, y: (pos[n.id] || { y: 0 }).y,
+        id: n.id, x: Number.isFinite(saved.x) ? saved.x : (pos[n.id] || { x: 0 }).x, y: Number.isFinite(saved.y) ? saved.y : (pos[n.id] || { y: 0 }).y,
         width: nodeSize[n.id].width, height: nodeSize[n.id].height,
         markup: markup, attrs: attrs,
       });
@@ -216,6 +234,15 @@
     graph6.on("node:click", function (args) { setSelection({ kind: "class", ref: args.node.id }); });
     graph6.on("edge:click", function (args) { setSelection({ kind: "relation", ref: args.edge.id }); });
     graph6.on("blank:click", function () { setSelection(null); });
+    function persistLayout() {
+      if (typeof o.onLayoutChange !== "function") return;
+      var positions = {};
+      graph6.getNodes().forEach(function (node) {
+        var p = node.position(); positions[node.id] = { x: p.x, y: p.y };
+      });
+      Promise.resolve(o.onLayoutChange(positions)).catch(function () {});
+    }
+    graph6.on("node:mouseup", persistLayout);
     // Delete 键删除选中（X6 2.x 无 bindKey，用原生 keydown）
     var host = canvasHost;
     host.tabIndex = 0;
@@ -240,6 +267,7 @@
           graph.edges.map(function (e) { return { source: e.source, target: e.target }; }));
         graph.nodes.forEach(function (n) { var c = graph6.getCellById(n.id); if (c) c.position(p2[n.id].x, p2[n.id].y); });
         graph6.centerContent();
+        persistLayout();
       }),
       mkBtn("缩放适配", function () { graph6.zoomToFit({ padding: 40, maxScale: 1.5 }); }),
       mkBtn("导出 PNG", function () {
