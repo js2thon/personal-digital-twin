@@ -1013,7 +1013,7 @@ def eval_run_production(job_id: str, payload: EvalRunIn, request: Request):
     if job.get("status") not in ("published", "written"):
         raise HTTPException(409, "生产问答评测仅允许使用已发布的本体版本")
     materialized, snapshot = _production_snapshot(job, request)
-    F, L = mx.frames(materialized, job["draft"]["schema"])
+    F, L = _production_frames(materialized, job["draft"]["schema"])
     questions = payload.questions or job.get("eval_questions") or ev.generate(
         job["draft"]["schema"], F
     )
