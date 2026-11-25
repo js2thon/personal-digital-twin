@@ -1,4 +1,5 @@
 from app.api.v1 import (  # noqa: F401
+    ontology_mapping,
     documents,
     evaluation,
     knowledge,
