@@ -278,6 +278,10 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
     else:
         stable_source_ids = [None] * len(rows)
     track_source_records = sync_mode == "upsert" or mapping_set_has_relations
+    record_namespace = (
+        _normalize_source_namespace(f"{namespace}:{selected_table}")
+        if selected_table else namespace
+    )
     if not mappings and not junction_specs:
         raise ValueError("所选源表没有可执行的对象属性或关系映射")
     validation = validate_mappings(mappings, schema) if mappings else {"valid": True, "issues": []}
@@ -329,7 +333,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                             "WHERE tenant_id=:t AND mapping_name=:mn AND source_namespace=:ns "
                             "AND source_record_id=:sid AND entity_type=:et FOR UPDATE",
                             {"t": tenant_id, "mn": str(mapping_set.get("name") or ""),
-                             "ns": namespace, "sid": stable_source_id, "et": entity},
+                             "ns": record_namespace, "sid": stable_source_id, "et": entity},
                         )
                         if not source_state:
                             created_state = db.fetch_one(
@@ -340,7 +344,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                                 "ON CONFLICT (tenant_id, mapping_name, source_namespace, source_record_id, entity_type) "
                                 "DO NOTHING RETURNING id::text AS id",
                                 {"t": tenant_id, "mn": str(mapping_set.get("name") or ""),
-                                 "ns": namespace, "sid": stable_source_id, "et": entity,
+                                 "ns": record_namespace, "sid": stable_source_id, "et": entity,
                                  "rh": row_hash, "mc": mapping_checksum},
                             )
                             if created_state:
@@ -467,7 +471,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                     "WHERE tenant_id=:t AND mapping_name=:mn AND source_namespace=:ns "
                     "AND source_record_id=:sid AND entity_type=:et AND instance_id IS NOT NULL",
                     {"t": tenant_id, "mn": str(mapping_set.get("name") or ""),
-                     "ns": namespace, "sid": str(record_id), "et": target_type},
+                     "ns": _normalize_source_namespace(f"{namespace}:{table_name}"), "sid": str(record_id), "et": target_type},
                 )
                 if not target or not target.get("instance_id"):
                     raise ValueError(
@@ -578,7 +582,8 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
         "instances_updated": updated_instances,
         "sync_mode": sync_mode,
         "source_id_column": source_id_column,
-        "source_namespace": namespace,
+        "source_namespace": record_namespace,
+        "source_namespace_base": namespace,
         "source_table": selected_table,
         "relations_inserted": locals().get("relation_inserted", 0),
         "relations_skipped_idempotent": locals().get("relation_skipped", 0),
