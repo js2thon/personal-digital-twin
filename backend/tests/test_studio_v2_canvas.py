@@ -202,7 +202,7 @@ def test_studio_v2_database_store_restart_and_version_restore():
         versions = restarted_store.list_versions(sess.session_id)
         assert versions[0]["id"] == version["id"]
 
-        restored_store.restore_version(sess.session_id, version["id"])
+        restarted_store.restore_version(sess.session_id, version["id"])
         assert restarted_store.require(sess.session_id).meta["canvas_layout"]["CLASS:Employee"]["x"] == 30.0
     finally:
         default_store.delete(sess.session_id)
