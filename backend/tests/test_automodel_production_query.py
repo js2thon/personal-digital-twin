@@ -74,3 +74,31 @@ def test_production_snapshot_rejects_truncated_relation_reads(monkeypatch):
 
     assert exc.value.status_code == 409
     assert "relations_available" in exc.value.detail
+
+
+from app.api.v1.automodel import _production_frames
+
+
+def test_production_frames_include_empty_classes_and_relations():
+    schema = {
+        "entity_types": {
+            "Person": {"attributes": [{"name": "name"}]},
+            "Department": {"attributes": [{"name": "title"}]},
+        },
+        "relation_types": {
+            "works_at": {
+                "source": "Person", "target": "Department",
+                "cardinality": "many_to_one",
+            },
+            "collaborates_with": {
+                "source": "Person", "target": "Person",
+                "cardinality": "many_to_many",
+            },
+        },
+    }
+
+    frames, links = _production_frames({"entities": [], "facts": []}, schema)
+
+    assert list(frames["Person"].columns) == ["_id", "_name", "name", "works_at"]
+    assert list(frames["Department"].columns) == ["_id", "_name", "title"]
+    assert list(links["collaborates_with"].columns) == ["source", "target"]
