@@ -13,7 +13,8 @@ STAGES = ("profile", "business_object_discovery", "draft", "auto_fix", "map", "v
 
 
 def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
-        version: str | None = None, stop_after: str = "materialize") -> dict:
+        version: str | None = None, stop_after: str = "materialize",
+        schema_override: dict | None = None) -> dict:
     job = {"id": str(uuid.uuid4()), "source": ts.source_id, "source_kind": ts.kind,
            "stages": {}, "started_at": time.time(), "status": "running"}
 
@@ -35,6 +36,37 @@ def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
     draft = stage("draft", lambda: generator.generate(
         profiles, version or f"auto-{ts.source_id}-{job['id']}", existing_schema, llm,
         source_id=ts.source_id, discovery=discovery))
+    if schema_override:
+        # Studio edits are authoritative for this handoff. Keep the generated
+        # discovery evidence, but do not silently regenerate the edited schema.
+        override_schema = schema_override.get("schema")
+        override_class_map = schema_override.get("class_map")
+        if not isinstance(override_schema, dict) or not isinstance(override_class_map, dict):
+            raise ValueError("schema_override 必须包含 schema 与 class_map 对象")
+        required = {"entity_types", "relation_types", "attributes"}
+        if not required.issubset(override_schema):
+            raise ValueError("schema_override 缺少 entity_types/relation_types/attributes")
+        if set(override_class_map.values()) != set(override_schema.get("entity_types", {})):
+            raise ValueError("schema_override 的 class_map 与 entity_types 不一致")
+        draft["schema"] = copy.deepcopy(override_schema)
+        draft["class_map"] = copy.deepcopy(override_class_map)
+        draft["schema"]["schema_version"] = (
+            draft["schema"].get("schema_version") or
+            version or f"studio-v2-{job['id']}"
+        )
+        draft["schema"]["status"] = "draft"
+        draft["inferences"] = list(draft.get("inferences") or []) + [{
+            "kind": "schema_handoff", "ref": "studio_v2",
+            "confidence": 1.0,
+            "reason": "采用 Studio V2 已编辑的业务对象、属性、关系与字段绑定",
+        }]
+        draft["review"] = list(draft.get("review") or [])
+        draft["stats"] = {
+            "classes": len(draft["schema"].get("entity_types") or {}),
+            "relations": len(draft["schema"].get("relation_types") or {}),
+            "attributes": len(draft["schema"].get("attributes") or {}),
+            "needs_review": len(draft["review"]),
+        }
     draft["business_object_discovery"] = discovery
     job["draft"] = draft
     if stop_after == "draft":
