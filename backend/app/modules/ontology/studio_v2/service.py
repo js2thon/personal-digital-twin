@@ -40,6 +40,7 @@ class StudioSession:
             "updated_at": self.updated_at,
             "source_tables": self.source_tables,
             "primary_keys": self.primary_keys,
+            "source_info": self.meta.get("source_info", {}),
             **s,
         }
 
