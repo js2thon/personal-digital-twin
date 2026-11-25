@@ -654,6 +654,46 @@ def _production_snapshot(job: dict, request: Request, limit: int = 5000) -> tupl
     }
 
 
+@router.post("/automodel/jobs/{job_id}/metrics/evaluate-production")
+def evaluate_production(job_id: str, payload: EvalIn, request: Request):
+    """Evaluate the job's metric definitions against complete production instances."""
+    job = _job(job_id, request)
+    if job.get("status") not in ("published", "written"):
+        raise HTTPException(409, "生产指标计算仅允许使用已发布的本体版本")
+    materialized, snapshot = _production_snapshot(job, request)
+    F, L = mx.frames(materialized, job["draft"]["schema"])
+    ms, schema = (job.get("metrics") or {}).get("metrics") or {}, job["draft"]["schema"]
+    ids = payload.metric_ids or [
+        key for key, metric in ms.items()
+        if metric["kind"] != "derived" or metric.get("grain")
+    ]
+    out = {}
+    for mid in ids[:100]:
+        if mid not in ms:
+            raise HTTPException(404, f"指标不存在：{mid}")
+        if payload.dim and payload.dim not in (ms[mid].get("dims_allowed") or []):
+            out[mid] = {"error": "维度不适用"}
+            continue
+        try:
+            value = mx.evaluate(mid, ms, F, L, schema, payload.dim)
+        except Exception as exc:  # noqa: BLE001
+            out[mid] = {"error": f"{type(exc).__name__}: {exc}"[:200]}
+            continue
+        if hasattr(value, "to_dict"):
+            import numpy as np
+            value = value.replace([np.inf, -np.inf], np.nan).dropna()
+            out[mid] = {
+                "index": [str(index) for index in value.index],
+                "values": [float(item) for item in value.values],
+            }
+        else:
+            number = None if value is None else float(value)
+            out[mid] = {
+                "value": number if number is not None and math.isfinite(number) else None
+            }
+    return {"items": out, "snapshot": snapshot, "data_scope": "production"}
+
+
 @router.post("/automodel/jobs/{job_id}/ask-production")
 def ask_production(job_id: str, payload: AskIn, request: Request):
     """Answer from production semantic instances, never from Discovery samples."""
