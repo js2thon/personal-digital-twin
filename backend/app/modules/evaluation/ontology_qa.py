@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.db import session as db
-from app.modules.ontology.modelling import ontology_qa
+from app.modules.ontology import qa_compat as ontology_qa
 
 
 def _json(value: Any) -> str:
