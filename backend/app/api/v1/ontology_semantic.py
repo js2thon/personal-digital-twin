@@ -3,7 +3,7 @@
 所有端点挂在 /ontology/semantic/* 下，与既有 /ontology/*、/ontology/v2/* 零冲突。
 - 写端点：使用本模块的通用 owner 权限闸门 + 全局中间件 principal；
 - 读端点：principal 来自中间件，行级过滤走 app/policy.filter_rows；
-  按权限过滤，幂等键，结果持久化，决策 Trace。
+  所有查询均基于服务端 principal 进行权限过滤。
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def _principal(request: Request) -> dict:
 
 
 def _require_owner(request: Request) -> dict:
-    """语义本体写操作的通用权限闸门，不依赖 CQ 子系统。"""
+    """语义本体写操作的通用权限闸门。"""
     from app.policy import is_owner_class
 
     principal = _principal(request)
