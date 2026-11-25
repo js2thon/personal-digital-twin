@@ -976,6 +976,7 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
 
     for type_name, info in ontology.object_types.items():
         props = info.get("properties", [])
+        source_meta = ontology.data_mapping.get(type_name) or {}
         nodes.append({
             "id": f"CLASS:{type_name}",
             "kind": "class",
@@ -983,12 +984,13 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
             "primary_key": info["primary_key"],
             "properties": props,
             "description": info.get("description", ""),
-            "source": {
+            "source": ({
                 "source_table": type_name,
-                "source_kind": (ontology.data_mapping.get(type_name) or {}).get("source_kind", "unknown"),
-                "row_count": (ontology.data_mapping.get(type_name) or {}).get("row_count", 0),
-                "columns": (ontology.data_mapping.get(type_name) or {}).get("columns", []),
-            },
+                "source_kind": source_meta.get("source_kind", "unknown"),
+                "dataset_id": source_meta.get("dataset_id"),
+                "row_count": source_meta.get("row_count", 0),
+                "columns": source_meta.get("columns", []),
+            } if source_meta else None),
         })
         for prop in props:
             prop_id = f"PROP:{type_name}:{prop}"
