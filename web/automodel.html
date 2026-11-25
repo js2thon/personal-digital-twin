@@ -227,6 +227,12 @@ tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
         <input id="v2ObjectSearch" type="search" placeholder="搜索对象名称 / 标识…" aria-label="搜索业务对象">
         <button type="button" class="ghost" id="v2CompareSource" style="width:100%;margin:4px 0">检查上游数据变化</button>
         <div id="v2SourceDiff" class="hint" aria-live="polite"></div>
+        <div style="display:flex;gap:6px;margin:6px 0;flex-wrap:wrap">
+          <button type="button" id="v2CreateVersion">创建草案版本</button>
+          <select id="v2VersionList" aria-label="本体草案版本" style="min-width:120px;flex:1"><option value="">版本记录</option></select>
+          <button type="button" id="v2RestoreVersion">恢复版本</button>
+        </div>
+        <div id="v2VersionHint" class="hint" aria-live="polite"></div>
         <div class="v2-object-list" id="v2ObjectList"><div class="empty">选择或创建建模会话后加载对象</div></div>
         <div class="v2-rail-foot">点击对象定位画布节点；点击关系连线可在右侧编辑关系定义。拖动节点调整布局。</div>
       </aside>
@@ -234,7 +240,7 @@ tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
         <div class="v2-canvas-head"><div><h2>业务对象关系画布</h2><span class="hint">以业务对象为中心展示属性与对象关系</span></div><span class="pill">AntV X6 · Schema</span></div>
         <div class="v2-canvas-legend"><span><i class="v2-dot object"></i>业务对象</span><span><i class="v2-dot relation"></i>业务关系</span><span><i class="v2-dot property"></i>对象属性</span><span class="hint">Ctrl + 滚轮缩放 · 空白处框选 · Delete 删除</span></div>
         <div class="graph" id="v2Sg"></div>
-        <div class="v2-canvas-foot">拖拽和自动布局会保存节点坐标；目前仅保存在当前进程会话，服务重启后不保证保留。<span id="v2LayoutStatus">布局尚未修改</span></div>
+        <div class="v2-canvas-foot">拖拽和自动布局会将节点坐标持久化到数据库，重新打开或服务重启后可恢复。<span id="v2LayoutStatus">布局尚未修改</span></div>
       </section>
     </div>
     <div class="card"><h2>本体摘要</h2><div class="scroll" id="v2Summary" style="max-height:420px"></div></div>
@@ -559,7 +565,11 @@ function bindV2(){
  $('v2ObjectSearch').oninput=()=>renderV2ObjectList(V2_SCHEMA_GRAPH);
  $('v2AddObject').onclick=async()=>{try{if(!V2)throw new Error('请先打开建模会话');const name=prompt('业务对象标识（英文或规范标识）');if(!name)return;const pk=prompt('主键属性名称',name.replace(/[^a-zA-Z0-9]/g,'_').toLowerCase()+'_id');if(!pk)return;const r=await post(V2S()+'/schema/edit',{ops:[{op:'create_class',type_name:name.trim(),primary_key:pk.trim(),properties:[pk.trim()],description:'人工新增业务对象'}]});note('已新增业务对象：'+name);await openV2(V2);loadV2Sessions()}catch(e){note(e.message,true)}};
  $('v2CompareSource').onclick=async()=>{try{if(!V2)throw new Error('请先打开建模会话');const ds=$('v2Ds').value;if(!ds)throw new Error('请先选择新上传的数据集');const r=await post(V2S()+'/compare-dataset/'+encodeURIComponent(ds),{});const diffs=(r.table_diffs||[]).map(d=>d.table+': +'+d.added_columns.join(',')+' / -'+d.removed_columns.join(',')+' / 类型变化 '+d.type_changes.length+' / 行数 '+d.rows_before+'→'+d.rows_after);$('v2SourceDiff').textContent=r.message+' '+(r.added_tables.length?'新增表：'+r.added_tables.join(',')+'。 ':'')+(r.removed_tables.length?'移除表：'+r.removed_tables.join(',')+'。 ':'')+diffs.join('；');note(r.message,r.requires_review)}catch(e){$('v2SourceDiff').textContent=e.message;note(e.message,true)}};
+ $('v2CreateVersion').onclick=async()=>{try{if(!V2)throw new Error('请先打开建模会话');const label=prompt('版本名称（可留空自动编号）','');if(label===null)return;const noteText=prompt('版本说明（可留空）','')||'';const r=await post(V2S()+'/versions',{label,note:noteText});note('已创建本体草案版本 '+r.version.label);await loadV2Versions()}catch(e){note(e.message,true)}};
+ $('v2RestoreVersion').onclick=async()=>{try{if(!V2)throw new Error('请先打开建模会话');const versionId=$('v2VersionList').value;if(!versionId)throw new Error('请先选择要恢复的版本');if(!confirm('恢复将覆盖当前草案内容，确定继续吗？'))return;await post(V2S()+'/versions/'+encodeURIComponent(versionId)+'/restore',{});note('草案版本已恢复');await openV2(V2);await loadV2Versions()}catch(e){note(e.message,true)}};
+
 }
+async function loadV2Versions(){if(!V2)return;try{const r=await api(V2S()+'/versions');const items=r.versions||[];$('v2VersionList').innerHTML='<option value="">选择版本（'+items.length+'）</option>'+items.map(v=>'<option value="'+esc(v.id)+'">'+esc(v.label||('v'+v.version_no))+' · '+esc(String(v.created_at||'').slice(0,16))+'</option>').join('');$('v2VersionHint').textContent=items.length?'已保存 '+items.length+' 个草案版本；恢复操作只影响当前草案，不直接发布生产本体。':'尚无版本记录。'}catch(e){$('v2VersionHint').textContent='版本加载失败：'+e.message}}
 async function loadV2Datasets(){try{const r=await api('/automodel/datasets');const it=r.items||[];
  $('v2Ds').innerHTML=it.length?it.map(d=>`<option value="${esc(d.id)}">${esc(d.name)}（${(d.tables||[]).map(t=>esc(t.name)+' '+t.rows+'×'+t.cols).join('、')}）</option>`).join(''):'<option value="">（还没有落库数据集，请先在「1 数据源」上传）</option>';
  $('v2DsHint').textContent=it.length?`共 ${it.length} 个数据集可选。`:'还没有落库的数据集；请先在「1 数据源」上传文件。';
@@ -578,6 +588,7 @@ async function openV2(id){V2=id;$('v2Body').classList.remove('hidden');
   $('v2Summary').innerHTML='<ul style="margin:0;padding-left:18px">'+(s.object_types||[]).map(o=>`<li><code>${esc(o.name)}</code>：<b>${fmt(o.count)}</b> 个对象；主键 <code>${esc(o.primary_key||'—')}</code>；属性 ${o.properties.length} 个</li>`).join('')+'</ul><h3 style="margin-top:10px">关系定义</h3><table><tr><th>关系</th><th>源</th><th>目标</th><th>依据列</th></tr>'+(s.link_types||[]).map(l=>`<tr><td>${esc(l.name)}</td><td>${esc(l.source)}</td><td>${esc(l.target)}</td><td class="muted">${esc(l.source_property||'')}</td></tr>`).join('')+'</table>';
   // Schema 图：React Flow 编辑器（类节点 + 关系边，编辑后自动保存重建模）
   await renderV2Designer();
+  await loadV2Versions();
   // 导出链接
   $('v2Json').href=base()+V2S()+'/export.json';$('v2Owl').href=base()+V2S()+'/export.owl';
   // 已导入任务提示
