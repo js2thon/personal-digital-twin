@@ -1,9 +1,8 @@
 """可评估（V1.3 语义层方案 · 能力 6 · 验收自证）。
 
-四项语义层指标，全部照实计算、无数据时不编造（返回 None + 说明）：
+三项语义层指标，全部照实计算、无数据时不编造（返回 None + 说明）：
   1) constraint_violation_rate  —— 写入约束拒绝次数 / 总写入次数（语义写入审计）；
   2) relation_type_validity_rate —— 已落库权威边中通过类型约束的比率；
-  3) cq_regression_stability —— 最近一批回归运行 stable 比率 + 最近指纹；
   4) fact_alignment_consistency —— 实例↔Fact 一致性比率（alignment 模块）。
 
 另有 path_query_accuracy 的口径披露：现有 graph.py 的路径查询是「枚举」而非
@@ -21,7 +20,6 @@ def compute(tenant_id: str = "default", schema: dict | None = None) -> dict:
     return {
         "constraint_violation_rate": _write_violation_rate(tenant_id),
         "relation_type_validity_rate": _relation_validity(tenant_id, schema),
-        "cq_regression_stability": _regression_stability(tenant_id),
         "fact_alignment_consistency": alignment.consistency_metrics(tenant_id),
         "path_query_accuracy": {
             "available": False, "value": None,
@@ -66,16 +64,3 @@ def _relation_validity(tenant_id: str, schema: dict) -> dict:
             "rate": round(valid / len(edges), 4),
             "violation_edges": violations[:20],
             "violation_count": len(violations)}
-
-
-def _regression_stability(tenant_id: str) -> dict:
-    rows = store.db.fetch_all(
-        "SELECT stable, result_fingerprint, created_at FROM ontology.cq_regression_runs "
-        "WHERE tenant_id = :t ORDER BY created_at DESC LIMIT 20", {"t": tenant_id})
-    if not rows:
-        return {"runs": 0, "stable_rate": None,
-                "note": "尚无回归运行，先跑 POST /regression/{set}/run 建立基线"}
-    stable = sum(1 for r in rows if r["stable"])
-    return {"runs": len(rows), "stable": stable,
-            "stable_rate": round(stable / len(rows), 4),
-            "latest_fingerprint": rows[0]["result_fingerprint"]}
