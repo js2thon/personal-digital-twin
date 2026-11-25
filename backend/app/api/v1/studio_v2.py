@@ -527,6 +527,8 @@ class SchemaEditOp(BaseModel):
     label: str = ""
     description: str = ""
     source_property: str = ""
+    clear_source_property: bool = False
+    clear_target_property: bool = False
     new_name: str = ""
     source: str = ""
     target: str = ""
@@ -710,6 +712,8 @@ def schema_edit(session_id: str, body: SchemaEditRequest) -> Dict[str, Any]:
                 target=o.target,
                 target_property=o.target_property,
                 new_name=o.new_name,
+                clear_source_property=o.clear_source_property,
+                clear_target_property=o.clear_target_property,
             ):
                 done.append(f"更新关系 {o.new_name or o.ref}")
         elif o.op == "delete_relation":
