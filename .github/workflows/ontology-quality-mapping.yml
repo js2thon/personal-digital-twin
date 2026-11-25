@@ -103,6 +103,20 @@ jobs:
 
   ontology-tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: twin
+          POSTGRES_PASSWORD: twin
+          POSTGRES_DB: personal_twin
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U twin -d personal_twin"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
@@ -122,6 +136,7 @@ jobs:
           APP_ENV: dev
           CQ_V2_STORE: memory
           SHACL_MODE: warn
+          DATABASE_URL: postgresql+psycopg://twin:twin@127.0.0.1:5434/personal_twin
         run: >-
           python -m pytest -q
           tests/test_rdf_quality.py
