@@ -65,3 +65,45 @@ def test_studio_relation_editor_persists_cardinality_and_junction_binding():
 
     ontology.update_link_type("uses_material", cardinality="one_to_many")
     assert ontology.link_types["uses_material"]["cardinality"] == "one_to_many"
+
+
+
+def test_mapping_contract_uses_explicit_junction_columns_without_database_foreign_keys():
+    from app.modules.ontology.automodel.mapper import build_contract
+    from app.modules.ontology.automodel.profiler import TableProfile
+
+    profiles = {
+        "departments": TableProfile("departments", 2, ["id"], False, {"id": {}}, []),
+        "materials": TableProfile("materials", 2, ["id"], False, {"id": {}}, []),
+        "department_material": TableProfile(
+            "department_material", 3, ["dept_id", "material_id"], False,
+            {"dept_id": {}, "material_id": {}}, [],
+        ),
+    }
+    schema = {
+        "schema_version": "v1",
+        "entity_types": {
+            "Department": {"backing_sources": [{"source_id": "s", "table": "departments",
+                "primary_key": ["id"], "property_mappings": {}}]},
+            "Material": {"backing_sources": [{"source_id": "s", "table": "materials",
+                "primary_key": ["id"], "property_mappings": {}}]},
+        },
+        "relation_types": {
+            "uses_material": {
+                "cardinality": "many_to_many", "via_table": "department_material",
+                "junction_source_column": "dept_id", "junction_target_column": "material_id",
+                "junction_source_table": "departments", "junction_target_table": "materials",
+            }
+        },
+        "attributes": {},
+    }
+    contract = build_contract("s", {"schema": schema, "class_map": {
+        "departments": "Department", "materials": "Material",
+    }}, profiles)
+    link = contract["links"][0]
+    assert link["table"] == "department_material"
+    assert link["source_column"] == "dept_id"
+    assert link["target_column"] == "material_id"
+    assert link["source_table"] == "departments"
+    assert link["target_table"] == "materials"
+    assert link["explicit_binding"] is True
