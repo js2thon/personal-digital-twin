@@ -127,7 +127,14 @@
             [h("option", { key: "", value: "" }, "—")].concat(clsProps(relTgt).map(function (p) { return h("option", { key: p, value: p }, p); }))))) : null,
       isClass ? h("div", { style: { borderTop: "1px solid " + T.border, paddingTop: 9, marginTop: 8, marginBottom: 9 } },
         h("b", { style: { display: "block", color: T.text, fontSize: 12, marginBottom: 6 } }, "属性与上游字段绑定"),
-        h("div", { style: { fontSize: 11, color: T.sub, marginBottom: 6 } }, (node.data.props || []).map(function (p) { var m=(node.data.propertySources||{})[p]||{}; return p + " ← " + (m.source_table||"—") + "." + (m.source_column||p); }).join(" · ")),
+        h("div", { style: { display: "grid", gap: 5, marginBottom: 7 } }, (node.data.props || []).map(function (p) {
+          var m=(node.data.propertySources||{})[p]||{};
+          return h("div", { key:p, style:{display:"grid",gridTemplateColumns:"minmax(70px,1fr) minmax(100px,1.4fr) auto",gap:5,alignItems:"center"} },
+            h("span", { style:{fontSize:11,color:T.text,overflowWrap:"anywhere"} }, p),
+            h("select", { defaultValue:m.mapped?(m.source_column||p):"", style:{width:"100%",fontSize:11}, onChange:function(e){run([{op:"update_property",type_name:clsName(sel.ref),property_name:p,source_column:e.target.value,clear_source_mapping:!e.target.value}],"字段映射已更新")} },
+              [h("option",{key:"",value:""},"未绑定")].concat(((node.data.sourceInfo||{}).columns||[]).map(function(col){return h("option",{key:col,value:col},col)}))),
+            h("button",{className:"ghost",title:"删除属性",onClick:function(){if(confirm("删除属性 "+p+"？"))run([{op:"delete_property",type_name:clsName(sel.ref),property_name:p}],"属性已删除")}},"×"));
+        })),
         h("input", { value: propName, placeholder: "新增属性名称", onChange: function (e) { setPropName(e.target.value); }, style: { width: "100%", marginBottom: 6 } }),
         h("select", { value: sourceCol, onChange: function (e) { setSourceCol(e.target.value); }, style: { width: "100%", marginBottom: 6 } },
           [h("option", { key: "", value: "" }, "不绑定上游字段")].concat(((node.data.sourceInfo || {}).columns || []).map(function (p) { return h("option", { key: p, value: p }, p); }))),
