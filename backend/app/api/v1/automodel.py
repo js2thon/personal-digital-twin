@@ -724,6 +724,11 @@ def ask_production(job_id: str, payload: AskIn, request: Request):
     if job.get("status") not in ("published", "written"):
         raise HTTPException(409, "生产问答仅允许使用已发布的本体版本")
     materialized, snapshot = _production_snapshot(job, request)
+    if not materialized["entities"]:
+        return {
+            "ok": False, "error": "该本体版本暂无当前用户可见的生产实例",
+            "data_scope": "production", "evidence": {"production_snapshot": snapshot},
+        }
     F, L = _production_frames(materialized, job["draft"]["schema"])
     result = qa.ask(
         payload.question, job["draft"]["schema"],
@@ -1013,6 +1018,8 @@ def eval_run_production(job_id: str, payload: EvalRunIn, request: Request):
     if job.get("status") not in ("published", "written"):
         raise HTTPException(409, "生产问答评测仅允许使用已发布的本体版本")
     materialized, snapshot = _production_snapshot(job, request)
+    if not materialized["entities"]:
+        raise HTTPException(409, "当前用户可见的生产实例为空，无法执行生产问答评测")
     F, L = _production_frames(materialized, job["draft"]["schema"])
     questions = payload.questions or job.get("eval_questions") or ev.generate(
         job["draft"]["schema"], F
