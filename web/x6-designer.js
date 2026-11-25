@@ -64,6 +64,11 @@
     var labelState = React.useState(isClass ? (node ? node.data.label : "") : ""), label = labelState[0], setLabel = labelState[1];
     var propNameState = React.useState(""), propName = propNameState[0], setPropName = propNameState[1];
     var sourceColState = React.useState(""), sourceCol = sourceColState[0], setSourceCol = sourceColState[1];
+    var newRelNameState = React.useState(""), newRelName = newRelNameState[0], setNewRelName = newRelNameState[1];
+    var newRelSrcState = React.useState(""), newRelSrc = newRelSrcState[0], setNewRelSrc = newRelSrcState[1];
+    var newRelTgtState = React.useState(""), newRelTgt = newRelTgtState[0], setNewRelTgt = newRelTgtState[1];
+    var newRelSrcColState = React.useState(""), newRelSrcCol = newRelSrcColState[0], setNewRelSrcCol = newRelSrcColState[1];
+    var newRelTgtColState = React.useState(""), newRelTgtCol = newRelTgtColState[0], setNewRelTgtCol = newRelTgtColState[1];
     var descState = React.useState(isClass ? (node ? node.data.desc : "") : (edge ? (edge.data && edge.data.desc || "") : "")), desc = descState[0], setDesc = descState[1];
     var relNameState = React.useState((!isClass && sel) ? sel.ref : ""), relName = relNameState[0], setRelName = relNameState[1];
     var relSrcState = React.useState(!isClass && edge ? edge.source.replace(/^CLASS:/, "") : ""), relSrc = relSrcState[0], setRelSrc = relSrcState[1];
@@ -81,12 +86,27 @@
         .catch(function (e) { setMsg("失败：" + e.message); })
         .finally(function () { setBusy(false); });
     }
-    if (!sel) return h("div", { style: { color: T.sub, fontSize: 12, lineHeight: 1.9 } },
-      h("b", { style: { color: T.text } }, "操作说明"), h("br"),
-      "· 点击类节点 / 关系边 → 在此编辑", h("br"),
-      "· 选中后按 Delete → 删除（自动保存重建）", h("br"),
-      "· 拖动节点调整布局；Ctrl+滚轮缩放；空白处框选", h("br"),
-      h("b", { style: { color: T.text } }, "共 " + graph.nodes.length + " 个类 · " + graph.edges.length + " 个关系"));
+    if (!sel) return h("div", { style: { color: T.sub, fontSize: 12, lineHeight: 1.7 } },
+      h("b", { style: { color: T.text, display:"block", marginBottom:6 } }, "新增业务关系"),
+      h("input", { value:newRelName, placeholder:"关系标识（如 belongsTo）", onChange:function(e){setNewRelName(e.target.value);}, style:{width:"100%",marginBottom:6} }),
+      h("select", { value:newRelSrc, onChange:function(e){setNewRelSrc(e.target.value);setNewRelSrcCol("");}, style:{width:"100%",marginBottom:6} },
+        [h("option",{key:"",value:""},"选择关系起点")].concat(clsOptions.map(function(c){return h("option",{key:c,value:c},c);}))),
+      h("select", { value:newRelSrcCol, onChange:function(e){setNewRelSrcCol(e.target.value);}, style:{width:"100%",marginBottom:6} },
+        [h("option",{key:"",value:""},"选择起点字段")].concat(clsProps(newRelSrc).map(function(p){return h("option",{key:p,value:p},p);}))),
+      h("select", { value:newRelTgt, onChange:function(e){setNewRelTgt(e.target.value);setNewRelTgtCol("");}, style:{width:"100%",marginBottom:6} },
+        [h("option",{key:"",value:""},"选择关系终点")].concat(clsOptions.map(function(c){return h("option",{key:c,value:c},c);}))),
+      h("select", { value:newRelTgtCol, onChange:function(e){setNewRelTgtCol(e.target.value);}, style:{width:"100%",marginBottom:8} },
+        [h("option",{key:"",value:""},"选择终点字段")].concat(clsProps(newRelTgt).map(function(p){return h("option",{key:p,value:p},p);}))),
+      h("button", { className:"primary", disabled:busy||!newRelName.trim()||!newRelSrc||!newRelTgt, onClick:function(){
+        run([{op:"create_relation",new_name:newRelName.trim(),source:newRelSrc,target:newRelTgt,source_property:newRelSrcCol,target_property:newRelTgtCol,description:"由本体工作台创建"}],"关系已创建并重建实例边");
+        setNewRelName("");
+      } }, "创建关系"),
+      h("div", { style:{borderTop:"1px solid "+T.border,marginTop:12,paddingTop:10} },
+        h("b", { style:{color:T.text} }, "画布操作说明"), h("br"),
+        "· 点击对象或关系，在此编辑", h("br"),
+        "· Delete 删除选中元素", h("br"),
+        "· 拖动节点调整布局；Ctrl+滚轮缩放", h("br"),
+        "· " + graph.nodes.length + " 个对象 · " + graph.edges.length + " 个关系"));
     return h("div", null,
       h("div", { style: { fontWeight: 700, marginBottom: 8, color: T.text } }, (isClass ? "类：" : "关系：") + sel.ref),
       isClass && node && node.data.sourceInfo ? h("div", { style: { padding: 8, marginBottom: 8, borderRadius: 6, background: T.raised, fontSize: 11, color: T.sub } },
