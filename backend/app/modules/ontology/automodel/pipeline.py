@@ -60,7 +60,10 @@ def run(ts: TableSet, existing_schema: dict | None = None, llm=None,
             "confidence": 1.0,
             "reason": "采用 Studio V2 已编辑的业务对象、属性、关系与字段绑定",
         }]
-        draft["review"] = list(draft.get("review") or [])
+        # Generated review refs belong to the discarded auto-draft; carrying them
+        # forward would block a user-edited schema with stale class/property names.
+        # Current-schema structural and standards checks below remain authoritative.
+        draft["review"] = []
         draft["stats"] = {
             "classes": len(draft["schema"].get("entity_types") or {}),
             "relations": len(draft["schema"].get("relation_types") or {}),
