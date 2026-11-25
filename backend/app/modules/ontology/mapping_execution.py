@@ -290,7 +290,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
     _, attrs = _schema_parts(schema)
     attr_index = {(a["entity_type"], a["name"]): a for a in attrs}
     source_key = hashlib.sha256(
-        f"{source_sha256}:{mapping_set_id}".encode("utf-8")).hexdigest()
+        f"{source_sha256}:{mapping_set_id}:{selected_table or 'default'}".encode("utf-8")).hexdigest()
     run_id = None
     inserted_records, skipped_records, inserted_instances, updated_instances = 0, 0, 0, 0
     mapping_checksum = str(mapping_set.get("checksum") or _digest(definition))
@@ -358,7 +358,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                                     "WHERE tenant_id=:t AND mapping_name=:mn AND source_namespace=:ns "
                                     "AND source_record_id=:sid AND entity_type=:et FOR UPDATE",
                                     {"t": tenant_id, "mn": str(mapping_set.get("name") or ""),
-                                     "ns": namespace, "sid": stable_source_id, "et": entity},
+                                     "ns": record_namespace, "sid": stable_source_id, "et": entity},
                                 )
                         if not source_state:
                             raise RuntimeError("无法锁定稳定源记录，事务已中止")
