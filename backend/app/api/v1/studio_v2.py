@@ -149,6 +149,7 @@ def build_from_dataset(dataset_id: str) -> Dict[str, Any]:
     for mapping in sess.ontology.data_mapping.values():
         mapping["source_kind"] = "dataset"
         mapping["dataset_id"] = dataset_id
+    sess.touch()
     return {"ok": True, "session_id": sess.session_id, "name": name,
             "dataset_id": dataset_id, **sess.summary()}
 
