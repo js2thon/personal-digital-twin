@@ -538,6 +538,16 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                             "source_id": source_instance_id,
                             "target_id": target_instance_id,
                             "relation_type": relation_type,
+                            "properties": {
+                                "mapping_set_id": mapping_set_id,
+                                "mapping_version": int(mapping_set.get("version") or 1),
+                                "ingestion_run_id": run_id,
+                                "source_name": source_name,
+                                "source_table": selected_table,
+                                "source_row": row_index + 1,
+                                "source_column": relation.get("column"),
+                                "source_value": fk_value,
+                            },
                         }, auto_reasoning=False)
                         relation_inserted += 1
                 if junction_specs:
@@ -564,6 +574,18 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                             "source_id": source_instance_id,
                             "target_id": target_instance_id,
                             "relation_type": relation_type,
+                            "properties": {
+                                "mapping_set_id": mapping_set_id,
+                                "mapping_version": int(mapping_set.get("version") or 1),
+                                "ingestion_run_id": run_id,
+                                "source_name": source_name,
+                                "source_table": selected_table,
+                                "source_row": row_index + 1,
+                                "source_columns": {
+                                    "source": link.get("source_column"),
+                                    "target": link.get("target_column"),
+                                },
+                            },
                         }, auto_reasoning=False)
                         relation_inserted += 1
 
