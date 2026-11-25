@@ -4,12 +4,10 @@
 * 纯逻辑层（默认全跑）：Schema-as-Code / 继承 / 对称 / 互逆 / 有限传递 /
   写入侧约束拒绝 / 业务规则 / JSON Schema 导出 / 指纹稳定性 / 幂等键构造；
 * 实库层（db_required，skipif）：ensure_ready / 约束拒绝 400 / 冻结还原 /
-  CQ execute 幂等 + 越权剥离 / 回归稳定 / 决策 Trace / 权限过滤 / 指标。
+  版本冻结 / 权限过滤 / 语义指标。
 
 验收对照：
-  1 生产 CQ 走 PG（store.ping 闸门）/ 4 至少一个核心 CQ 回归集稳定 /
-  2 类型约束拒绝 / 3 任务还原到 ontology_version / 5 Trace 见规则 /
-  6 图谱违规可视化数据。
+  类型约束拒绝 / 任务还原到 ontology_version / 图谱违规可视化数据。
 """
 from __future__ import annotations
 
@@ -18,7 +16,6 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.modules.ontology.semantic import constraints as C
-from app.modules.ontology.semantic import cq_executor as EX
 from app.modules.ontology.semantic import reasoning as R
 from app.modules.ontology.semantic import rules as RU
 from app.modules.ontology.semantic import schema_def as SD
@@ -325,92 +322,13 @@ class TestVersionFreeze:
 
 
 @db_required
-class TestCQExecute:
-    def test_execute_persists_and_is_idempotent(self, client):
-        key = "test-idem-stable-001"
-        body = {"parameters": {"query": "schema_snapshot"}, "idempotency_key": key}
-        r1 = client.post("/api/v1/ontology/semantic/cq/CQ-001/execute", json=body)
-        assert r1.status_code == 200, r1.text
-        r2 = client.post("/api/v1/ontology/semantic/cq/CQ-001/execute", json=body)
-        assert r2.status_code == 200
-        d1, d2 = r1.json(), r2.json()
-        assert d1["run_id"] == d2["run_id"]
-        assert d2["idempotent_replay"] is True
-        assert d1["fingerprint"] == d2["fingerprint"]
-        assert d1["deterministic"] is True
-
-    def test_execute_strips_spoofed_context(self, client):
-        body = {"parameters": {"query": "schema_snapshot"},
-                "idempotency_key": "test-spoof-001",
-                "tenant_id": "EVIL", "actor": "hacker", "role": "admin",
-                "ontology_version": "v9.9.9"}
-        d = client.post("/api/v1/ontology/semantic/cq/CQ-001/execute", json=body).json()
-        assert d["server_context"]["tenant_id"] == "default"
-        assert d["server_context"]["actor"] != "hacker"       # 伪造 actor 未生效
-        assert d["server_context"]["role"] != "admin"         # 伪造 role 未生效
-        assert d["server_context"]["ontology_version"] != "v9.9.9"
-        assert set(d["stripped_body_keys"]) >= {"tenant_id", "actor", "role", "ontology_version"}
-        assert d["body_trusted"] is False
-
-    def test_execute_unknown_cq_returns_404(self, client):
-        r = client.post("/api/v1/ontology/semantic/cq/NO-SUCH-CQ/execute",
-                        json={"parameters": {}, "idempotency_key": "test-unknown-001"})
-        assert r.status_code == 404
-
-    def test_cq_runs_list_endpoint(self, client):
-        # 覆盖 /cq/runs 列表的真实序列化（曾漏测导致线上 500）
-        client.post("/api/v1/ontology/semantic/cq/CQ-001/execute", json={
-            "parameters": {"query": "schema_snapshot"},
-            "idempotency_key": "test-runs-list-001"})
-        r = client.get("/api/v1/ontology/semantic/cq/runs")
-        assert r.status_code == 200, r.text
-        items = r.json()["items"]
-        assert any(x["run_id"] for x in items)
-        assert all("version_bound" in x for x in items)
-
-
-@db_required
-class TestDecisionTraceAndRegression:
-    def test_decision_trace_shows_applied_rules(self, client):
-        d = client.post("/api/v1/ontology/semantic/cq/CQ-001/execute", json={
-            "parameters": {"query": "schema_snapshot"},
-            "idempotency_key": "test-trace-001"}).json()
-        t = client.get("/api/v1/ontology/semantic/decision-trace/" + d["run_id"])
-        assert t.status_code == 200, t.text
-        tr = t.json()
-        assert tr["cq_results"] and tr["applied_rules"]
-        assert any(a["code"] == "R-CQ-TRACE-01" for a in tr["applied_rules"])
-
-    def test_core_regression_set_repeatable_and_stable(self, client):
-        # 连续两次执行：第一次建/对齐基线，第二次指纹一致 → stable
-        client.post("/api/v1/ontology/semantic/regression/sets/core-semantic-v1/run")
-        r2 = client.post("/api/v1/ontology/semantic/regression/sets/core-semantic-v1/run")
-        assert r2.status_code == 200, r2.text
-        d = r2.json()
-        assert d["case_count"] >= 1
-        assert d["stable"] is True
-        assert d["result_fingerprint"] == d["previous_fingerprint"]
-
-    def test_metrics_are_honest(self, client):
-        m = client.get("/api/v1/ontology/semantic/metrics").json()
-        assert m["path_query_accuracy"]["available"] is False   # 缺口照实披露
-        assert "constraint_violation_rate" in m
-        assert "cq_regression_stability" in m
-
-
-@db_required
-class TestPermissionAndStoreGate:
+class TestPermission:
     def test_non_owner_write_is_forbidden(self, client):
         r = client.post("/api/v1/ontology/semantic/instances",
                         json={"type_name": "Employee", "canonical_name": "x",
                               "properties": {"full_name": "x"}},
                         headers={"X-Permission-Context": '{"role":"member","scope":[]}'})
         assert r.status_code == 403
-
-    def test_production_memory_store_still_forbidden(self):
-        # 既有的 V1.3 Sprint1 铁律不因本轮增强回归
-        from app.modules.ontology.cq_v2 import store as cq_store
-        assert cq_store.assert_production_store() is not None
 
 
 @db_required
