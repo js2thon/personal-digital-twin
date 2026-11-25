@@ -35,12 +35,28 @@ def build_contract(source_id: str, draft: dict, profiles: dict[str, TableProfile
         for rn, r in rels.items():
             if r.get("table") == t and r["cardinality"] == "many_to_one":
                 fk = next((fk for fk in p.foreign_keys if fk["column"] == r["column"]), None)
-                if fk:
-                    m["relations"].append({
+                target_table = (fk or {}).get("ref_table") or r.get("target_table")
+                target_profile = profiles.get(target_table)
+                target_column = r.get("target_column")
+                if not target_column and target_profile and target_profile.primary_key:
+                    target_column = target_profile.primary_key[0]
+                explicit_binding = bool(
+                    not fk and target_table and target_profile
+                    and r.get("column") in (p.columns or {})
+                    and target_column in (target_profile.columns or {})
+                    and target_column in (target_profile.primary_key or [])
+                )
+                if fk or explicit_binding:
+                    relation = {
                         "type": rn, "column": r["column"], "target": r["target"],
-                        "target_table": fk["ref_table"],
-                        "target_id": f"{source_id}:{fk['ref_table']}:" + "{value}",
-                        "by": "external_id"})
+                        "target_table": target_table,
+                        "target_id": f"{source_id}:{target_table}:" + "{value}",
+                        "by": "external_id",
+                    }
+                    if explicit_binding:
+                        relation["explicit_binding"] = True
+                        relation["target_column"] = target_column
+                    m["relations"].append(relation)
         mappings.append(m)
     links = []
     for rn, r in rels.items():
@@ -167,8 +183,17 @@ def validate_contract(contract: dict, schema: dict,
                            if x.get("column") == r.get("column")
                            and x.get("ref_table") == target_table), None)
                 if not fk:
-                    issue(table, "RELATION_FK_MISMATCH",
-                          f"关系 {rn} 的字段 {r.get('column')} 并非指向 {target_table} 的有效外键")
+                    target_profile = profile_map.get(target_table)
+                    target_column = r.get("target_column")
+                    explicit_ok = bool(
+                        r.get("explicit_binding") and target_profile
+                        and r.get("column") in (p.columns or {})
+                        and target_column in (target_profile.columns or {})
+                        and target_column in (target_profile.primary_key or [])
+                    )
+                    if not explicit_ok:
+                        issue(table, "RELATION_FK_MISMATCH",
+                              f"关系 {rn} 的字段 {r.get('column')} 并非指向 {target_table} 的有效外键，且未提供可验证的显式字段绑定")
             if not r.get("target_id") or "{value}" not in str(r.get("target_id")):
                 issue(table, "INVALID_RELATION_TARGET_ID",
                       f"关系 {rn} 缺少有效的目标实例 ID 模板")
