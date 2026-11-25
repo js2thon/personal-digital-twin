@@ -346,7 +346,7 @@ app.include_router(projection.router, prefix=API, tags=["projection"])
 app.include_router(audit_api.router, prefix=API, tags=["security-audit"])
 # V1.3 换栈 Phase 0：只读 IdentityContext + CQ 存储健康检查
 app.include_router(platform.router, prefix=API, tags=["platform"])
-# Ontology 语义层增强：Schema/约束/推理/规则/版本冻结/CQ execute/回归集/评估
+# Ontology 语义层增强：Schema/约束/推理/规则/版本冻结/回归集/评估
 app.include_router(ontology_semantic.router, prefix=API, tags=["ontology-semantic"])
 # 向量本体 P0：向量召回自检（强制词法 0 命中，验证向量独立召回）
 app.include_router(retrieval.router, prefix=API, tags=["retrieval"])
