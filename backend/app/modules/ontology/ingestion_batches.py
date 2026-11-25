@@ -130,6 +130,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
     """
     ensure_schema()
     namespace = _normalize_source_namespace(source_namespace)
+    snapshot_key = f"{snapshot_id}:{source_table}" if source_table else snapshot_id
     record_namespace = (
         _normalize_source_namespace(f"{namespace}:{source_table}")
         if source_table else namespace
@@ -147,12 +148,12 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
         if not started or not started.get("started_at"):
             raise RuntimeError("无法读取目标数据库时间，拒绝执行缺失记录对账")
         snapshot_started = started["started_at"]
-    base_sha = source_sha256 or _digest({"source": source_name, "snapshot": snapshot_id})
+    base_sha = source_sha256 or _digest({"source": source_name, "snapshot": snapshot_key})
     manifest = db.fetch_one(
         "SELECT source_sha256, batch_count, status FROM ontology.dataset_ingestion_snapshots "
         "WHERE tenant_id=:t AND mapping_set_id=CAST(:m AS uuid) "
         "AND source_namespace=:ns AND snapshot_id=:s",
-        {"t": tenant_id, "m": mapping_set_id, "ns": namespace, "s": snapshot_id})
+        {"t": tenant_id, "m": mapping_set_id, "ns": namespace, "s": snapshot_key})
     if manifest and manifest["source_sha256"] != base_sha:
         raise ValueError("同一 snapshot_id 的源快照指纹发生变化；请使用新的 snapshot_id")
     expected_batch_count = (
@@ -166,7 +167,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
             "(tenant_id, mapping_set_id, source_namespace, snapshot_id, source_sha256, status) "
             "VALUES (:t, CAST(:m AS uuid), :ns, :s, :h, 'running') "
             "ON CONFLICT (tenant_id, mapping_set_id, source_namespace, snapshot_id) DO NOTHING",
-            {"t": tenant_id, "m": mapping_set_id, "ns": namespace, "s": snapshot_id, "h": base_sha})
+            {"t": tenant_id, "m": mapping_set_id, "ns": namespace, "s": snapshot_key, "h": base_sha})
     summaries, offset, total_rows = [], 0, 0
 
     for batch_index, batch in _chunks(rows, size):
@@ -178,7 +179,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
             "WHERE tenant_id=:t AND mapping_set_id=CAST(:m AS uuid) "
             "AND source_namespace=:ns AND snapshot_id=:s AND batch_index=:i",
             {"t": tenant_id, "m": mapping_set_id, "ns": namespace,
-             "s": snapshot_id, "i": batch_index})
+             "s": snapshot_key, "i": batch_index})
         if checkpoint and checkpoint["batch_sha256"] != batch_sha:
             raise ValueError("同一 snapshot_id 的批次内容发生变化；请使用新的 snapshot_id")
         if checkpoint and checkpoint["status"] == "succeeded":
@@ -194,7 +195,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
                 "ON CONFLICT (tenant_id, mapping_set_id, source_namespace, snapshot_id, batch_index) "
                 "DO UPDATE SET status='running', error='{}'::jsonb, updated_at=now()",
                 {"t": tenant_id, "m": mapping_set_id, "ns": namespace,
-                 "s": snapshot_id, "i": batch_index, "h": batch_sha,
+                 "s": snapshot_key, "i": batch_index, "h": batch_sha,
                  "o": offset, "n": len(batch)})
             try:
                 result = execute_approved_dataset(
@@ -209,7 +210,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
                     "AND mapping_set_id=CAST(:m AS uuid) AND source_namespace=:ns "
                     "AND snapshot_id=:s AND batch_index=:i",
                     {"r": result["run_id"], "t": tenant_id, "m": mapping_set_id,
-                     "ns": namespace, "s": snapshot_id, "i": batch_index})
+                     "ns": namespace, "s": snapshot_key, "i": batch_index})
             except Exception as exc:
                 db.execute(
                     "UPDATE ontology.dataset_ingestion_checkpoints SET status='failed', "
@@ -218,7 +219,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
                     "AND snapshot_id=:s AND batch_index=:i",
                     {"e": json.dumps({"type": type(exc).__name__, "message": str(exc)[:1000]}),
                      "t": tenant_id, "m": mapping_set_id, "ns": namespace,
-                     "s": snapshot_id, "i": batch_index})
+                     "s": snapshot_key, "i": batch_index})
                 raise
 
         if sync_mode == "upsert":
@@ -256,10 +257,10 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
         "batch_count=:b, total_rows=:n, updated_at=now() WHERE tenant_id=:t "
         "AND mapping_set_id=CAST(:m AS uuid) AND source_namespace=:ns AND snapshot_id=:s",
         {"b": len(summaries), "n": total_rows, "t": tenant_id, "m": mapping_set_id,
-         "ns": namespace, "s": snapshot_id})
+         "ns": namespace, "s": snapshot_key})
 
     return {
-        "status": "succeeded", "snapshot_id": snapshot_id,
+        "status": "succeeded", "snapshot_id": snapshot_key,
         "source_namespace": namespace,
         "rows_received": total_rows, "batches": len(summaries),
         "runs": summaries, "reconcile_missing": reconcile_missing,
