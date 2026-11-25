@@ -1038,6 +1038,14 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
         source, target = info["source"], info["target"]
         if source not in ontology.object_types or target not in ontology.object_types:
             continue
+        source_property = info.get("source_property", "")
+        target_property = info.get("target_property", "")
+        source_map = ontology.object_types[source].get("property_mappings", {}).get(source_property)
+        target_map = ontology.object_types[target].get("property_mappings", {}).get(target_property)
+        source_column = source_map.get("source_column") if source_map is not None else source_property
+        target_column = target_map.get("source_column") if target_map is not None else target_property
+        source_columns = (ontology.data_mapping.get(source) or {}).get("columns", [])
+        target_columns = (ontology.data_mapping.get(target) or {}).get("columns", [])
         edges.append({
             "source": f"CLASS:{source}",
             "target": f"CLASS:{target}",
@@ -1046,16 +1054,15 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
             "description": info.get("description", ""),
             "source_binding": {
                 "source_table": source,
-                "source_column": info.get("source_property", ""),
+                "source_column": source_column or "",
+                "source_property": source_property,
                 "target_table": target,
-                "target_column": info.get("target_property", ""),
+                "target_column": target_column or "",
+                "target_property": target_property,
                 "source_dataset_id": (ontology.data_mapping.get(source) or {}).get("dataset_id"),
                 "target_dataset_id": (ontology.data_mapping.get(target) or {}).get("dataset_id"),
-                "mapped": bool(
-                    info.get("source_property") and info.get("target_property")
-                    and info.get("source_property") in (ontology.data_mapping.get(source) or {}).get("columns", [])
-                    and info.get("target_property") in (ontology.data_mapping.get(target) or {}).get("columns", [])
-                ),
+                "mapped": bool(source_column and target_column
+                               and source_column in source_columns and target_column in target_columns),
             },
         })
 
