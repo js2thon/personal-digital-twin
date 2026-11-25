@@ -90,9 +90,9 @@ class TestContractDeleteSurface:
         assert len(states) == 5  # 五个状态互不相同，archived 不是复用某个旧值
 
     def test_route_registered(self):
-        routes = {(getattr(r, "path", ""), tuple(sorted(getattr(r, "methods", ()) )))
-                  for r in app.routes}
-        assert ("/api/v1/structured/contracts/{contract_id}", ("DELETE",)) in routes
+        # Resolve deferred included routers through the generated OpenAPI route map.
+        methods = app.openapi()["paths"]["/api/v1/structured/contracts/{contract_id}"]
+        assert "delete" in methods
 
     def test_list_query_excludes_archived_by_default(self, monkeypatch):
         captured: list[str] = []
