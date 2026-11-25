@@ -10209,8 +10209,6 @@ loadView("ops");
   if (!view || !document.querySelector(`.tab[data-v="${view}"]`)) return;
   gotoView(view);
   const tab = q.get("tab");
-  // 旧深链接兼容：?view=ontology&tab=modelling 转发到独立的本体建模视图
-  if (view === "ontology" && tab === "modelling") gotoView("modelling");
   else if (view === "ontology" && tab) kgTab(tab);
 })();
 refreshBadges();
