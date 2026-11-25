@@ -85,7 +85,23 @@
     var relTgtState = React.useState(!isClass && edge ? edge.target.replace(/^CLASS:/, "") : ""), relTgt = relTgtState[0], setRelTgt = relTgtState[1];
     var srcColState = React.useState(!isClass && edge ? (edge.data && edge.data.source_property || "") : ""), srcCol = srcColState[0], setSrcCol = srcColState[1];
     var tgtColState = React.useState(!isClass && edge ? (edge.data && edge.data.target_property || "") : ""), tgtCol = tgtColState[0], setTgtCol = tgtColState[1];
-    React.useEffect(function () { setMsg(""); }, [sel && sel.ref]);
+    React.useEffect(function () {
+      setMsg("");
+      setLabel(isClass && node ? (node.data.label || "") : "");
+      setObjectKind(isClass && node ? (node.data.object_kind || "static_entity") : "static_entity");
+      setDesc(isClass ? (node ? node.data.desc || "" : "") : (edge ? edge.data && edge.data.desc || "" : ""));
+      setRelName(!isClass && sel ? sel.ref : "");
+      setRelSrc(!isClass && edge ? edge.source.replace(/^CLASS:/, "") : "");
+      setRelTgt(!isClass && edge ? edge.target.replace(/^CLASS:/, "") : "");
+      setSrcCol(!isClass && edge ? edge.data && edge.data.source_property || "" : "");
+      setTgtCol(!isClass && edge ? edge.data && edge.data.target_property || "" : "");
+      setCardinality(!isClass && edge ? edge.data && edge.data.cardinality || "many_to_one" : "many_to_one");
+      var jb = !isClass && edge ? edge.data && edge.data.junction_binding || {} : {};
+      setJunction(jb);
+      setJunctionTable(jb.table || "");
+      setJunctionSrc(jb.source_column || "");
+      setJunctionTgt(jb.target_column || "");
+    }, [sel && sel.ref]);
     function clsName(id) { return (id || "").replace(/^CLASS:/, ""); }
     function clsProps(id) { var n = graph.nodes.find(function (n) { return n.id === "CLASS:" + clsName(id); }); return n ? (n.data.props || []) : []; }
     var clsOptions = graph.nodes.map(function (n) { return clsName(n.id); });
