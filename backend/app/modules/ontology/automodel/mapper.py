@@ -61,10 +61,27 @@ def build_contract(source_id: str, draft: dict, profiles: dict[str, TableProfile
     links = []
     for rn, r in rels.items():
         if r["cardinality"] == "many_to_many":
-            p = profiles[r["via_table"]]
-            if len(p.foreign_keys) >= 2:
+            via_table = r.get("via_table") or r.get("junction_table")
+            p = profiles.get(via_table)
+            if not p:
+                continue
+            source_column = r.get("junction_source_column")
+            target_column = r.get("junction_target_column")
+            source_table = r.get("junction_source_table")
+            target_table = r.get("junction_target_table")
+            if source_column and target_column and source_table and target_table:
+                # Explicit Studio V2 junction binding is authoritative, including
+                # uploaded files where profiler cannot infer database foreign keys.
+                links.append({
+                    "table": via_table, "type": rn,
+                    "primary_key": list(p.primary_key or []),
+                    "source_column": source_column, "source_table": source_table,
+                    "target_column": target_column, "target_table": target_table,
+                    "by": "external_id", "explicit_binding": True,
+                })
+            elif len(p.foreign_keys) >= 2:
                 a, b = p.foreign_keys[:2]
-                links.append({"table": r["via_table"], "type": rn,
+                links.append({"table": via_table, "type": rn,
                               "primary_key": list(p.primary_key or []),
                               "source_column": a["column"], "source_table": a["ref_table"],
                               "target_column": b["column"], "target_table": b["ref_table"],

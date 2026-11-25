@@ -116,18 +116,29 @@ class Ontology:
         description: str = "",
         source_property: str = "",
         target_property: str = "",
+        cardinality: str = "many_to_one",
+        junction_table: str = "",
+        junction_source_column: str = "",
+        junction_target_column: str = "",
     ) -> None:
+        if cardinality not in {"one_to_one", "one_to_many", "many_to_one", "many_to_many"}:
+            raise ValueError(f"不支持的关系基数：{cardinality}")
         self.link_types[name] = {
             "source": source_type,
             "target": target_type,
             "description": description,
             "source_property": source_property,
             "target_property": target_property,
+            "cardinality": cardinality,
+            "junction_table": junction_table,
+            "junction_source_column": junction_source_column,
+            "junction_target_column": junction_target_column,
         }
 
     # ---------------- Schema 编辑（图编辑器用） ----------------
     def update_object_type(
-        self, type_name: str, label: str = "", description: str = ""
+        self, type_name: str, label: str = "", description: str = "",
+        object_kind: str = "",
     ) -> bool:
         """编辑类的中文名 / 描述。"""
         info = self.object_types.get(type_name)
@@ -137,6 +148,13 @@ class Ontology:
             info["label"] = label
         if description is not None:
             info["description"] = description
+        if object_kind:
+            aliases = {"static": "static_entity", "entity": "static_entity",
+                       "event": "transaction", "aggregate": "derived"}
+            normalized = aliases.get(object_kind, object_kind)
+            if normalized not in {"static_entity", "transaction", "derived"}:
+                raise ValueError(f"不支持的业务对象分类：{object_kind}")
+            info["object_kind"] = normalized
         return True
 
     def add_property(self, type_name: str, property_name: str, *,
@@ -244,6 +262,10 @@ class Ontology:
         new_name: str = "",
         clear_source_property: bool = False,
         clear_target_property: bool = False,
+        cardinality: str = "",
+        junction_table: str = "",
+        junction_source_column: str = "",
+        junction_target_column: str = "",
     ) -> bool:
         """编辑关系：名称 / 描述 / 起点 / 终点 / 起点属性 / 终点属性。
 
@@ -268,6 +290,16 @@ class Ontology:
             info["target_property"] = ""
         if description is not None:
             info["description"] = description
+        if cardinality:
+            if cardinality not in {"one_to_one", "one_to_many", "many_to_one", "many_to_many"}:
+                raise ValueError(f"不支持的关系基数：{cardinality}")
+            info["cardinality"] = cardinality
+        if junction_table:
+            info["junction_table"] = junction_table
+        if junction_source_column:
+            info["junction_source_column"] = junction_source_column
+        if junction_target_column:
+            info["junction_target_column"] = junction_target_column
         if new_name and new_name != name and new_name not in self.link_types:
             # 改名：迁移定义 + 边上的 relation_type/key
             self.link_types[new_name] = info
@@ -1010,6 +1042,7 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
             "label": info.get("label") or type_name,
             "primary_key": info["primary_key"],
             "properties": props,
+            "object_kind": info.get("object_kind", "static_entity"),
             "description": info.get("description", ""),
             "source": ({
                 "source_table": type_name,
@@ -1064,6 +1097,14 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
             "label": relation_name,
             "kind": "objectProperty",
             "description": info.get("description", ""),
+            "source_property": source_property,
+            "target_property": target_property,
+            "cardinality": info.get("cardinality", "many_to_one"),
+            "junction_binding": {
+                "table": info.get("junction_table", ""),
+                "source_column": info.get("junction_source_column", ""),
+                "target_column": info.get("junction_target_column", ""),
+            },
             "source_binding": {
                 "source_table": source,
                 "source_column": source_column or "",

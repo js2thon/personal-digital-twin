@@ -163,6 +163,11 @@ def _studio_v2_automodel_schema(sess, source_id: str) -> Dict[str, Any]:
     from app.modules.ontology.automodel import connectors
 
     ontology = sess.ontology
+    from app.modules.ontology.canonical_model import canonical_model_from_studio
+
+    canonical_model = canonical_model_from_studio(ontology, session_id=sess.session_id)
+    canonical_objects = {item["name"]: item for item in canonical_model["objects"]}
+    canonical_relations = {item["name"]: item for item in canonical_model["relationships"]}
     entity_types: Dict[str, Any] = {}
     relation_types: Dict[str, Any] = {}
     attributes: Dict[str, Any] = {}
@@ -234,7 +239,9 @@ def _studio_v2_automodel_schema(sess, source_id: str) -> Dict[str, Any]:
             "key": pk, "name_column": "",
             "attributes": object_attributes,
             "title_property": title_property,
-            "object_kind": "entity",
+            "object_kind": {
+                "static_entity": "entity", "transaction": "transaction", "derived": "association",
+            }.get(canonical_objects.get(type_name, {}).get("object_kind"), "entity"),
             "identity_rules": ([{
                 "source_system": source_id, "key_properties": [key_property],
                 "normalization": "trim", "priority": 100, "unique": True,
@@ -262,14 +269,34 @@ def _studio_v2_automodel_schema(sess, source_id: str) -> Dict[str, Any]:
         target_column = target_binding.get("source_column") or relation.get("target_property") or ""
         source_column = connectors._table_name(str(source_column)) if source_column else ""
         target_column = connectors._table_name(str(target_column)) if target_column else ""
-        relation_types[relation_name] = {
+        canonical_relation = canonical_relations.get(relation_name, {})
+        cardinality = canonical_relation.get("cardinality", "many_to_one")
+        relation_spec = {
             "label": relation.get("description") or relation_name,
             "source": source_type, "target": target_type,
-            "cardinality": "many_to_one",
+            "cardinality": cardinality,
             "table": source_tables[source_type], "column": source_column,
             "target_table": source_tables[target_type],
             "target_column": target_column,
         }
+        if cardinality == "many_to_many":
+            junction = canonical_relation.get("data_binding") or {}
+            relation_spec["via_table"] = connectors._table_name(
+                str(junction.get("junction_table") or "")
+            )
+            relation_spec["junction_source_column"] = connectors._table_name(
+                str(junction.get("junction_source_column") or "")
+            )
+            relation_spec["junction_target_column"] = connectors._table_name(
+                str(junction.get("junction_target_column") or "")
+            )
+            relation_spec["junction_source_table"] = connectors._table_name(
+                str(junction.get("source_table") or source_tables[source_type])
+            )
+            relation_spec["junction_target_table"] = connectors._table_name(
+                str(junction.get("target_table") or source_tables[target_type])
+            )
+        relation_types[relation_name] = relation_spec
 
     schema = {
         "schema_version": f"studio-v2-{sess.session_id}",
@@ -279,6 +306,19 @@ def _studio_v2_automodel_schema(sess, source_id: str) -> Dict[str, Any]:
         "validation_rules": {}, "status": "draft",
     }
     return {"schema": schema, "class_map": class_map}
+
+
+@router.get("/sessions/{session_id}/canonical-model")
+def get_canonical_business_object_model(session_id: str) -> Dict[str, Any]:
+    """Return the canonical business-object model used by Studio V2 handoff."""
+    try:
+        sess = _store().require(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    from app.modules.ontology.canonical_model import canonical_model_from_studio
+
+    return canonical_model_from_studio(sess.ontology, session_id=sess.session_id)
 
 
 @router.post("/sessions/{session_id}/to-automodel")
@@ -660,6 +700,7 @@ class SchemaEditOp(BaseModel):
     clear_source_mapping: bool = False
     label: str = ""
     description: str = ""
+    object_kind: str = ""
     source_property: str = ""
     clear_source_property: bool = False
     clear_target_property: bool = False
@@ -667,6 +708,10 @@ class SchemaEditOp(BaseModel):
     source: str = ""
     target: str = ""
     target_property: str = ""
+    cardinality: str = ""
+    junction_table: str = ""
+    junction_source_column: str = ""
+    junction_target_column: str = ""
 
 
 class SchemaEditRequest(BaseModel):
@@ -825,7 +870,8 @@ def schema_edit(session_id: str, body: SchemaEditRequest) -> Dict[str, Any]:
             onto.add_object_type(name, o.primary_key, props, o.description)
             done.append(f"新增对象 {name}")
         elif o.op == "update_class":
-            if onto.update_object_type(o.ref, label=o.label, description=o.description):
+            if onto.update_object_type(o.ref, label=o.label, description=o.description,
+                                       object_kind=o.object_kind):
                 done.append(f"更新类 {o.ref}")
         elif o.op == "delete_class":
             if onto.remove_object_type(o.ref):
@@ -853,8 +899,20 @@ def schema_edit(session_id: str, body: SchemaEditRequest) -> Dict[str, Any]:
                 raise HTTPException(400, f"起点属性不存在：{o.source}.{o.source_property}")
             if o.target_property and o.target_property not in onto.object_types[o.target].get("properties", []):
                 raise HTTPException(400, f"终点属性不存在：{o.target}.{o.target_property}")
-            onto.add_link_type(name, o.source, o.target, o.description,
-                               source_property=o.source_property, target_property=o.target_property)
+            cardinality = o.cardinality or "many_to_one"
+            if cardinality not in {"one_to_one", "one_to_many", "many_to_one", "many_to_many"}:
+                raise HTTPException(400, f"不支持的关系基数：{cardinality}")
+            if cardinality == "many_to_many" and not (
+                o.junction_table and o.junction_source_column and o.junction_target_column
+            ):
+                raise HTTPException(400, "多对多关系必须配置关联表及两端外键字段")
+            onto.add_link_type(
+                name, o.source, o.target, o.description,
+                source_property=o.source_property, target_property=o.target_property,
+                cardinality=cardinality, junction_table=o.junction_table,
+                junction_source_column=o.junction_source_column,
+                junction_target_column=o.junction_target_column,
+            )
             done.append(f"新增关系 {name}")
         elif o.op == "update_relation":
             current = onto.link_types.get(o.ref)
@@ -878,6 +936,10 @@ def schema_edit(session_id: str, body: SchemaEditRequest) -> Dict[str, Any]:
                 new_name=o.new_name,
                 clear_source_property=o.clear_source_property,
                 clear_target_property=o.clear_target_property,
+                cardinality=o.cardinality,
+                junction_table=o.junction_table,
+                junction_source_column=o.junction_source_column,
+                junction_target_column=o.junction_target_column,
             ):
                 done.append(f"更新关系 {o.new_name or o.ref}")
         elif o.op == "delete_relation":
