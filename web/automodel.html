@@ -117,6 +117,26 @@ a{color:var(--ax-info)}
 .edit .row>div{min-width:160px}
 tr.dirty td:first-child{box-shadow:inset 3px 0 var(--ax-warning,#c2410c)}
 tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
+
+.v2-modeling-layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:12px;align-items:stretch;margin-top:12px}
+.v2-object-rail{display:flex;flex-direction:column;min-width:0;min-height:640px}
+.v2-rail-head,.v2-canvas-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.v2-rail-head h2,.v2-canvas-head h2{margin:0 0 3px}
+.v2-object-rail input{width:100%;margin:12px 0 8px}
+.v2-object-list{display:grid;gap:5px;overflow:auto;max-height:620px;align-content:start}
+.v2-object-item{display:block;width:100%;padding:9px 10px;text-align:left;border:1px solid var(--ax-border);border-radius:9px;background:var(--ax-surface);color:var(--ax-text-primary);cursor:pointer}
+.v2-object-item:hover,.v2-object-item.active{border-color:var(--ax-info);background:var(--ax-surface-raised)}
+.v2-object-item b{display:block;font-size:12px;overflow-wrap:anywhere}
+.v2-object-item small{display:block;color:var(--ax-text-secondary);font-size:10px;margin-top:3px}
+.v2-rail-foot,.v2-canvas-foot{font-size:11px;color:var(--ax-text-secondary);line-height:1.6;margin-top:auto;padding-top:12px}
+.v2-canvas-card{min-width:0}
+.v2-canvas-legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:10px 0;color:var(--ax-text-secondary);font-size:11px}
+.v2-canvas-legend span{display:inline-flex;align-items:center;gap:6px}
+.v2-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.v2-dot.object{background:var(--ax-info)}.v2-dot.relation{background:#16a36a}.v2-dot.property{background:#d99a27}
+.v2-canvas-foot{margin-top:8px}
+@media(max-width:1050px){.v2-modeling-layout{grid-template-columns:190px minmax(0,1fr)}.v2-object-rail{min-height:560px}}
+@media(max-width:850px){.v2-modeling-layout{grid-template-columns:1fr}.v2-object-rail{min-height:0}.v2-object-list{max-height:220px;grid-template-columns:repeat(2,minmax(0,1fr))}.x6-designer-layout{grid-template-columns:1fr!important;height:auto!important}.x6-designer-layout>div:first-child{height:480px}.x6-designer-layout>div:last-child{max-height:340px}}
 </style>
 </head>
 <body>
@@ -200,8 +220,20 @@ tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
     <div class="card"><h2>进入流水线 <span class="hint">把当前会话导入 automodel 任务，打通 指标 / 问答 / 评测 / 版本</span></h2>
       <div class="row"><span class="hint auto" id="v2JobHint">尚未导入。导入后即可在「3 指标」「4 问答」「5 评测」「6 版本」中使用本会话的本体。</span>
         <button class="primary auto" id="btnV2ToJob">导入流水线（生成任务）</button></div></div>
-    <div class="card"><h2>对象关系图 <span class="hint">AntV X6 + dagre 自动布局 · 点击节点/边编辑 · 拖拽连线 · Delete 删除</span></h2>
-      <div class="graph" id="v2Sg"></div><div class="legend" id="v2SgLegend"></div></div>
+    <div class="v2-modeling-layout">
+      <aside class="card v2-object-rail">
+        <div class="v2-rail-head"><div><h2>业务对象</h2><span class="hint">自动发现 · 可视化选择</span></div><span class="pill" id="v2ObjectCount">0</span></div>
+        <input id="v2ObjectSearch" type="search" placeholder="搜索对象名称 / 标识…" aria-label="搜索业务对象">
+        <div class="v2-object-list" id="v2ObjectList"><div class="empty">选择或创建建模会话后加载对象</div></div>
+        <div class="v2-rail-foot">点击对象定位画布节点；点击关系连线可在右侧编辑关系定义。拖动节点调整布局。</div>
+      </aside>
+      <section class="card v2-canvas-card">
+        <div class="v2-canvas-head"><div><h2>业务对象关系画布</h2><span class="hint">以业务对象为中心展示属性与对象关系</span></div><span class="pill">AntV X6 · Schema</span></div>
+        <div class="v2-canvas-legend"><span><i class="v2-dot object"></i>业务对象</span><span><i class="v2-dot relation"></i>业务关系</span><span><i class="v2-dot property"></i>对象属性</span><span class="hint">Ctrl + 滚轮缩放 · 空白处框选 · Delete 删除</span></div>
+        <div class="graph" id="v2Sg"></div>
+        <div class="v2-canvas-foot">画布编辑会提交到当前建模会话；自动布局仅调整展示位置，不修改本体语义。</div>
+      </section>
+    </div>
     <div class="card"><h2>本体摘要</h2><div class="scroll" id="v2Summary" style="max-height:420px"></div></div>
     <div class="card"><h2>导出</h2>
       <div class="row"><a id="v2Json" class="hint">下载 JSON</a> <a id="v2Owl" class="hint">下载 OWL</a></div></div>
@@ -510,7 +542,7 @@ function bars(cats,vals){if(!cats.length)return '<span class="muted">没有数�
  return `<table>${p.map(([c,v],i)=>`<tr><td style="width:180px">${esc(c)}</td><td><div class="bar ${i?'dim':''}" style="width:${Math.max(1,v/mx*100)}%"></div></td><td class="num" style="width:90px">${fmt(v)}</td></tr>`).join('')}</table>`}
 
 // ---------------- 本体建模（Studio V2：/api/v1/studio-v2/*）
-let V2=null, V2_INIT=false;
+let V2=null, V2_INIT=false, V2_DESIGNER=null, V2_SCHEMA_GRAPH=null;
 const V2S=()=>'/studio-v2/sessions/'+encodeURIComponent(V2);
 function initV2(){if(!V2_INIT){V2_INIT=true;bindV2()}loadV2Sessions();loadV2Datasets()}
 function bindV2(){
@@ -521,6 +553,7 @@ function bindV2(){
   openV2(r.session_id);loadV2Sessions();
  })};
  $('btnV2Reload').onclick=loadV2Sessions;
+ $('v2ObjectSearch').oninput=()=>renderV2ObjectList(V2_SCHEMA_GRAPH);
 }
 async function loadV2Datasets(){try{const r=await api('/automodel/datasets');const it=r.items||[];
  $('v2Ds').innerHTML=it.length?it.map(d=>`<option value="${esc(d.id)}">${esc(d.name)}（${(d.tables||[]).map(t=>esc(t.name)+' '+t.rows+'×'+t.cols).join('、')}）</option>`).join(''):'<option value="">（还没有落库数据集，请先在「1 数据源」上传）</option>';
@@ -547,18 +580,30 @@ async function openV2(id){V2=id;$('v2Body').classList.remove('hidden');
  }catch(e){note(e.message,true)}}
 
 // ---------------- 对象关系图编辑器（AntV X6 图形引擎 + dagre 自动布局 + React 属性面板）
+function renderV2ObjectList(sg){
+ const list=$('v2ObjectList');if(!list)return;
+ const q=String($('v2ObjectSearch')?.value||'').trim().toLowerCase();
+ const nodes=(sg?.nodes||[]).filter(n=>n.kind==='class');
+ const visible=nodes.filter(n=>!q||String((n.label||'')+' '+n.id).toLowerCase().includes(q));
+ $('v2ObjectCount').textContent=String(nodes.length);
+ list.innerHTML=visible.map(n=>`<button type="button" class="v2-object-item" data-node="${esc(n.id)}"><b>${esc(n.label||n.id.replace(/^CLASS:/,''))}</b><small>${esc(n.id.replace(/^CLASS:/,''))} · ${(n.properties||[]).length} 个属性</small></button>`).join('')||'<div class="empty">没有匹配的业务对象</div>';
+ list.querySelectorAll('[data-node]').forEach(b=>b.onclick=()=>V2_DESIGNER?.select(b.dataset.node));
+}
 async function renderV2Designer(){
  const el=$('v2Sg');
  try{
+  if(V2_DESIGNER?.dispose)V2_DESIGNER.dispose();
+  V2_DESIGNER=null;
   if(!window.X6D)await (await import('/console/x6-designer.js')).ready;
   if(!window.X6D)throw new Error('X6 编辑器加载失败');
   const sg=await api(V2S()+'/schema-graph');
+  V2_SCHEMA_GRAPH=sg;renderV2ObjectList(sg);
   const classes=sg.nodes.filter(n=>n.kind==='class');
   const rels=sg.edges.filter(e=>e.kind!=='hasProperty');
   const nodes=classes.map(c=>({id:c.id,data:{label:c.label,props:c.properties||[],pk:c.primary_key,desc:c.description||''}}));
   const redges=rels.map(r=>({id:r.label||r.source+'_'+r.target,source:r.source,target:r.target,label:r.label,
    data:{desc:r.description||'',source_property:r.source_property||'',target_property:r.target_property||''}}));
-  window.X6D.designer(el,{nodes,edges:redges},{onEdit:v2SchemaEdit});
+  V2_DESIGNER=await window.X6D.designer(el,{nodes,edges:redges},{onEdit:v2SchemaEdit,onSelect:id=>{document.querySelectorAll('.v2-object-item').forEach(b=>b.classList.toggle('active',b.dataset.node===id));}});
  }catch(e){el.innerHTML='<div class="muted" style="padding:20px">编辑器加载失败：'+esc(e.message)+'</div>'}
 }
 async function v2SchemaEdit(ops){
