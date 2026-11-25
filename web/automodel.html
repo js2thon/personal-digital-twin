@@ -620,7 +620,7 @@ async function renderV2Designer(){
   const nodes=classes.map(c=>({id:c.id,data:{label:c.label,props:c.properties||[],pk:c.primary_key,desc:c.description||'',sourceInfo:c.source||null,propertySources:Object.fromEntries(sg.nodes.filter(p=>p.kind==='property'&&p.owner===c.id.replace(/^CLASS:/,'')).map(p=>[p.label,p.source||{}]))}}));
   const redges=rels.map(r=>({id:r.label||r.source+'_'+r.target,source:r.source,target:r.target,label:r.label,
    data:{desc:r.description||'',source_property:r.source_property||'',target_property:r.target_property||'',source_binding:r.source_binding||null}}));
-  V2_DESIGNER=await window.X6D.designer(el,{nodes,edges:redges},{positions:layout.positions||{},onEdit:v2SchemaEdit,onLayoutChange:positions=>post(V2S()+'/layout',{positions}).then(()=>{$('v2LayoutStatus').textContent=' · 布局已保存（当前会话）'}).catch(e=>note('画布布局保存失败：'+e.message,true)),onSelect:id=>{document.querySelectorAll('.v2-object-item').forEach(b=>b.classList.toggle('active',b.dataset.node===id));}});
+  V2_DESIGNER=await window.X6D.designer(el,{nodes,edges:redges},{positions:layout.positions||{},onEdit:v2SchemaEdit,onLayoutChange:positions=>post(V2S()+'/layout',{positions}).then(()=>{$('v2LayoutStatus').textContent=' · 布局已保存（数据库）'}).catch(e=>note('画布布局保存失败：'+e.message,true)),onSelect:id=>{document.querySelectorAll('.v2-object-item').forEach(b=>b.classList.toggle('active',b.dataset.node===id));}});
  }catch(e){el.innerHTML='<div class="muted" style="padding:20px">编辑器加载失败：'+esc(e.message)+'</div>'}
 }
 async function v2SchemaEdit(ops){
