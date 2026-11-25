@@ -253,7 +253,8 @@ def test_assistant_ask_degrades_when_llm_down():
         raise ConnectionError("refused")
     r = ASST.ask("测试", {"nodes": [], "edges": []}, chat=boom)
     assert r["available"] is False and r["fallback"] is True
-    assert "ConnectionError" in r["reason"] and r["answer"] == ""
+    assert "ConnectionError" in r["reason"]
+    assert r["answer"] and r["answer_source"] == "local-runtime"
 
 
 def test_assistant_ask_empty_question():
@@ -269,7 +270,8 @@ def test_api_assist_endpoint():
     # 无论 LLM 是否可达，结构完整、不编造：不可达时 available=False + reason
     assert "available" in j and "answer" in j and "fallback" in j
     if not j["available"]:
-        assert j["reason"] and j["answer"] == ""
+        assert j["reason"] and j["answer"]
+        assert j.get("answer_source") == "local-runtime"
 
 
 def test_selftest_includes_assistant():
