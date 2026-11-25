@@ -52,6 +52,7 @@ class DatasetExecuteIn(DatasetInspectIn):
     sync_mode: str = "append"
     source_id_column: str | None = None
     source_table: str | None = None
+    source_namespace: str = "default"
 
 class DatasetStreamExecuteIn(DatasetInspectIn):
     """完整文件快照按 <=500 行分批执行；缺失记录仅支持显式软停用。"""
@@ -62,6 +63,7 @@ class DatasetStreamExecuteIn(DatasetInspectIn):
     batch_size: int = 500
     reconcile_missing: bool = False
     source_table: str | None = None
+    source_namespace: str = "default"
 
 
 class DatabaseInspectIn(BaseModel):
@@ -254,7 +256,8 @@ def dataset_execute(payload: DatasetExecuteIn, request: Request):
             source_sha256=hashlib.sha256(raw).hexdigest(), actor=actor,
             max_rows=payload.max_rows, sync_mode=payload.sync_mode,
             source_id_column=payload.source_id_column,
-            source_table=payload.source_table)
+            source_table=payload.source_table,
+            source_namespace=payload.source_namespace)
         result["dataset"] = {k: v for k, v in parsed.items() if k != "rows"}
         return result
     except LookupError as exc:
@@ -297,7 +300,8 @@ def dataset_execute_stream(payload: DatasetStreamExecuteIn, request: Request):
             source_sha256=hashlib.sha256(raw).hexdigest(),
             sync_mode=payload.sync_mode, source_id_column=payload.source_id_column,
             batch_size=payload.batch_size, reconcile_missing=payload.reconcile_missing,
-            source_table=payload.source_table)
+            source_table=payload.source_table,
+            source_namespace=payload.source_namespace)
         result["dataset"] = {k: v for k, v in parsed.items() if k != "rows"}
         return result
     except HTTPException:
