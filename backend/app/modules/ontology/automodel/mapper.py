@@ -65,6 +65,7 @@ def build_contract(source_id: str, draft: dict, profiles: dict[str, TableProfile
             if len(p.foreign_keys) >= 2:
                 a, b = p.foreign_keys[:2]
                 links.append({"table": r["via_table"], "type": rn,
+                              "primary_key": list(p.primary_key or []),
                               "source_column": a["column"], "source_table": a["ref_table"],
                               "target_column": b["column"], "target_table": b["ref_table"],
                               "by": "external_id"})
