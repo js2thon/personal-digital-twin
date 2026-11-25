@@ -4,8 +4,6 @@
 - `/me` 的身份**只**来自 AC-01 全局中间件算出的 `request.state.principal`
   与 `request.state.semantic_context`，不读请求体、不接受任何提权字段；
   响应是只读归一化投影，客户端改响应也不能反向影响服务端判定。
-- `/health/cq-store` 把「当前是否真的在用 PostgreSQL」变成可查询事实，
-  同时报出 production 判定与降级原因，避免「验收时 PG、上线后 memory」。
 """
 from __future__ import annotations
 
