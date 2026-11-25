@@ -1097,6 +1097,8 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
             "label": relation_name,
             "kind": "objectProperty",
             "description": info.get("description", ""),
+            "source_property": source_property,
+            "target_property": target_property,
             "cardinality": info.get("cardinality", "many_to_one"),
             "junction_binding": {
                 "table": info.get("junction_table", ""),
