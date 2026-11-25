@@ -133,7 +133,8 @@
     var T = TH();
     el.innerHTML = "";
     var wrap = document.createElement("div");
-    wrap.style.cssText = "display:grid;grid-template-columns:1fr 280px;gap:12px;height:620px";
+    wrap.className = "x6-designer-layout";
+    wrap.style.cssText = "display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;height:min(72vh,760px);min-height:620px";
     var canvasHost = document.createElement("div");
     canvasHost.style.cssText = "position:relative;border:1px solid " + T.border + ";border-radius:10px;overflow:hidden;background:" + T.raised;
     var panelHost = document.createElement("div");
@@ -207,9 +208,14 @@
       }));
     }
     renderPanel();
-    graph6.on("node:click", function (args) { sel = { kind: "class", ref: args.node.id }; renderPanel(); });
-    graph6.on("edge:click", function (args) { sel = { kind: "relation", ref: args.edge.id }; renderPanel(); });
-    graph6.on("blank:click", function () { sel = null; renderPanel(); });
+    function setSelection(next) {
+      sel = next;
+      renderPanel();
+      if (typeof o.onSelect === "function") o.onSelect(sel ? sel.ref : null);
+    }
+    graph6.on("node:click", function (args) { setSelection({ kind: "class", ref: args.node.id }); });
+    graph6.on("edge:click", function (args) { setSelection({ kind: "relation", ref: args.edge.id }); });
+    graph6.on("blank:click", function () { setSelection(null); });
     // Delete 键删除选中（X6 2.x 无 bindKey，用原生 keydown）
     var host = canvasHost;
     host.tabIndex = 0;
@@ -241,7 +247,19 @@
       }));
     canvasHost.appendChild(bar);
 
-    return { graph: graph6, dispose: function () { graph6.dispose(); panelRoot.unmount(); el.innerHTML = ""; } };
+    return {
+      graph: graph6,
+      select: function (id) {
+        var cell = graph6.getCellById(id);
+        if (!cell) return false;
+        graph6.cleanSelection(); graph6.select(cell);
+        if (typeof graph6.centerCell === "function") graph6.centerCell(cell);
+        setSelection(cell.isNode() ? { kind: "class", ref: id } : { kind: "relation", ref: id });
+        return true;
+      },
+      fit: function () { graph6.zoomToFit({ padding: 40, maxScale: 1.5 }); },
+      dispose: function () { graph6.dispose(); panelRoot.unmount(); el.innerHTML = ""; }
+    };
   }
 
   window.X6D = { ready: ready, designer: designer };
