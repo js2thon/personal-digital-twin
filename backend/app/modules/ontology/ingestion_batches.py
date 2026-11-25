@@ -119,7 +119,8 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
                                     source_id_column: str | None = None,
                                     batch_size: int = MAX_EXECUTION_ROWS,
                                     reconcile_missing: bool = False,
-                                    source_namespace: str = "default") -> dict:
+                                    source_namespace: str = "default",
+                                    source_table: str | None = None) -> dict:
     """Execute one immutable full-source snapshot in resumable batches.
 
     snapshot_id must uniquely identify one immutable snapshot. Replaying the same
@@ -197,7 +198,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
                     source_name=f"{source_name}#snapshot:{snapshot_id}#batch:{batch_index}",
                     source_sha256=batch_sha, actor=actor, max_rows=size,
                     sync_mode=sync_mode, source_id_column=source_id_column,
-                    source_namespace=namespace)
+                    source_namespace=namespace, source_table=source_table)
                 db.execute(
                     "UPDATE ontology.dataset_ingestion_checkpoints SET status='succeeded', "
                     "run_id=CAST(:r AS uuid), updated_at=now() WHERE tenant_id=:t "
