@@ -137,7 +137,8 @@ class Ontology:
 
     # ---------------- Schema 编辑（图编辑器用） ----------------
     def update_object_type(
-        self, type_name: str, label: str = "", description: str = ""
+        self, type_name: str, label: str = "", description: str = "",
+        object_kind: str = "",
     ) -> bool:
         """编辑类的中文名 / 描述。"""
         info = self.object_types.get(type_name)
@@ -147,6 +148,13 @@ class Ontology:
             info["label"] = label
         if description is not None:
             info["description"] = description
+        if object_kind:
+            aliases = {"static": "static_entity", "entity": "static_entity",
+                       "event": "transaction", "aggregate": "derived"}
+            normalized = aliases.get(object_kind, object_kind)
+            if normalized not in {"static_entity", "transaction", "derived"}:
+                raise ValueError(f"不支持的业务对象分类：{object_kind}")
+            info["object_kind"] = normalized
         return True
 
     def add_property(self, type_name: str, property_name: str, *,
@@ -1034,6 +1042,7 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
             "label": info.get("label") or type_name,
             "primary_key": info["primary_key"],
             "properties": props,
+            "object_kind": info.get("object_kind", "static_entity"),
             "description": info.get("description", ""),
             "source": ({
                 "source_table": type_name,
@@ -1088,6 +1097,12 @@ def schema_graph_payload(ontology: Ontology) -> Dict[str, Any]:
             "label": relation_name,
             "kind": "objectProperty",
             "description": info.get("description", ""),
+            "cardinality": info.get("cardinality", "many_to_one"),
+            "junction_binding": {
+                "table": info.get("junction_table", ""),
+                "source_column": info.get("junction_source_column", ""),
+                "target_column": info.get("junction_target_column", ""),
+            },
             "source_binding": {
                 "source_table": source,
                 "source_column": source_column or "",
