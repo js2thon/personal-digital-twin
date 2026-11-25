@@ -131,10 +131,13 @@ def execution_mappings(contract: dict | None) -> list[dict]:
     rows = []
     for obj in binding.get("object_bindings") or []:
         for item in obj.get("property_maps") or []:
-            rows.append({
+            row = {
                 "entity_type": obj.get("object_type"),
                 "property": item.get("target_property"),
                 "source": item.get("source_column"),
-            })
+            }
+            if item.get("source_table"):
+                row["source_table"] = item["source_table"]
+            rows.append(row)
     return rows
 

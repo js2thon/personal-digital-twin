@@ -51,6 +51,8 @@ class DatasetExecuteIn(DatasetInspectIn):
     max_rows: int = 500
     sync_mode: str = "append"
     source_id_column: str | None = None
+    source_table: str | None = None
+    source_namespace: str = "default"
 
 class DatasetStreamExecuteIn(DatasetInspectIn):
     """完整文件快照按 <=500 行分批执行；缺失记录仅支持显式软停用。"""
@@ -60,6 +62,8 @@ class DatasetStreamExecuteIn(DatasetInspectIn):
     source_id_column: str | None = None
     batch_size: int = 500
     reconcile_missing: bool = False
+    source_table: str | None = None
+    source_namespace: str = "default"
 
 
 class DatabaseInspectIn(BaseModel):
@@ -251,7 +255,9 @@ def dataset_execute(payload: DatasetExecuteIn, request: Request):
             rows=parsed["rows"], source_name=payload.file_name,
             source_sha256=hashlib.sha256(raw).hexdigest(), actor=actor,
             max_rows=payload.max_rows, sync_mode=payload.sync_mode,
-            source_id_column=payload.source_id_column)
+            source_id_column=payload.source_id_column,
+            source_table=payload.source_table,
+            source_namespace=payload.source_namespace)
         result["dataset"] = {k: v for k, v in parsed.items() if k != "rows"}
         return result
     except LookupError as exc:
@@ -278,8 +284,6 @@ def dataset_execute_stream(payload: DatasetStreamExecuteIn, request: Request):
         raise HTTPException(400, "batch_size 必须在 1-500 之间")
     if payload.sync_mode not in ("append", "upsert"):
         raise HTTPException(400, "sync_mode 仅支持 append 或 upsert")
-    if payload.sync_mode == "upsert" and not payload.source_id_column:
-        raise HTTPException(400, "upsert 模式必须指定 source_id_column")
     if payload.reconcile_missing and payload.sync_mode != "upsert":
         raise HTTPException(400, "缺失记录对账仅支持 upsert 模式")
     try:
@@ -293,7 +297,9 @@ def dataset_execute_stream(payload: DatasetStreamExecuteIn, request: Request):
             snapshot_id=payload.snapshot_id, actor=actor,
             source_sha256=hashlib.sha256(raw).hexdigest(),
             sync_mode=payload.sync_mode, source_id_column=payload.source_id_column,
-            batch_size=payload.batch_size, reconcile_missing=payload.reconcile_missing)
+            batch_size=payload.batch_size, reconcile_missing=payload.reconcile_missing,
+            source_table=payload.source_table,
+            source_namespace=payload.source_namespace)
         result["dataset"] = {k: v for k, v in parsed.items() if k != "rows"}
         return result
     except HTTPException:

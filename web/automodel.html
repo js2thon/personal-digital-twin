@@ -243,6 +243,27 @@ tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
         <div class="v2-canvas-foot">拖拽和自动布局会将节点坐标持久化到数据库，重新打开或服务重启后可恢复。<span id="v2LayoutStatus">布局尚未修改</span></div>
       </section>
     </div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <div><h2>生产实例关系图</h2><span class="hint">读取已发布版本的真实语义实例与权威关系，不使用 Discovery 样本</span></div>
+        <div class="row" style="gap:6px"><button type="button" id="btnV2CreateMappingSet" disabled>生成正式映射草稿</button><button type="button" id="btnV2ProductionGraph" disabled>加载生产实例图</button></div>
+      </div>
+      <div id="v2ProductionGraph" class="graph" style="height:420px;margin-top:10px"><div class="empty">请先发布本体并导入生产实例</div></div>
+      <div id="v2ProductionGraphMeta" class="hint" aria-live="polite"></div>
+      <div id="v2IngestionPanel" class="card hidden" style="margin-top:12px;border:1px solid var(--ax-border)">
+        <h3>生产数据入库与关系投影</h3>
+        <div class="hint">先生成映射草稿并人工批准。多表数据请先导入被引用的目标表，再导入包含外键的源表；关联表用于生成多对多关系。</div>
+        <div class="row" style="margin-top:8px">
+          <select id="v2ProductionSourceTable" style="min-width:180px;flex:1"><option value="">选择源表</option></select>
+          <input id="v2ProductionFile" type="file" accept=".csv,.xlsx,.xls" style="flex:1">
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button type="button" id="btnV2ApproveMappingSet" class="ghost">人工批准映射版本</button>
+          <button type="button" id="btnV2ExecuteTable" class="primary">执行当前源表入库</button>
+          <span id="v2IngestionStatus" class="hint auto" aria-live="polite"></span>
+        </div>
+      </div>
+    </div>
     <div class="card"><h2>本体摘要</h2><div class="scroll" id="v2Summary" style="max-height:420px"></div></div>
     <div class="card"><h2>导出</h2>
       <div class="row"><a id="v2Json" class="hint">下载 JSON</a> <a id="v2Owl" class="hint">下载 OWL</a></div></div>
@@ -317,6 +338,7 @@ const store={get(k){try{return window.localStorage.getItem(k)}catch(e){return nu
 try{if(window.top!==window){document.body.classList.add('embedded');const th=window.top.document.documentElement.dataset.theme;if(th)document.documentElement.dataset.theme=th;
  const c=document.getElementById('connBox');if(c)c.classList.add('hidden')}}catch(e){}
 let REL_INIT=false;let JOB=null, OV=null, METRICS=null, FILES=[], ML=[];
+let PRODUCTION_MAPPING_SET=null;
 window.addEventListener('error',e=>note('页面脚本错误：'+(e.message||e.error),true));
 window.addEventListener('unhandledrejection',e=>{e.preventDefault();note('请求失败：'+((e.reason&&e.reason.message)||e.reason),true)});
 ['apiBase','apiKey'].forEach(k=>{$(k).value=store.get('os_'+k)||'';$(k).onchange=()=>store.set('os_'+k,$(k).value)});
@@ -343,11 +365,14 @@ $('btnDb').onclick=function(){busy(this,async()=>{const b={url:$('dbUrl').value.
 $('btnReload').onclick=loadJobs;
 async function loadJobs(){try{const r=await api('/automodel/jobs');$('jobList').innerHTML=(r.items||[]).map(j=>`<div data-id="${esc(j.id)}" class="${JOB&&JOB.id===j.id?'on':''}"><b>${esc(j.source_id||j.source)}</b> ${tag(j.status,j.status==='written'?'ok':j.status==='needs_review'?'warn':'')}<div class="muted">${esc(String(j.created_at||'').slice(0,16).replace('T',' '))} · ${esc(String(j.id).slice(0,8))}</div></div>`).join('')||'<span class="muted">暂无任务</span>';
  $('jobList').querySelectorAll('div[data-id]').forEach(d=>d.onclick=()=>openJob(d.dataset.id).then(()=>show('v2')).catch(e=>note(e.message,true)))}catch(e){$('jobList').innerHTML='<span class="muted">'+esc(e.message)+'</span>'}}
-async function openJob(id){JOB=await api(`/automodel/jobs/${id}?full=true`);METRICS=null;OV=null;ML=[];EVQ=null;EVR=null;$('work').classList.remove('hidden');$('empty').classList.add('hidden');REL_INIT=false;
+async function openJob(id){JOB=await api(`/automodel/jobs/${id}?full=true`);METRICS=null;OV=null;ML=[];EVQ=null;EVR=null;PRODUCTION_MAPPING_SET=null;$('work').classList.remove('hidden');$('empty').classList.add('hidden');REL_INIT=false;
+ if($('btnV2ProductionGraph'))$('btnV2ProductionGraph').disabled=!['published','written'].includes(JOB.status);
+ if($('btnV2CreateMappingSet'))$('btnV2CreateMappingSet').disabled=!['published','written'].includes(JOB.status);
  $('jobTitle').textContent=(JOB.source||'')+' · '+String(JOB.id).slice(0,8);
  const st=JOB.draft&&JOB.draft.stats||{};$('jobMeta').innerHTML=`${tag(JOB.status,JOB.status==='written'?'ok':JOB.status==='needs_review'?'warn':'')} 类 ${st.classes} · 关系 ${st.relations} · 属性 ${st.attributes} · 待审核 ${st.needs_review} · 版本 ${esc(JOB.schema_version||'未发布')}`;
  document.querySelectorAll('#jobList div[data-id]').forEach(d=>d.classList.toggle('on',d.dataset.id===JOB.id));
- try{OV=await api(J()+'/studio/overview')}catch(e){note(e.message,true)}}
+ try{OV=await api(J()+'/studio/overview')}catch(e){note(e.message,true)}
+ try{await refreshProductionMappingSet()}catch(e){note('映射版本状态读取失败：'+e.message,true)}}
 // ---------------- tabs
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 const TABS=['src','v2','metrics','ask','eval','ver','jobs'];
@@ -403,7 +428,8 @@ function renderMList(){const k=$('mKind').value,ms=Object.values(METRICS.metrics
  $('mList').querySelectorAll('tr[data-id]').forEach(tr=>tr.onclick=()=>pickMetric(tr.dataset.id))}
 async function pickMetric(id,dim){CURM=METRICS.metrics[id];$('mTitle').innerHTML=`${esc(CURM.label)} <span class="muted">${KIND[CURM.kind]} · ${esc(CURM.reason||'')}</span>`;
  const dims=CURM.kind==='derived'?[]:(CURM.dims_allowed||[]);$('mDim').innerHTML='<option value="">总量</option>'+dims.map(d=>`<option value="${esc(d)}" ${d===dim?'selected':''}>按 ${esc(d.replace(/__/g,' → '))}</option>`).join('');$('mDim').onchange=()=>pickMetric(id,$('mDim').value||undefined);
- const r=(await post(J()+'/metrics/evaluate',{metric_ids:[id],dim:dim||null})).items[id];$('mMeta').textContent=CURM.expr?'公式：'+CURM.expr:'';
+ const production=JOB&&['published','written'].includes(JOB.status);const metricPath=production?'/metrics/evaluate-production':'/metrics/evaluate';
+ const r=(await post(J()+metricPath,{metric_ids:[id],dim:dim||null})).items[id];$('mMeta').textContent=(production?'数据范围：生产语义实例 · ':'数据范围：Discovery 样本 · ')+(CURM.expr?'公式：'+CURM.expr:'');
  LAST=r;if(r.error){$('mChart').innerHTML=tag(r.error,'bad');showSmall();return}if(r.value!==undefined){$('mChart').innerHTML=`<div class="big-num">${fmt(r.value)}</div>`;showSmall();return}rcMetric(r);showSmall();if(ST2&&ST2.highlight)ST2.highlight(id)}
 
 // ---------------- 2D/3D 切换（本体图 / 实例图）
@@ -537,7 +563,7 @@ async function renderBig(){ST2&&ST2.dispose();ST2=null;const el=$('mBig3d');$('m
   const ds=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]);if(!ds.length){el.innerHTML='<div class="muted" style="padding:20px">没有可共享的维度</div>';return}
   if(!$('mMxDim').options.length){$('mMxDim').innerHTML=ds.map(d=>`<option value="${esc(d)}">按 ${esc(d.replace(/__/g,' → '))}（${cnt[d]} 个指标）</option>`).join('');$('mMxDim').onchange=renderBig}
   const dim=$('mMxDim').value,ids=ms.filter(m=>(m.dims_allowed||[]).includes(dim)).slice(0,10).map(m=>m.id);
-  el.innerHTML='<div class="muted" style="padding:20px">计算中…</div>';const r=(await post(J()+'/metrics/evaluate',{metric_ids:ids,dim})).items;
+  el.innerHTML='<div class="muted" style="padding:20px">计算中…</div>';const production=JOB&&['published','written'].includes(JOB.status);const metricPath=production?'/metrics/evaluate-production':'/metrics/evaluate';const r=(await post(J()+metricPath,{metric_ids:ids,dim})).items;
   const ok=ids.filter(i=>r[i]&&r[i].index);const tot={};ok.forEach(i=>r[i].index.forEach((c,k)=>tot[c]=(tot[c]||0)+Math.abs(r[i].values[k]||0)));
   const cols=Object.keys(tot).sort((a,b)=>tot[b]-tot[a]).slice(0,16);
   $('mBigHint').textContent=`${ok.length} 个指标 × ${cols.length} 个取值（取值按合计排序，最多 16）`;
@@ -605,6 +631,78 @@ function renderV2ObjectList(sg){
  list.innerHTML=visible.map(n=>`<button type="button" class="v2-object-item" data-node="${esc(n.id)}"><b>${esc(n.label||n.id.replace(/^CLASS:/,''))}</b><small>${esc(n.id.replace(/^CLASS:/,''))} · ${(n.properties||[]).length} 个属性 · 来源 ${esc(n.source?.source_table||'手工对象')}</small></button>`).join('')||'<div class="empty">没有匹配的业务对象</div>';
  list.querySelectorAll('[data-node]').forEach(b=>b.onclick=()=>V2_DESIGNER?.select(b.dataset.node));
 }
+async function refreshProductionMappingSet(){
+ if(!JOB)return;
+ const response=await api('/ontology/mapping/sets?name='+encodeURIComponent('automodel:'+JOB.id));
+ const item=(response.items||[])[0]||null;
+ PRODUCTION_MAPPING_SET=item;
+ const panel=$('v2IngestionPanel');
+ if(!panel)return;
+ panel.classList.toggle('hidden',!item);
+ $('btnV2CreateMappingSet').disabled=!!item||!['published','written'].includes(JOB.status);
+ $('btnV2ApproveMappingSet').disabled=!item||item.status!=='draft';
+ $('btnV2ExecuteTable').disabled=!item||item.status!=='approved';
+ $('v2IngestionStatus').textContent=item?`映射版本 v${item.version||1} · ${item.status}`:'尚未创建映射版本';
+ const tables=[...new Set([
+  ...((JOB.contract&&JOB.contract.mappings)||[]).map(m=>m.table).filter(Boolean),
+  ...((JOB.contract&&JOB.contract.links)||[]).map(m=>m.table).filter(Boolean)
+ ])];
+ $('v2ProductionSourceTable').innerHTML='<option value="">选择源表</option>'+tables.map(t=>'<option value="'+esc(t)+'">'+esc(t)+'</option>').join('');
+}
+$('btnV2CreateMappingSet').onclick=function(){busy(this,async()=>{
+ if(!JOB||!['published','written'].includes(JOB.status))throw new Error('请先选择已发布的本体任务');
+ const result=await post(`/automodel/jobs/${JOB.id}/mapping-set`,{});
+ await refreshProductionMappingSet();
+ $('v2ProductionGraphMeta').textContent=`已生成正式映射草稿：${result.name||'Automodel'} v${result.version||1} · ID ${result.id}。批准后可按源表分批导入。`;
+ note('已基于已发布本体创建映射草稿；尚未审批，也未写入数据');
+})};
+$('btnV2ApproveMappingSet').onclick=function(){busy(this,async()=>{
+ if(!PRODUCTION_MAPPING_SET)throw new Error('请先生成映射草稿');
+ const result=await post('/ontology/mapping/sets/'+PRODUCTION_MAPPING_SET.id+'/approve',{});
+ await refreshProductionMappingSet();
+ note('映射版本已批准：'+(result.version||1));
+})};
+$('btnV2ExecuteTable').onclick=function(){busy(this,async()=>{
+ if(!PRODUCTION_MAPPING_SET||PRODUCTION_MAPPING_SET.status!=='approved')throw new Error('请先人工批准映射版本');
+ const sourceTable=$('v2ProductionSourceTable').value;
+ const file=$('v2ProductionFile').files[0];
+ if(!sourceTable)throw new Error('请选择本次入库的源表');
+ if(!file)throw new Error('请选择源表数据文件');
+ const base64=await new Promise((resolve,reject)=>{
+  const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');
+  reader.onerror=()=>reject(new Error('读取文件失败'));reader.readAsDataURL(file);
+ });
+ const tableMapping=((JOB.contract&&JOB.contract.mappings)||[]).find(m=>m.table===sourceTable);
+ const junctionMapping=((JOB.contract&&JOB.contract.links)||[]).find(m=>m.table===sourceTable);
+ const keys=(tableMapping&&tableMapping.primary_key)||(junctionMapping&&junctionMapping.primary_key)||[];
+ const snapshotId=['ui',file.name,file.size,file.lastModified].join(':');
+ const result=await post('/ontology/mapping/dataset/execute-stream',{
+  mapping_set_id:PRODUCTION_MAPPING_SET.id,file_name:file.name,content_base64:base64,
+  source_table:sourceTable,source_namespace:'automodel:'+JOB.id,
+  snapshot_id:snapshotId,sync_mode:'upsert',source_id_column:keys.length===1?keys[0]:null,
+  batch_size:500,reconcile_missing:false
+ });
+ const totals=(result.runs||[]).reduce((a,r)=>({
+  instances:a.instances+(r.instances_inserted||0),
+  updated:a.updated+(r.instances_updated||0),
+  relations:a.relations+(r.relations_inserted||0),
+  skipped:a.skipped+(r.relations_skipped_idempotent||0)
+ }),{instances:0,updated:0,relations:0,skipped:0});
+ $('v2IngestionStatus').textContent=`入库完成：实例新增 ${totals.instances}、更新 ${totals.updated}、关系新增 ${totals.relations}、关系幂等跳过 ${totals.skipped}`;
+ $('v2ProductionFile').value='';
+ note('源表入库成功；运行 ID：'+result.run_id);
+})};
+$('btnV2ProductionGraph').onclick=function(){busy(this,async()=>{
+ if(!JOB||!['published','written'].includes(JOB.status))throw new Error('请先选择已发布的本体任务');
+ const result=await api(`/automodel/jobs/${JOB.id}/production/graph?limit=5000`);
+ const graph={
+  nodes:(result.nodes||[]).map(n=>({id:n.id,label:n.label,group:n.type})),
+  edges:(result.edges||[]).map(e=>({from:e.source,to:e.target,label:e.label,kind:'object_property'}))
+ };
+ if(!graph.nodes.length){$('v2ProductionGraph').innerHTML='<div class="empty">该本体版本暂无生产实例</div>'}
+ else forceGraph($('v2ProductionGraph'),graph);
+ $('v2ProductionGraphMeta').textContent=`版本 ${result.snapshot.ontology_version} · 实例 ${result.snapshot.records_visible} · 关系 ${result.snapshot.relations_visible}（完整读取）`;
+})};
 async function renderV2Designer(){
  const el=$('v2Sg');
  try{
@@ -645,8 +743,8 @@ $('btnAsk').onclick=ask;$('question').addEventListener('keydown',e=>{if(e.key===
 const ENG={ontology_graph:'本体图检索','ontology_graph+llm':'本体图检索 + LLM 依据作答',rule:'指标·规则解析','rule+llm':'指标·规则解析 + LLM 作答',llm:'指标·LLM 规划','llm+llm':'指标·LLM 规划 + LLM 作答',ontology_retrieval:'本体实例检索','ontology_retrieval+llm':'本体实例检索 + LLM 依据作答'};
 async function ask(){const q=$('question').value.trim();if(!q)return;$('question').value='';const c=$('chat');c.insertAdjacentHTML('beforeend',`<div class="q">${esc(q)}</div>`);
  const box=document.createElement('div');box.className='a';box.textContent='正在查询本体并生成回答…';c.appendChild(box);c.scrollTop=c.scrollHeight;
- try{const r=await post(J()+'/ask',{question:q,use_llm:$('useLlm').checked});if(!r.ok){box.innerHTML=esc(r.error)+(r.suggestions?'<div class="muted" style="margin-top:4px">可以试试：'+r.suggestions.slice(0,4).map(esc).join(' / ')+'</div>':'');return}
-  let h=`<div>${esc(r.answer)}</div>`;const rcid='qa'+Date.now();if(r.chart&&r.chart.categories)h+=`<div id="${rcid}" style="margin-top:8px"></div>`;
+ try{const production=JOB&&['published','written'].includes(JOB.status);const endpoint=production?'/ask-production':'/ask';const r=await post(J()+endpoint,{question:q,use_llm:$('useLlm').checked});if(!r.ok){box.innerHTML=esc(r.error)+(r.suggestions?'<div class="muted" style="margin-top:4px">可以试试：'+r.suggestions.slice(0,4).map(esc).join(' / ')+'</div>':'');return}
+  let h=(production?'<div class="muted">数据范围：已发布版本的生产语义实例</div>':'<div class="muted">数据范围：Discovery 样本预览</div>')+`<div>${esc(r.answer)}</div>`;const rcid='qa'+Date.now();if(r.chart&&r.chart.categories)h+=`<div id="${rcid}" style="margin-top:8px"></div>`;
   h+=`<details style="margin-top:6px"><summary>依据：${esc(ENG[r.engine]||r.engine)}${r.metric?' · 指标 '+esc(r.metric.label):''}</summary><pre>${esc(JSON.stringify(r.evidence||r.plan,null,2).slice(0,5000))}</pre>${r.sql?`<div class="muted">源库等价 SQL</div><pre>${esc(r.sql)}</pre>`:''}</details>`;box.innerHTML=h;if(r.chart&&r.chart.categories){const el=document.getElementById(rcid);RC.metric(el,{title:r.chart.title||'结果',categories:r.chart.categories,values:r.chart.data,height:280,count:true}).catch(()=>{el.innerHTML=bars(r.chart.categories,r.chart.data)})}}
  catch(e){box.innerHTML=tag(e.message,'bad')}c.scrollTop=c.scrollHeight}
 
@@ -659,7 +757,8 @@ function renderEvQ(){ $('evItems').innerHTML=`<table><tr><th>编号</th><th>题�
  $('evKpis').innerHTML=`<div class="kpi"><div class="n">${EVQ.length}</div><div class="l">题目数</div></div><div class="kpi"><div class="n">${new Set(EVQ.map(q=>q.kind)).size}</div><div class="l">题型数</div></div>`;$('evKinds').innerHTML='<span class="hint">运行评测后显示</span>'}
 $('btnEvGen').onclick=function(){busy(this,async()=>{const r=await post(J()+'/eval/questions',{n_per_type:+$('evN').value||3,seed:+$('evSeed').value||7});EVQ=r.items;EVR=null;renderEvQ();note(`已生成 ${r.total} 道评测题`)})};
 $('btnEvRun').onclick=function(){busy(this,async()=>{if(!EVQ){const g=await post(J()+'/eval/questions',{n_per_type:+$('evN').value||3,seed:+$('evSeed').value||7});EVQ=g.items}
- EVR=await post(J()+'/eval/run',{questions:EVQ,use_llm:$('evLlm').checked});renderEvR();note(`评测完成：${EVR.passed}/${EVR.total}，准确率 ${(EVR.accuracy*100).toFixed(1)}%`)})};
+ const production=JOB&&['published','written'].includes(JOB.status);const evalPath=production?'/eval/run-production':'/eval/run';
+ EVR=await post(J()+evalPath,{questions:EVQ,use_llm:$('evLlm').checked});renderEvR();note(`评测完成（${production?'生产数据':'Discovery 样本'}）：${EVR.passed}/${EVR.total}，准确率 ${(EVR.accuracy*100).toFixed(1)}%`)})};
 $('evFail').onchange=()=>EVR&&renderEvR();
 function renderEvR(){const R=EVR;$('evKpis').innerHTML=[['准确率',(R.accuracy*100).toFixed(1)+'%'],['通过',R.passed],['失败',R.total-R.passed],['题目数',R.total]].map(([l,n])=>`<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
  $('evKinds').innerHTML=`<table><tr><th>题型</th><th class="num">题数</th><th class="num">通过</th><th>准确率</th></tr>${Object.entries(R.by_kind).map(([k,b])=>`<tr><td>${esc(KIND_ZH[k]||k)}</td><td class="num">${b.total}</td><td class="num">${b.pass}</td><td><div class="row" style="flex-wrap:nowrap"><div style="flex:1"><div class="bar ${b.rate<1?'dim':''}" style="width:${Math.max(2,b.rate*100)}%"></div></div><span class="auto" style="width:52px;text-align:right">${(b.rate*100).toFixed(0)}%</span></div></td></tr>`).join('')}</table>`;

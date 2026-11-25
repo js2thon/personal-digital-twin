@@ -107,7 +107,12 @@ def test_database_snapshot_passes_namespaced_source_to_batch_pipeline(monkeypatc
     from app.modules.ontology import ingestion_batches as IB
     mapping_set = {
         "status": "approved", "checksum": "sum-1",
-        "definition": {"mappings": [{"source": "name", "entity_type": "customer", "property": "name"}]},
+        "definition": {"mappings": [{
+            "table": "customers", "class": "customer", "primary_key": ["id"],
+            "attributes": {"name": "name"},
+        }], "ontology_schema": {"entity_types": {
+            "customer": {"name": "customer", "attributes": [{"name": "name", "range": "string"}]}
+        }}},
     }
     monkeypatch.setattr(IB.mapping_registry, "get", lambda *a, **k: mapping_set)
     monkeypatch.setattr(database_connector, "stream_table_rows",
@@ -123,7 +128,8 @@ def test_database_snapshot_passes_namespaced_source_to_batch_pipeline(monkeypatc
         primary_key="id", snapshot_id="snapshot-1", actor="tester",
     )
     assert result["status"] == "succeeded"
-    assert captured["source_namespace"] == "db:crm:public.customers"
+    assert captured["source_namespace"] == "db:crm:public"
+    assert captured["source_table"] == "customers"
     assert captured["source_name"] == "db:crm:public.customers"
     assert captured["snapshot_id"] == "snapshot-1"
 

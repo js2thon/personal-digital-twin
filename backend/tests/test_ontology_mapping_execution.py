@@ -124,3 +124,78 @@ def test_source_namespace_rejects_empty_or_oversized_values():
         _normalize_source_namespace("   ")
     with pytest.raises(ValueError, match="500"):
         _normalize_source_namespace("x" * 501)
+
+
+def test_execution_contract_keeps_source_table_and_projects_relation_links():
+    from app.modules.ontology.mapping_contract import execution_mappings, to_binding
+
+    contract = {
+        "source": "hr",
+        "schema_version": "s1",
+        "mappings": [{
+            "table": "employees", "class": "Employee",
+            "primary_key": ["employee_id"],
+            "attributes": {"name": "employee_name"},
+            "relations": [{
+                "type": "works_for", "column": "department_id",
+                "target": "Department", "target_table": "departments",
+                "target_id": "hr:departments:{value}", "by": "external_id",
+            }],
+        }],
+        "links": [{
+            "table": "employee_projects", "primary_key": ["id"],
+            "type": "assigned_to", "source_table": "employees",
+            "source_column": "employee_id", "target_table": "projects",
+            "target_column": "project_id",
+        }],
+    }
+    binding = to_binding(contract, ontology_version="o1")
+    rows = execution_mappings({"ontology_binding": binding})
+
+    assert rows == [{
+        "entity_type": "Employee", "property": "name",
+        "source": "employee_name", "source_table": "employees",
+    }]
+    assert any(item["mapping_type"] == "join_table" for item in binding["link_maps"])
+
+
+def test_relation_execution_requires_explicit_source_table_for_multi_table_contract():
+    source = Path("app/modules/ontology/mapping_execution.py").read_text(encoding="utf-8")
+    assert 'raise ValueError("映射契约包含多张源表，请明确指定 source_table")' in source
+    assert "service._write_relation_in_transaction" in source
+    assert "ontology.instance_relations" in source
+    assert "relations_inserted" in source
+
+
+def test_relation_api_accepts_explicit_source_table():
+    source = Path("app/api/v1/ontology_mapping.py").read_text(encoding="utf-8")
+    assert "source_table: str | None = None" in source
+    assert "source_table=payload.source_table" in source
+
+
+def test_relation_ingestion_is_table_scoped_and_keeps_source_snapshot_state():
+    source = Path("app/modules/ontology/mapping_execution.py").read_text(encoding="utf-8")
+    assert 'f"{namespace}:{selected_table}"' in source
+    assert 'f"{namespace}:{table_name}"' in source
+    assert "source_active=TRUE" in source
+    assert "ADD COLUMN IF NOT EXISTS source_active BOOLEAN NOT NULL DEFAULT TRUE" in source
+    assert 'f"{source_sha256}:{mapping_set_id}:{selected_table or \'default\'}"' in source
+
+
+def test_streaming_execution_passes_source_table_to_each_batch():
+    source = Path("app/modules/ontology/ingestion_batches.py").read_text(encoding="utf-8")
+    assert "source_table: str | None = None" in source
+    assert "source_namespace=namespace, source_table=source_table" in source
+    assert 'snapshot_key = f"{snapshot_id}:{source_table}" if source_table else snapshot_id' in source
+
+
+def test_database_snapshot_uses_table_specific_contract_columns():
+    source = Path("app/modules/ontology/ingestion_batches.py").read_text(encoding="utf-8")
+    assert 'if item.get("table") == table_name' in source
+    assert 'source_table=table_name' in source
+    assert 'source_namespace = f"db:{profile_name}:{schema_name or \'default\'}"' in source
+
+
+def test_automodel_junction_mapping_preserves_primary_key():
+    source = Path("app/modules/ontology/automodel/mapper.py").read_text(encoding="utf-8")
+    assert '"primary_key": list(p.primary_key or [])' in source

@@ -119,7 +119,8 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
                                     source_id_column: str | None = None,
                                     batch_size: int = MAX_EXECUTION_ROWS,
                                     reconcile_missing: bool = False,
-                                    source_namespace: str = "default") -> dict:
+                                    source_namespace: str = "default",
+                                    source_table: str | None = None) -> dict:
     """Execute one immutable full-source snapshot in resumable batches.
 
     snapshot_id must uniquely identify one immutable snapshot. Replaying the same
@@ -129,6 +130,11 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
     """
     ensure_schema()
     namespace = _normalize_source_namespace(source_namespace)
+    snapshot_key = f"{snapshot_id}:{source_table}" if source_table else snapshot_id
+    record_namespace = (
+        _normalize_source_namespace(f"{namespace}:{source_table}")
+        if source_table else namespace
+    )
     size = max(1, min(int(batch_size), MAX_EXECUTION_ROWS))
     if reconcile_missing and (sync_mode != "upsert" or not source_id_column):
         raise ValueError("缺失记录对账仅支持提供稳定源记录 ID 的 upsert 模式")
@@ -142,12 +148,12 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
         if not started or not started.get("started_at"):
             raise RuntimeError("无法读取目标数据库时间，拒绝执行缺失记录对账")
         snapshot_started = started["started_at"]
-    base_sha = source_sha256 or _digest({"source": source_name, "snapshot": snapshot_id})
+    base_sha = source_sha256 or _digest({"source": source_name, "snapshot": snapshot_key})
     manifest = db.fetch_one(
         "SELECT source_sha256, batch_count, status FROM ontology.dataset_ingestion_snapshots "
         "WHERE tenant_id=:t AND mapping_set_id=CAST(:m AS uuid) "
         "AND source_namespace=:ns AND snapshot_id=:s",
-        {"t": tenant_id, "m": mapping_set_id, "ns": namespace, "s": snapshot_id})
+        {"t": tenant_id, "m": mapping_set_id, "ns": namespace, "s": snapshot_key})
     if manifest and manifest["source_sha256"] != base_sha:
         raise ValueError("同一 snapshot_id 的源快照指纹发生变化；请使用新的 snapshot_id")
     expected_batch_count = (
@@ -161,7 +167,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
             "(tenant_id, mapping_set_id, source_namespace, snapshot_id, source_sha256, status) "
             "VALUES (:t, CAST(:m AS uuid), :ns, :s, :h, 'running') "
             "ON CONFLICT (tenant_id, mapping_set_id, source_namespace, snapshot_id) DO NOTHING",
-            {"t": tenant_id, "m": mapping_set_id, "ns": namespace, "s": snapshot_id, "h": base_sha})
+            {"t": tenant_id, "m": mapping_set_id, "ns": namespace, "s": snapshot_key, "h": base_sha})
     summaries, offset, total_rows = [], 0, 0
 
     for batch_index, batch in _chunks(rows, size):
@@ -173,7 +179,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
             "WHERE tenant_id=:t AND mapping_set_id=CAST(:m AS uuid) "
             "AND source_namespace=:ns AND snapshot_id=:s AND batch_index=:i",
             {"t": tenant_id, "m": mapping_set_id, "ns": namespace,
-             "s": snapshot_id, "i": batch_index})
+             "s": snapshot_key, "i": batch_index})
         if checkpoint and checkpoint["batch_sha256"] != batch_sha:
             raise ValueError("同一 snapshot_id 的批次内容发生变化；请使用新的 snapshot_id")
         if checkpoint and checkpoint["status"] == "succeeded":
@@ -189,7 +195,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
                 "ON CONFLICT (tenant_id, mapping_set_id, source_namespace, snapshot_id, batch_index) "
                 "DO UPDATE SET status='running', error='{}'::jsonb, updated_at=now()",
                 {"t": tenant_id, "m": mapping_set_id, "ns": namespace,
-                 "s": snapshot_id, "i": batch_index, "h": batch_sha,
+                 "s": snapshot_key, "i": batch_index, "h": batch_sha,
                  "o": offset, "n": len(batch)})
             try:
                 result = execute_approved_dataset(
@@ -197,14 +203,14 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
                     source_name=f"{source_name}#snapshot:{snapshot_id}#batch:{batch_index}",
                     source_sha256=batch_sha, actor=actor, max_rows=size,
                     sync_mode=sync_mode, source_id_column=source_id_column,
-                    source_namespace=namespace)
+                    source_namespace=namespace, source_table=source_table)
                 db.execute(
                     "UPDATE ontology.dataset_ingestion_checkpoints SET status='succeeded', "
                     "run_id=CAST(:r AS uuid), updated_at=now() WHERE tenant_id=:t "
                     "AND mapping_set_id=CAST(:m AS uuid) AND source_namespace=:ns "
                     "AND snapshot_id=:s AND batch_index=:i",
                     {"r": result["run_id"], "t": tenant_id, "m": mapping_set_id,
-                     "ns": namespace, "s": snapshot_id, "i": batch_index})
+                     "ns": namespace, "s": snapshot_key, "i": batch_index})
             except Exception as exc:
                 db.execute(
                     "UPDATE ontology.dataset_ingestion_checkpoints SET status='failed', "
@@ -213,7 +219,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
                     "AND snapshot_id=:s AND batch_index=:i",
                     {"e": json.dumps({"type": type(exc).__name__, "message": str(exc)[:1000]}),
                      "t": tenant_id, "m": mapping_set_id, "ns": namespace,
-                     "s": snapshot_id, "i": batch_index})
+                     "s": snapshot_key, "i": batch_index})
                 raise
 
         if sync_mode == "upsert":
@@ -224,7 +230,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
                         "UPDATE ontology.dataset_source_records SET last_seen_at=now(), source_active=TRUE "
                         "WHERE tenant_id=:t AND mapping_name=:mn AND source_namespace=:ns "
                         "AND source_record_id=:sid",
-                        {"t": tenant_id, "mn": mapping_name, "ns": namespace,
+                        {"t": tenant_id, "mn": mapping_name, "ns": record_namespace,
                          "sid": str(source_id).strip()})
         summaries.append(result)
         offset += len(batch)
@@ -242,7 +248,7 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
             "WHERE tenant_id=:t AND mapping_name=:mn AND source_namespace=:ns "
             "AND source_active=TRUE AND last_seen_at < :started "
             "RETURNING 1) SELECT count(*) AS n FROM stale",
-            {"t": tenant_id, "mn": mapping_name, "ns": namespace,
+            {"t": tenant_id, "mn": mapping_name, "ns": record_namespace,
              "started": snapshot_started})
         tombstones = int((result or {}).get("n") or 0)
 
@@ -251,10 +257,10 @@ def execute_approved_dataset_stream(*, tenant_id: str, mapping_set_id: str,
         "batch_count=:b, total_rows=:n, updated_at=now() WHERE tenant_id=:t "
         "AND mapping_set_id=CAST(:m AS uuid) AND source_namespace=:ns AND snapshot_id=:s",
         {"b": len(summaries), "n": total_rows, "t": tenant_id, "m": mapping_set_id,
-         "ns": namespace, "s": snapshot_id})
+         "ns": namespace, "s": snapshot_key})
 
     return {
-        "status": "succeeded", "snapshot_id": snapshot_id,
+        "status": "succeeded", "snapshot_id": snapshot_key,
         "source_namespace": namespace,
         "rows_received": total_rows, "batches": len(summaries),
         "runs": summaries, "reconcile_missing": reconcile_missing,
@@ -288,16 +294,42 @@ def execute_approved_database_snapshot(*, tenant_id: str, mapping_set_id: str,
         raise PermissionError("只有当前租户已审核的映射版本可以执行")
     definition = mapping_set.get("definition") or {}
     mappings = definition.get("mappings") or []
-    if not mappings:
-        raise ValueError("已审核映射版本没有字段映射")
-    source_columns = sorted({str(item.get("source") or "").strip()
-                             for item in mappings if item.get("source")})
-    if not source_columns:
-        raise ValueError("映射版本没有有效的源字段")
-    if primary_key not in source_columns:
-        source_columns.append(primary_key)
+    table_mapping = next((item for item in mappings
+                          if item.get("table") == table_name), None)
+    # Backward compatibility: older approved contracts may contain one
+    # unqualified mapping object. It is safe to bind it to the explicitly
+    # selected source table only when there is exactly one such mapping.
+    if not table_mapping and len(mappings) == 1 and not mappings[0].get("table"):
+        table_mapping = mappings[0]
+    junction_mapping = next((item for item in (definition.get("links") or [])
+                             if item.get("table") == table_name), None)
+    if not table_mapping and not junction_mapping:
+        raise ValueError(f"已审核映射版本中不存在源表：{table_name}")
+    source_columns = set()
+    if table_mapping:
+        attributes = table_mapping.get("attributes") or {}
+        if isinstance(attributes, dict):
+            source_columns.update(str(column) for column in attributes.values() if column)
+        elif isinstance(attributes, list):
+            source_columns.update(
+                str(item.get("source") or item.get("source_column"))
+                for item in attributes if isinstance(item, dict)
+                and (item.get("source") or item.get("source_column"))
+            )
+        # Legacy field-level mapping shape: {source, entity_type, property}.
+        if table_mapping.get("source"):
+            source_columns.add(str(table_mapping["source"]))
+        source_columns.update(str(item.get("column")) for item in
+                              (table_mapping.get("relations") or []) if item.get("column"))
+        if table_mapping.get("name"):
+            source_columns.add(str(table_mapping["name"]))
+    if junction_mapping:
+        source_columns.update(str(junction_mapping.get(key)) for key in
+                              ("source_column", "target_column") if junction_mapping.get(key))
+    source_columns.add(primary_key)
+    source_columns = sorted(source_columns)
     source_name = f"db:{profile_name}:{schema_name or 'default'}.{table_name}"
-    source_namespace = _database_source_namespace(profile_name, schema_name, table_name)
+    source_namespace = f"db:{profile_name}:{schema_name or 'default'}"
     source_sha = _digest({
         "profile": profile_name, "schema": schema_name, "table": table_name,
         "primary_key": primary_key, "snapshot_id": snapshot_id,
@@ -314,4 +346,5 @@ def execute_approved_database_snapshot(*, tenant_id: str, mapping_set_id: str,
         source_sha256=source_sha, sync_mode="upsert",
         source_id_column=primary_key, batch_size=batch_size,
         reconcile_missing=reconcile_missing, source_namespace=source_namespace,
+        source_table=table_name,
     )
