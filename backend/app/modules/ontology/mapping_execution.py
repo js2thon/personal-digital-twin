@@ -198,7 +198,8 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                               max_rows: int = MAX_EXECUTION_ROWS,
                               sync_mode: str = "append",
                               source_id_column: str | None = None,
-                              source_namespace: str = "default") -> dict:
+                              source_namespace: str = "default",
+                              source_table: str | None = None) -> dict:
     """Atomically instantiate rows using a tenant-owned approved mapping set.
 
     Append mode uses source file hash + row number. Upsert mode requires a stable
@@ -214,12 +215,29 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
     namespace = _normalize_source_namespace(source_namespace)
     if sync_mode not in {"append", "upsert"}:
         raise ValueError("sync_mode 仅支持 append 或 upsert")
-    if sync_mode == "upsert":
+    if sync_mode == "upsert" and not source_id_column:
+        pk_columns = list((table_contracts[0].get("primary_key") or [])
+                          if table_contracts else [])
+        if len(pk_columns) == 1:
+            source_id_column = pk_columns[0]
+        else:
+            raise ValueError("upsert 模式需要指定 source_id_column，或映射契约提供单列主键")
+    if source_id_column:
         stable_source_ids = _validated_source_ids(rows, source_id_column)
+    elif relation_specs or junction_specs:
+        if table_contracts:
+            pk_columns = list(table_contracts[0].get("primary_key") or [])
+            if not pk_columns or any(any(row.get(key) is None for key in pk_columns) for row in rows):
+                raise ValueError("关系投影要求源表每行均具有完整主键")
+            stable_source_ids = [
+                _json([row.get(key) for key in pk_columns]) if len(pk_columns) > 1
+                else str(row[pk_columns[0]]).strip() for row in rows
+            ]
+        else:
+            stable_source_ids = [None] * len(rows)
     else:
-        if source_id_column:
-            raise ValueError("仅 upsert 模式允许指定 source_id_column")
         stable_source_ids = [None] * len(rows)
+    track_source_records = sync_mode == "upsert" or bool(relation_specs or junction_specs)
     mapping_set = mapping_registry.get(mapping_set_id, tenant_id=tenant_id)
     if not mapping_set:
         raise LookupError("映射版本不存在或不属于当前租户")
@@ -228,7 +246,44 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
     definition = mapping_set.get("definition") or {}
     schema = definition.get("ontology_schema") or {}
     mappings = execution_mappings(definition)
-    validation = validate_mappings(mappings, schema)
+    raw_mappings = definition.get("mappings") or []
+    raw_links = definition.get("links") or []
+    table_options = sorted({
+        str(item.get("table")) for item in raw_mappings + raw_links
+        if isinstance(item, dict) and item.get("table")
+    })
+    if source_table:
+        if table_options and source_table not in table_options:
+            raise ValueError(f"映射契约中不存在源表：{source_table}")
+        selected_table = source_table
+    elif len(table_options) == 1:
+        selected_table = table_options[0]
+    elif len(table_options) > 1:
+        raise ValueError("映射契约包含多张源表，请明确指定 source_table")
+    else:
+        selected_table = None
+    mappings = [
+        item for item in mappings
+        if not selected_table or not item.get("source_table")
+        or item.get("source_table") == selected_table
+    ]
+    table_contracts = [
+        item for item in raw_mappings
+        if isinstance(item, dict) and (not selected_table or not item.get("table")
+                                      or item.get("table") == selected_table)
+    ]
+    relation_specs = [
+        relation for item in table_contracts
+        for relation in (item.get("relations") or [])
+        if isinstance(relation, dict)
+    ]
+    junction_specs = [
+        link for link in raw_links
+        if isinstance(link, dict) and (not selected_table or link.get("table") == selected_table)
+    ]
+    if not mappings and not junction_specs:
+        raise ValueError("所选源表没有可执行的对象属性或关系映射")
+    validation = validate_mappings(mappings, schema) if mappings else {"valid": True, "issues": []}
     if not validation["valid"]:
         raise ValueError("映射版本当前未通过结构校验")
     _, attrs = _schema_parts(schema)
@@ -248,6 +303,9 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
             service = OntologyService(schema=schema, tenant_id=tenant_id, actor=actor)
             # Bind the instance records to the versions frozen in the approved mapping.
             service.ov = str(mapping_set.get("ontology_version") or service.ov)
+            source_instances: dict[str, str] = {}
+            relation_inserted = 0
+            relation_skipped = 0
             for row_index, row in enumerate(rows):
                 row_no = row_index + 1
                 row_hash = _digest(row)
@@ -267,7 +325,7 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                         "column": source, "raw": raw, "value": value}
                 for entity, properties in grouped.items():
                     source_state = None
-                    if sync_mode == "upsert":
+                    if track_source_records and stable_source_id is not None:
                         source_state = db.fetch_one(
                             "SELECT id::text AS id, instance_id::text AS instance_id, "
                             "row_hash, mapping_checksum FROM ontology.dataset_source_records "
@@ -362,6 +420,8 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                         {"iid": iid, "id": reservation["id"]},
                     )
                     inserted_records += 1
+                    if stable_source_id is not None:
+                        source_instances[entity] = str(iid)
                     for prop, item in source_columns[entity].items():
                         db.execute(
                             "INSERT INTO ontology.dataset_field_lineage "
@@ -380,6 +440,102 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                              "ov": mapping_set.get("ontology_version"),
                              "sv": mapping_set.get("schema_version")},
                         )
+            # Project FK and junction-table mappings into authoritative ontology relations.
+            class_by_table = {
+                str(item.get("table")): str(item.get("class"))
+                for item in raw_mappings if item.get("table") and item.get("class")
+            }
+            entity_by_source = {
+                str(item.get("table")): str(item.get("class"))
+                for item in raw_mappings if item.get("table") and item.get("class")
+            }
+
+            def resolve_source_instance(table_name: str, record_id: str) -> str:
+                target_type = entity_by_source.get(table_name)
+                if not target_type:
+                    raise ValueError(f"关系目标表未映射为本体对象：{table_name}")
+                target = db.fetch_one(
+                    "SELECT instance_id::text AS instance_id FROM ontology.dataset_source_records "
+                    "WHERE tenant_id=:t AND mapping_name=:mn AND source_namespace=:ns "
+                    "AND source_record_id=:sid AND entity_type=:et AND instance_id IS NOT NULL",
+                    {"t": tenant_id, "mn": str(mapping_set.get("name") or ""),
+                     "ns": namespace, "sid": str(record_id), "et": target_type},
+                )
+                if not target or not target.get("instance_id"):
+                    raise ValueError(
+                        f"关系目标实例尚未入库：{table_name} / {record_id}；"
+                        "请先导入目标表，再执行源表关系投影"
+                    )
+                return str(target["instance_id"])
+
+            for row_index, row in enumerate(rows):
+                source_id = stable_source_ids[row_index]
+                if relation_specs:
+                    for relation in relation_specs:
+                        source_table_name = str(selected_table or "")
+                        source_type = next((str(item.get("class")) for item in table_contracts
+                                             if item.get("table") == selected_table), "")
+                        source_instance_id = source_instances.get(source_type)
+                        if not source_instance_id:
+                            raise ValueError(
+                                f"关系源实例未生成：{source_table_name} 第 {row_index + 1} 行"
+                            )
+                        fk_value = row.get(relation.get("column"))
+                        if fk_value is None or not str(fk_value).strip():
+                            continue
+                        target_table = str(relation.get("target_table") or "")
+                        target_instance_id = resolve_source_instance(target_table, str(fk_value).strip())
+                        relation_type = str(relation.get("type") or "")
+                        existing = db.fetch_one(
+                            "SELECT id::text AS id FROM ontology.instance_relations "
+                            "WHERE tenant_id=:t AND source_id=CAST(:s AS uuid) "
+                            "AND target_id=CAST(:d AS uuid) AND relation_type=:rt "
+                            "AND derived=false AND status='active' LIMIT 1",
+                            {"t": tenant_id, "s": source_instance_id,
+                             "d": target_instance_id, "rt": relation_type},
+                        )
+                        if existing:
+                            relation_skipped += 1
+                            continue
+                        db.execute(
+                            "UPDATE ontology.instance_relations SET status='superseded' "
+                            "WHERE tenant_id=:t AND source_id=CAST(:s AS uuid) "
+                            "AND relation_type=:rt AND derived=false AND status='active'",
+                            {"t": tenant_id, "s": source_instance_id, "rt": relation_type},
+                        )
+                        service._write_relation_in_transaction({
+                            "source_id": source_instance_id,
+                            "target_id": target_instance_id,
+                            "relation_type": relation_type,
+                        }, auto_reasoning=False)
+                        relation_inserted += 1
+                if junction_specs:
+                    for link in junction_specs:
+                        source_instance_id = resolve_source_instance(
+                            str(link.get("source_table") or ""), row.get(str(link.get("source_column") or ""))
+                        )
+                        target_instance_id = resolve_source_instance(
+                            str(link.get("target_table") or ""), row.get(str(link.get("target_column") or ""))
+                        )
+                        relation_type = str(link.get("type") or "")
+                        existing = db.fetch_one(
+                            "SELECT id::text AS id FROM ontology.instance_relations "
+                            "WHERE tenant_id=:t AND source_id=CAST(:s AS uuid) "
+                            "AND target_id=CAST(:d AS uuid) AND relation_type=:rt "
+                            "AND derived=false AND status='active' LIMIT 1",
+                            {"t": tenant_id, "s": source_instance_id,
+                             "d": target_instance_id, "rt": relation_type},
+                        )
+                        if existing:
+                            relation_skipped += 1
+                            continue
+                        service._write_relation_in_transaction({
+                            "source_id": source_instance_id,
+                            "target_id": target_instance_id,
+                            "relation_type": relation_type,
+                        }, auto_reasoning=False)
+                        relation_inserted += 1
+
             db.execute(
                 "UPDATE ontology.dataset_ingestion_runs SET status='succeeded', "
                 " rows_inserted=:ri, rows_skipped=:rs, instances_inserted=:ii, finished_at=now() "
@@ -408,6 +564,9 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
         "sync_mode": sync_mode,
         "source_id_column": source_id_column,
         "source_namespace": namespace,
+        "source_table": selected_table,
+        "relations_inserted": locals().get("relation_inserted", 0),
+        "relations_skipped_idempotent": locals().get("relation_skipped", 0),
         "mapping_set_id": mapping_set_id,
         "mapping_version": mapping_set.get("version"),
         "ontology_version": mapping_set.get("ontology_version"),
