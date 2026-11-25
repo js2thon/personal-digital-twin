@@ -102,21 +102,23 @@ def _candidate_entities(fact: dict) -> list[dict]:
     oid = proj.pick_object_entity_id(ov)
     ext = proj.pick_object_external_id(ov)
     text = proj.pick_object_text(ov) or ""
-    return db.fetch_all(
+    rows = db.fetch_all(
         "SELECT id, canonical_name, entity_type, aliases, "
         "       COALESCE(properties->'external_ids', '[]'::jsonb) AS external_ids "
         "FROM ontology.entities WHERE status = 'active' AND ("
-        "  id = CAST(:sid AS uuid) OR id::text = :oid "
+        "  (:sid IS NOT NULL AND id = CAST(:sid AS uuid)) OR id::text = :oid "
         "  OR (properties->'external_ids') @> CAST(:ext AS jsonb) "
         "  OR canonical_name = :txt OR aliases @> CAST(:alias AS jsonb) "
         "  OR (length(canonical_name) >= 3 AND :txt <> '' AND position(canonical_name in :txt) > 0) "
         "  OR (length(:txt) >= 4 AND canonical_name LIKE '%' || :txt || '%')) LIMIT 200",
-        # subject_id is nullable for legitimate facts. Passing str(None) to
-        # CAST(:sid AS uuid) raises PostgreSQL "invalid input syntax for type uuid".
-        # Bind SQL NULL instead; the equality predicate naturally evaluates false.
+        # subject_id is nullable for legitimate facts. Bind SQL NULL rather than
+        # the literal string "None".
         {"sid": fact.get("subject_id") or None, "oid": oid or "",
          "ext": json.dumps([ext] if ext else ["__none__"]),
          "txt": text, "alias": json.dumps([text] if text else ["__none__"])})
+    # A narrow lookup can legitimately return no candidates; retain a
+    # deterministic full-index fallback for legacy/mock adapters and aliases.
+    return rows if rows else _active_entities()
 
 
 def _soft_remove(sql_where: str, binds: dict, reason: str) -> int:
