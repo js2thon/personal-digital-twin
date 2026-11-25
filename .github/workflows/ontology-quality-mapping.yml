@@ -134,7 +134,6 @@ jobs:
       - name: Run ontology quality and mapping tests
         env:
           APP_ENV: dev
-          CQ_V2_STORE: memory
           SHACL_MODE: warn
           DATABASE_URL: postgresql+psycopg://twin:twin@127.0.0.1:5434/personal_twin
         run: >-
