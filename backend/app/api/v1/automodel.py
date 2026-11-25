@@ -242,6 +242,64 @@ def get_job(job_id: str, request: Request, full: bool = False):
         "materialized": (job.get("materialized") or {}).get("stats")}
 
 
+def _automodel_mapping_snapshot(job: dict, job_id: str) -> tuple[dict, str, str]:
+    """Freeze the published Automodel schema + exact deterministic mapping contract."""
+    from app.modules.ontology.mapping_contract import to_binding, validate_binding
+
+    schema = ((job.get("draft") or {}).get("schema") or {})
+    contract = job.get("contract") or {}
+    if not schema.get("entity_types") or not contract.get("mappings"):
+        raise ValueError("任务缺少已生成的本体 Schema 或映射契约")
+    schema_version = str(schema.get("schema_version") or contract.get("schema_version") or "")
+    if not schema_version or str(contract.get("schema_version") or schema_version) != schema_version:
+        raise ValueError("本体 Schema 版本与映射契约版本不一致")
+    ontology_version = str(job.get("schema_version") or job.get("ontology_version") or schema_version)
+    binding = contract.get("ontology_binding") or to_binding(
+        contract, ontology_version=ontology_version
+    )
+    binding_issues = validate_binding(binding)
+    if binding_issues:
+        raise ValueError(f"统一映射绑定结构校验失败：{binding_issues}")
+    definition = {
+        "contract_version": contract.get("contract_version", "1"),
+        "source": contract.get("source") or job.get("source"),
+        "schema_version": schema_version,
+        "mappings": contract.get("mappings") or [],
+        "links": contract.get("links") or [],
+        "ontology_schema": schema,
+        "ontology_binding": binding,
+        "origin": {"kind": "automodel_job", "job_id": job_id},
+    }
+    return definition, schema_version, ontology_version
+
+
+@router.post("/automodel/jobs/{job_id}/mapping-set")
+def create_mapping_set_from_automodel(job_id: str, request: Request):
+    """Register the exact published Automodel contract for production ingestion."""
+    from app.modules.ontology import mapping_registry as MR
+
+    tenant, actor = _tenant(request)
+    job = _job(job_id, request)
+    if job.get("status") not in ("published", "written"):
+        raise HTTPException(409, "只有已发布的本体任务可以生成生产映射版本")
+    if not (job.get("release_gate") or {}).get("ready"):
+        raise HTTPException(409, "本体发布门禁未通过，不能生成生产映射版本")
+    try:
+        definition, schema_version, ontology_version = _automodel_mapping_snapshot(job, job_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    result = MR.create_version(
+        tenant_id=tenant, name=f"automodel:{job_id}",
+        definition=definition, schema_version=schema_version,
+        ontology_version=ontology_version, created_by=actor,
+    )
+    return {
+        **result, "source_job_id": job_id,
+        "schema_version": schema_version, "ontology_version": ontology_version,
+        "binding_version": (result.get("definition") or {}).get("ontology_binding", {}).get("binding_version", 1),
+    }
+
+
 class ReviewIn(BaseModel):
     decisions: list[dict] = Field(default_factory=list)
     acknowledge_warnings: bool = False
