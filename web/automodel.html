@@ -672,12 +672,23 @@ $('btnV2ExecuteTable').onclick=function(){busy(this,async()=>{
   const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');
   reader.onerror=()=>reject(new Error('读取文件失败'));reader.readAsDataURL(file);
  });
- const result=await post('/ontology/mapping/dataset/execute',{
+ const tableMapping=((JOB.contract&&JOB.contract.mappings)||[]).find(m=>m.table===sourceTable);
+ const junctionMapping=((JOB.contract&&JOB.contract.links)||[]).find(m=>m.table===sourceTable);
+ const keys=(tableMapping&&tableMapping.primary_key)||(junctionMapping&&junctionMapping.primary_key)||[];
+ const snapshotId=['ui',file.name,file.size,file.lastModified].join(':');
+ const result=await post('/ontology/mapping/dataset/execute-stream',{
   mapping_set_id:PRODUCTION_MAPPING_SET.id,file_name:file.name,content_base64:base64,
   source_table:sourceTable,source_namespace:'automodel:'+JOB.id,
-  sync_mode:'upsert',max_rows:500
+  snapshot_id:snapshotId,sync_mode:'upsert',source_id_column:keys.length===1?keys[0]:null,
+  batch_size:500,reconcile_missing:false
  });
- $('v2IngestionStatus').textContent=`入库完成：实例新增 ${result.instances_inserted}、更新 ${result.instances_updated}、关系新增 ${result.relations_inserted}、关系幂等跳过 ${result.relations_skipped_idempotent}`;
+ const totals=(result.runs||[]).reduce((a,r)=>({
+  instances:a.instances+(r.instances_inserted||0),
+  updated:a.updated+(r.instances_updated||0),
+  relations:a.relations+(r.relations_inserted||0),
+  skipped:a.skipped+(r.relations_skipped_idempotent||0)
+ }),{instances:0,updated:0,relations:0,skipped:0});
+ $('v2IngestionStatus').textContent=`入库完成：实例新增 ${totals.instances}、更新 ${totals.updated}、关系新增 ${totals.relations}、关系幂等跳过 ${totals.skipped}`;
  $('v2ProductionFile').value='';
  note('源表入库成功；运行 ID：'+result.run_id);
 })};
