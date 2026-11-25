@@ -143,6 +143,9 @@ def test_relation_rebuild_uses_configured_non_primary_target_property():
     assert edges[0][0] == "Employee:E1"
     assert edges[0][1] == "Department:D1"
     assert edges[0][3]["target_pk"] == "D1"
+    onto.update_property("Employee", "departmentCode", clear_source_mapping=True)
+    onto.rebuild_links()
+    assert onto.links.number_of_edges() == 0
 
 
 
