@@ -135,6 +135,7 @@ def execution_mappings(contract: dict | None) -> list[dict]:
                 "entity_type": obj.get("object_type"),
                 "property": item.get("target_property"),
                 "source": item.get("source_column"),
+                "source_table": item.get("source_table"),
             })
     return rows
 
