@@ -107,3 +107,10 @@ GET /api/v1/studio-v2/sessions/{id}/instance-graph?types=员工,部门&max_nodes
 | `st.session_state.ontology_v2` | `StudioV2Store` 会话 |
 
 算法与数据结构未改写，仅去掉 UI 与 PyVis。
+
+
+### 上游数据与画布联动说明
+
+- Schema Graph 的对象节点返回 `source`（来源表、来源类型、行数、字段列表）；属性节点返回 `source`（来源表/列、是否已映射）；关系边返回 `source_binding`（起点表列与终点表列）。
+- `compare-dataset` 只生成结构/字段类型/记录数差异，不修改当前会话、本体或 MappingContract。差异必须经过人工审核，再进入后续数据重载和映射发布流程。
+- 画布坐标通过 `/layout` 回写到当前 Studio V2 会话。当前 `StudioV2Store` 是进程内存储，进程重启后会话与布局都会丢失；生产环境需要迁移到数据库/持久化仓储后才能承诺长期保存。
