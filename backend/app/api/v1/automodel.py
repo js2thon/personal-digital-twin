@@ -602,11 +602,24 @@ def _production_snapshot(job: dict, request: Request, limit: int = 5000) -> tupl
     )
     visible = pol.filter_rows(instances, principal)
     visible_ids = {str(x.get("id")) for x in visible}
+    relation_cap = max(1, min(cap * 5, 50000))
+    relation_total_row = db.fetch_one(
+        "SELECT count(*) AS n FROM ontology.instance_relations "
+        "WHERE tenant_id=:t AND status='active' AND derived=false AND ontology_version=:ov",
+        {"t": tenant, "ov": ontology_version},
+    )
+    relation_total = int(relation_total_row["n"]) if relation_total_row else 0
+    if relation_total > relation_cap:
+        raise HTTPException(409, {
+            "message": "生产关系数量超过本次完整查询上限；为避免不完整关系造成错误答案，本次拒绝计算",
+            "relations_available": relation_total, "relations_limit": relation_cap,
+            "ontology_version": ontology_version,
+        })
     relations = semantic_store.list_relations(
         tenant_id=tenant,
         where="status='active' AND derived=false AND ontology_version=:ov",
         params={"ov": ontology_version},
-        limit=max(1, min(cap * 5, 50000)),
+        limit=relation_cap,
     )
     facts = [
         {
