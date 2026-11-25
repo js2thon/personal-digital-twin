@@ -284,8 +284,6 @@ def dataset_execute_stream(payload: DatasetStreamExecuteIn, request: Request):
         raise HTTPException(400, "batch_size 必须在 1-500 之间")
     if payload.sync_mode not in ("append", "upsert"):
         raise HTTPException(400, "sync_mode 仅支持 append 或 upsert")
-    if payload.sync_mode == "upsert" and not payload.source_id_column:
-        raise HTTPException(400, "upsert 模式必须指定 source_id_column")
     if payload.reconcile_missing and payload.sync_mode != "upsert":
         raise HTTPException(400, "缺失记录对账仅支持 upsert 模式")
     try:
