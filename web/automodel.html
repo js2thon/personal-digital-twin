@@ -234,7 +234,7 @@ tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
         <div class="v2-canvas-head"><div><h2>业务对象关系画布</h2><span class="hint">以业务对象为中心展示属性与对象关系</span></div><span class="pill">AntV X6 · Schema</span></div>
         <div class="v2-canvas-legend"><span><i class="v2-dot object"></i>业务对象</span><span><i class="v2-dot relation"></i>业务关系</span><span><i class="v2-dot property"></i>对象属性</span><span class="hint">Ctrl + 滚轮缩放 · 空白处框选 · Delete 删除</span></div>
         <div class="graph" id="v2Sg"></div>
-        <div class="v2-canvas-foot">画布编辑会提交到当前建模会话；自动布局仅调整展示位置，不修改本体语义。</div>
+        <div class="v2-canvas-foot">拖拽和自动布局会保存节点坐标；目前仅保存在当前进程会话，服务重启后不保证保留。<span id="v2LayoutStatus">布局尚未修改</span></div>
       </section>
     </div>
     <div class="card"><h2>本体摘要</h2><div class="scroll" id="v2Summary" style="max-height:420px"></div></div>
@@ -609,7 +609,7 @@ async function renderV2Designer(){
   const nodes=classes.map(c=>({id:c.id,data:{label:c.label,props:c.properties||[],pk:c.primary_key,desc:c.description||'',sourceInfo:c.source||null,propertySources:Object.fromEntries(sg.nodes.filter(p=>p.kind==='property'&&p.owner===c.id.replace(/^CLASS:/,'')).map(p=>[p.label,p.source||{}]))}}));
   const redges=rels.map(r=>({id:r.label||r.source+'_'+r.target,source:r.source,target:r.target,label:r.label,
    data:{desc:r.description||'',source_property:r.source_property||'',target_property:r.target_property||'',source_binding:r.source_binding||null}}));
-  V2_DESIGNER=await window.X6D.designer(el,{nodes,edges:redges},{positions:layout.positions||{},onEdit:v2SchemaEdit,onLayoutChange:positions=>post(V2S()+'/layout',{positions}).catch(e=>note('画布布局保存失败：'+e.message,true)),onSelect:id=>{document.querySelectorAll('.v2-object-item').forEach(b=>b.classList.toggle('active',b.dataset.node===id));}});
+  V2_DESIGNER=await window.X6D.designer(el,{nodes,edges:redges},{positions:layout.positions||{},onEdit:v2SchemaEdit,onLayoutChange:positions=>post(V2S()+'/layout',{positions}).then(()=>{$('v2LayoutStatus').textContent=' · 布局已保存（当前会话）'}).catch(e=>note('画布布局保存失败：'+e.message,true)),onSelect:id=>{document.querySelectorAll('.v2-object-item').forEach(b=>b.classList.toggle('active',b.dataset.node===id));}});
  }catch(e){el.innerHTML='<div class="muted" style="padding:20px">编辑器加载失败：'+esc(e.message)+'</div>'}
 }
 async function v2SchemaEdit(ops){
