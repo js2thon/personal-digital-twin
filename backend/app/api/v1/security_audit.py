@@ -8,7 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 
 from app import security_audit as sa
-from app.api.v1.cq_v2 import require_owner
+from app.auth import require_owner
 
 router = APIRouter()
 
