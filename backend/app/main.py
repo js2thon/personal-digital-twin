@@ -8,7 +8,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
 
 from app.api.v1 import (  # noqa: F401
-    cq_v2,
     documents,
     evaluation,
     kg,
@@ -173,9 +172,6 @@ def bootstrap_schema():
 
     initialize_base_schema()
 
-    from app.modules.ontology.cq_v2 import store as cq_store
-
-    cq_store.assert_production_store()
     try:
         from app.modules.messaging import service as messaging
 
@@ -252,12 +248,6 @@ def bootstrap_schema():
             _sync.ensure_unique_index()
         except Exception as _exc:  # noqa: BLE001
             logging.getLogger("twin").warning("relations unique index skipped: %s", _exc)
-        # #21：graph.RELATION_TYPES 由 Registry 派生（单一类型来源；Registry 缺的类型先并入再派生）
-        try:
-            from app.modules.ontology import cq_v2 as _cq, type_registry as _tr
-            _tr.install(_cq.get_engine().registry)
-        except Exception as _exc:  # noqa: BLE001  Registry 不可用时保留代码内置目录
-            logging.getLogger("twin").warning("type registry install skipped: %s", _exc)
         # 必须早于 fact_events.start()：后者建的触发器会往账本里写事件。
         from app.modules.ontology import outbox
 
@@ -270,31 +260,6 @@ def bootstrap_schema():
 
         fact_events.start()
     except Exception:  # noqa: BLE001  监听起不来不影响 API 可用，API 即时钩子仍在
-        pass
-    try:
-        # 先初始化 V1.2 CQ 基础表。CQ V2 schema.sql 中的关系表通过外键依赖
-        # ontology.competency_questions；若只执行 V2 DDL，会因基表缺失而整批失败。
-        from app.modules.ontology import cq as legacy_cq
-
-        legacy_cq.ensure_schema()
-        from app.db import session as db
-
-        cq_table = db.fetch_one(
-            "SELECT to_regclass('ontology.competency_questions') AS table_name"
-        )
-        if not cq_table or not cq_table.get("table_name"):
-            raise RuntimeError("ontology.competency_questions 初始化失败")
-
-        # P1-5：CQ V2 状态落库 + 重启自动水合，消除「每次重启手工 bootstrap」
-        from app.modules.ontology import cq_v2
-
-        ready = cq_v2.get_engine().ensure_ready()
-        ddl = ready.get("ddl") or {}
-        if ddl.get("errors"):
-            raise RuntimeError(
-                "CQ V2 schema 初始化失败：" + "; ".join(ddl["errors"][:5])
-            )
-    except Exception:  # noqa: BLE001  持久化不可用时仍可按需手工 bootstrap
         pass
     try:
         # P1-4：核心表落 tenant_id（facts 已由契约列补齐，这里补其余三张）
@@ -372,7 +337,6 @@ app.include_router(lineage.router, prefix=API, tags=["lineage"])
 app.include_router(messages.router, prefix=API, tags=["messages"])
 app.include_router(pipeline.router, prefix=API, tags=["pipeline"])
 app.include_router(structured.router, prefix=API, tags=["structured"])
-app.include_router(cq_v2.router, prefix=API, tags=["cq-v2"])
 # 统一语义运行时（SIL B2）：蓝图 9.3 的 10 个契约端点 + 自检 + /ontology/versions 原路径
 app.include_router(semantic.router, prefix=API, tags=["semantic"])
 app.include_router(evaluation.router, prefix=API, tags=["evaluation"])
