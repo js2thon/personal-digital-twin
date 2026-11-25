@@ -78,7 +78,7 @@ def _mapping_schema(schema: dict | None) -> dict:
     return SD.to_schema_dict(SD.default_semantic_schema())
 
 
-@router.post("/ontology/mapping/mapping/suggest")
+@router.post("/ontology/mapping/suggest")
 def mapping_suggest(payload: MappingSuggestIn, request: Request):
     """字段元数据/样例值 → 本体属性候选 + 证据 + 置信等级；纯计算。"""
     from app.modules.ontology import mapping_pipeline as MP
@@ -93,7 +93,7 @@ def mapping_suggest(payload: MappingSuggestIn, request: Request):
     return result
 
 
-@router.post("/ontology/mapping/mapping/validate")
+@router.post("/ontology/mapping/validate")
 def mapping_validate(payload: MappingValidateIn, request: Request):
     """校验人工确认的字段映射；不触发连接器、SQL 或业务数据写入。"""
     from app.modules.ontology import mapping_pipeline as MP
@@ -125,7 +125,7 @@ def dataset_inspect(payload: DatasetInspectIn, request: Request):
             "mapping_suggestions": report, "principal": _principal(request).get("user_id", "anonymous")}
 
 
-@router.post("/ontology/mapping/mapping/preview-file")
+@router.post("/ontology/mapping/preview-file")
 def mapping_preview_file(payload: DatasetPreviewIn, request: Request):
     """读取 CSV/XLSX 并按已确认映射生成实例、校验报告和字段血缘；不写库。"""
     from app.modules.ontology import mapping_pipeline as MP
@@ -138,7 +138,7 @@ def mapping_preview_file(payload: DatasetPreviewIn, request: Request):
     return result
 
 
-@router.post("/ontology/mapping/mapping-sets")
+@router.post("/ontology/mapping/sets")
 def mapping_set_create(payload: MappingSetCreateIn, request: Request):
     """保存映射草稿为不可变版本快照；不触发数据写入。"""
     from app.modules.ontology import mapping_pipeline as MP
@@ -163,7 +163,7 @@ def mapping_set_create(payload: MappingSetCreateIn, request: Request):
     return result
 
 
-@router.post("/ontology/mapping/mapping-sets/{mapping_id}/approve")
+@router.post("/ontology/mapping/sets/{mapping_id}/approve")
 def mapping_set_approve(mapping_id: str, request: Request):
     """经当前已认证用户显式确认后，将草稿版本标记为 approved。"""
     from app.modules.ontology import mapping_registry as MR
@@ -176,7 +176,7 @@ def mapping_set_approve(mapping_id: str, request: Request):
     return result
 
 
-@router.post("/ontology/mapping/mapping-sets/{mapping_id}/retire")
+@router.post("/ontology/mapping/sets/{mapping_id}/retire")
 def mapping_set_retire(mapping_id: str, request: Request):
     """停用映射版本（draft/approved → retired）。不物理删除：映射版本是写入的审计依据；
     停用后执行器只接受 approved，因此该版本不能再用于正式写入。"""
@@ -190,7 +190,7 @@ def mapping_set_retire(mapping_id: str, request: Request):
     return result
 
 
-@router.get("/ontology/mapping/mapping-sets")
+@router.get("/ontology/mapping/sets")
 def mapping_set_list(request: Request, name: str | None = None, limit: int = 50):
     """列出当前租户的映射版本及审批状态。"""
     from app.modules.ontology import mapping_registry as MR
@@ -200,7 +200,7 @@ def mapping_set_list(request: Request, name: str | None = None, limit: int = 50)
         name=name, limit=limit)}
 
 
-@router.get("/ontology/mapping/mapping-sets/{mapping_id}")
+@router.get("/ontology/mapping/sets/{mapping_id}")
 def mapping_set_get(mapping_id: str, request: Request):
     """读取当前租户的映射快照，包含绑定的本体 Schema。"""
     from app.modules.ontology import mapping_registry as MR
@@ -211,7 +211,7 @@ def mapping_set_get(mapping_id: str, request: Request):
     return result
 
 
-@router.get("/ontology/mapping/mapping-sets/{mapping_id}/impact/{target_mapping_id}")
+@router.get("/ontology/mapping/sets/{mapping_id}/impact/{target_mapping_id}")
 def mapping_set_impact(mapping_id: str, target_mapping_id: str, request: Request):
     """比较两个映射版本的影响范围；只读 Dry-run，不执行重投影。"""
     from app.modules.ontology import mapping_registry as MR
