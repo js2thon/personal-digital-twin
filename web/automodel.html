@@ -250,6 +250,19 @@ tr.on td{background:var(--ax-surface-raised,rgba(0,103,206,.06))}
       </div>
       <div id="v2ProductionGraph" class="graph" style="height:420px;margin-top:10px"><div class="empty">请先发布本体并导入生产实例</div></div>
       <div id="v2ProductionGraphMeta" class="hint" aria-live="polite"></div>
+      <div id="v2IngestionPanel" class="card hidden" style="margin-top:12px;border:1px solid var(--ax-border)">
+        <h3>生产数据入库与关系投影</h3>
+        <div class="hint">先生成映射草稿并人工批准。多表数据请先导入被引用的目标表，再导入包含外键的源表；关联表用于生成多对多关系。</div>
+        <div class="row" style="margin-top:8px">
+          <select id="v2ProductionSourceTable" style="min-width:180px;flex:1"><option value="">选择源表</option></select>
+          <input id="v2ProductionFile" type="file" accept=".csv,.tsv,.txt,.xlsx,.xls,.json,.parquet" style="flex:1">
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button type="button" id="btnV2ApproveMappingSet" class="ghost">人工批准映射版本</button>
+          <button type="button" id="btnV2ExecuteTable" class="primary">执行当前源表入库</button>
+          <span id="v2IngestionStatus" class="hint auto" aria-live="polite"></span>
+        </div>
+      </div>
     </div>
     <div class="card"><h2>本体摘要</h2><div class="scroll" id="v2Summary" style="max-height:420px"></div></div>
     <div class="card"><h2>导出</h2>
@@ -325,6 +338,7 @@ const store={get(k){try{return window.localStorage.getItem(k)}catch(e){return nu
 try{if(window.top!==window){document.body.classList.add('embedded');const th=window.top.document.documentElement.dataset.theme;if(th)document.documentElement.dataset.theme=th;
  const c=document.getElementById('connBox');if(c)c.classList.add('hidden')}}catch(e){}
 let REL_INIT=false;let JOB=null, OV=null, METRICS=null, FILES=[], ML=[];
+let PRODUCTION_MAPPING_SET=null;
 window.addEventListener('error',e=>note('页面脚本错误：'+(e.message||e.error),true));
 window.addEventListener('unhandledrejection',e=>{e.preventDefault();note('请求失败：'+((e.reason&&e.reason.message)||e.reason),true)});
 ['apiBase','apiKey'].forEach(k=>{$(k).value=store.get('os_'+k)||'';$(k).onchange=()=>store.set('os_'+k,$(k).value)});
@@ -351,13 +365,14 @@ $('btnDb').onclick=function(){busy(this,async()=>{const b={url:$('dbUrl').value.
 $('btnReload').onclick=loadJobs;
 async function loadJobs(){try{const r=await api('/automodel/jobs');$('jobList').innerHTML=(r.items||[]).map(j=>`<div data-id="${esc(j.id)}" class="${JOB&&JOB.id===j.id?'on':''}"><b>${esc(j.source_id||j.source)}</b> ${tag(j.status,j.status==='written'?'ok':j.status==='needs_review'?'warn':'')}<div class="muted">${esc(String(j.created_at||'').slice(0,16).replace('T',' '))} · ${esc(String(j.id).slice(0,8))}</div></div>`).join('')||'<span class="muted">暂无任务</span>';
  $('jobList').querySelectorAll('div[data-id]').forEach(d=>d.onclick=()=>openJob(d.dataset.id).then(()=>show('v2')).catch(e=>note(e.message,true)))}catch(e){$('jobList').innerHTML='<span class="muted">'+esc(e.message)+'</span>'}}
-async function openJob(id){JOB=await api(`/automodel/jobs/${id}?full=true`);METRICS=null;OV=null;ML=[];EVQ=null;EVR=null;$('work').classList.remove('hidden');$('empty').classList.add('hidden');REL_INIT=false;
+async function openJob(id){JOB=await api(`/automodel/jobs/${id}?full=true`);METRICS=null;OV=null;ML=[];EVQ=null;EVR=null;PRODUCTION_MAPPING_SET=null;$('work').classList.remove('hidden');$('empty').classList.add('hidden');REL_INIT=false;
  if($('btnV2ProductionGraph'))$('btnV2ProductionGraph').disabled=!['published','written'].includes(JOB.status);
  if($('btnV2CreateMappingSet'))$('btnV2CreateMappingSet').disabled=!['published','written'].includes(JOB.status);
  $('jobTitle').textContent=(JOB.source||'')+' · '+String(JOB.id).slice(0,8);
  const st=JOB.draft&&JOB.draft.stats||{};$('jobMeta').innerHTML=`${tag(JOB.status,JOB.status==='written'?'ok':JOB.status==='needs_review'?'warn':'')} 类 ${st.classes} · 关系 ${st.relations} · 属性 ${st.attributes} · 待审核 ${st.needs_review} · 版本 ${esc(JOB.schema_version||'未发布')}`;
  document.querySelectorAll('#jobList div[data-id]').forEach(d=>d.classList.toggle('on',d.dataset.id===JOB.id));
- try{OV=await api(J()+'/studio/overview')}catch(e){note(e.message,true)}}
+ try{OV=await api(J()+'/studio/overview')}catch(e){note(e.message,true)}
+ try{await refreshProductionMappingSet()}catch(e){note('映射版本状态读取失败：'+e.message,true)}}
 // ---------------- tabs
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 const TABS=['src','v2','metrics','ask','eval','ver','jobs'];
@@ -616,11 +631,55 @@ function renderV2ObjectList(sg){
  list.innerHTML=visible.map(n=>`<button type="button" class="v2-object-item" data-node="${esc(n.id)}"><b>${esc(n.label||n.id.replace(/^CLASS:/,''))}</b><small>${esc(n.id.replace(/^CLASS:/,''))} · ${(n.properties||[]).length} 个属性 · 来源 ${esc(n.source?.source_table||'手工对象')}</small></button>`).join('')||'<div class="empty">没有匹配的业务对象</div>';
  list.querySelectorAll('[data-node]').forEach(b=>b.onclick=()=>V2_DESIGNER?.select(b.dataset.node));
 }
+async function refreshProductionMappingSet(){
+ if(!JOB)return;
+ const response=await api('/ontology/mapping/sets?name='+encodeURIComponent('automodel:'+JOB.id));
+ const item=(response.items||[])[0]||null;
+ PRODUCTION_MAPPING_SET=item;
+ const panel=$('v2IngestionPanel');
+ if(!panel)return;
+ panel.classList.toggle('hidden',!item);
+ $('btnV2CreateMappingSet').disabled=!!item||!['published','written'].includes(JOB.status);
+ $('btnV2ApproveMappingSet').disabled=!item||item.status!=='draft';
+ $('btnV2ExecuteTable').disabled=!item||item.status!=='approved';
+ $('v2IngestionStatus').textContent=item?`映射版本 v${item.version||1} · ${item.status}`:'尚未创建映射版本';
+ const tables=[...new Set([
+  ...((JOB.contract&&JOB.contract.mappings)||[]).map(m=>m.table).filter(Boolean),
+  ...((JOB.contract&&JOB.contract.links)||[]).map(m=>m.table).filter(Boolean)
+ ])];
+ $('v2ProductionSourceTable').innerHTML='<option value="">选择源表</option>'+tables.map(t=>'<option value="'+esc(t)+'">'+esc(t)+'</option>').join('');
+}
 $('btnV2CreateMappingSet').onclick=function(){busy(this,async()=>{
  if(!JOB||!['published','written'].includes(JOB.status))throw new Error('请先选择已发布的本体任务');
  const result=await post(`/automodel/jobs/${JOB.id}/mapping-set`,{});
- $('v2ProductionGraphMeta').textContent=`已生成正式映射草稿：${result.name||'Automodel'} v${result.version||1} · ID ${result.id}。请在人审审批后再执行生产数据入库。`;
- note('已基于已发布本体创建映射草稿；尚未审批，也未写入生产数据');
+ await refreshProductionMappingSet();
+ $('v2ProductionGraphMeta').textContent=`已生成正式映射草稿：${result.name||'Automodel'} v${result.version||1} · ID ${result.id}。批准后可按源表分批导入。`;
+ note('已基于已发布本体创建映射草稿；尚未审批，也未写入数据');
+})};
+$('btnV2ApproveMappingSet').onclick=function(){busy(this,async()=>{
+ if(!PRODUCTION_MAPPING_SET)throw new Error('请先生成映射草稿');
+ const result=await post('/ontology/mapping/sets/'+PRODUCTION_MAPPING_SET.id+'/approve',{});
+ await refreshProductionMappingSet();
+ note('映射版本已批准：'+(result.version||1));
+})};
+$('btnV2ExecuteTable').onclick=function(){busy(this,async()=>{
+ if(!PRODUCTION_MAPPING_SET||PRODUCTION_MAPPING_SET.status!=='approved')throw new Error('请先人工批准映射版本');
+ const sourceTable=$('v2ProductionSourceTable').value;
+ const file=$('v2ProductionFile').files[0];
+ if(!sourceTable)throw new Error('请选择本次入库的源表');
+ if(!file)throw new Error('请选择源表数据文件');
+ const base64=await new Promise((resolve,reject)=>{
+  const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');
+  reader.onerror=()=>reject(new Error('读取文件失败'));reader.readAsDataURL(file);
+ });
+ const result=await post('/ontology/mapping/dataset/execute',{
+  mapping_set_id:PRODUCTION_MAPPING_SET.id,file_name:file.name,content_base64:base64,
+  source_table:sourceTable,source_namespace:'automodel:'+JOB.id,
+  sync_mode:'upsert',max_rows:500
+ });
+ $('v2IngestionStatus').textContent=`入库完成：实例新增 ${result.instances_inserted}、更新 ${result.instances_updated}、关系新增 ${result.relations_inserted}、关系幂等跳过 ${result.relations_skipped_idempotent}`;
+ $('v2ProductionFile').value='';
+ note('源表入库成功；运行 ID：'+result.run_id);
 })};
 $('btnV2ProductionGraph').onclick=function(){busy(this,async()=>{
  if(!JOB||!['published','written'].includes(JOB.status))throw new Error('请先选择已发布的本体任务');
