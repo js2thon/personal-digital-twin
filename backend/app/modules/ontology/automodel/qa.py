@@ -636,6 +636,7 @@ def ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
 
 def _metric_ask(question: str, schema: dict, metric_set: dict, F: dict, L: dict,
                 llm=None, contract: dict | None = None) -> dict:
+    ms = metric_set["metrics"]
     cat = catalog(schema, metric_set)
     attempts = []
     plan, engine = None, None
