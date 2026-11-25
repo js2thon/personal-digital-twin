@@ -585,6 +585,10 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                                     "source": link.get("source_column"),
                                     "target": link.get("target_column"),
                                 },
+                                "source_values": {
+                                    "source": row.get(str(link.get("source_column") or "")),
+                                    "target": row.get(str(link.get("target_column") or "")),
+                                },
                             },
                         }, auto_reasoning=False)
                         relation_inserted += 1
