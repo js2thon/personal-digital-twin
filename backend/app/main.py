@@ -169,6 +169,10 @@ def bootstrap_schema():
     # V1.3 Sprint 1 验收铁律第 1 条：生产环境禁止 MemoryStore。
     # 故意不包 try/except —— 该检查失败必须让进程 fail-fast，而不是
     # 悄悄以进程内存储启动。非生产环境直接返回 checked=false，行为不变。
+    from app.db.bootstrap import initialize_base_schema
+
+    initialize_base_schema()
+
     from app.modules.ontology.cq_v2 import store as cq_store
 
     cq_store.assert_production_store()
