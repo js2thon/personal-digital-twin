@@ -42,6 +42,10 @@ def test_property_lifecycle_keeps_source_binding():
     assert onto.update_property("Employee", "displayName", new_name="displayLabel")
     assert "displayLabel" in onto.object_types["Employee"]["properties"]
     assert onto.remove_property("Employee", "displayLabel")
+    assert onto.update_property("Employee", "name", clear_source_mapping=True)
+    graph = schema_graph_payload(onto)
+    name_prop = next(n for n in graph["nodes"] if n["id"] == "PROP:Employee:name")
+    assert name_prop["source"]["mapped"] is False
     with pytest.raises(ValueError):
         onto.remove_property("Employee", "employee_id")
 
