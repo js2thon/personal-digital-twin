@@ -337,7 +337,7 @@ class Ontology:
                     source_type=src_type,
                     target_type=tgt_type,
                     source_pk=str(pk_value),
-                    target_pk=value,
+                    target_pk=target_id,
                     description=info.get("description", ""),
                 )
 
