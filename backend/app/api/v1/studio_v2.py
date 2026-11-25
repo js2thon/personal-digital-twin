@@ -520,7 +520,7 @@ class SchemaEditOp(BaseModel):
     primary_key: str = ""
     properties: List[str] = Field(default_factory=list)
     property_name: str = ""
-    property_type: str = "string"
+    property_type: str = ""
     source_table: str = ""
     source_column: str = ""
     clear_source_mapping: bool = False
@@ -603,13 +603,16 @@ def compare_source_dataset(session_id: str, dataset_id: str) -> Dict[str, Any]:
             "rows_before": old.get("row_count", 0),
             "rows_after": len(table.df),
         })
-    changed = bool(added_tables or removed_tables or any(
+    current_dataset_id = sess.meta.get("source_info", {}).get("dataset_id")
+    dataset_changed = bool(current_dataset_id and current_dataset_id != dataset_id)
+    changed = bool(dataset_changed or added_tables or removed_tables or any(
         d["added_columns"] or d["removed_columns"] or d["type_changes"] or d["rows_before"] != d["rows_after"]
         for d in table_diffs
     ))
     return {
         "ok": True, "requires_review": changed, "mutated": False,
-        "current_dataset_id": sess.meta.get("source_info", {}).get("dataset_id"),
+        "dataset_changed": dataset_changed,
+        "current_dataset_id": current_dataset_id,
         "incoming_dataset_id": dataset_id,
         "added_tables": added_tables, "removed_tables": removed_tables,
         "table_diffs": table_diffs,
