@@ -5,7 +5,6 @@ from app.api.v1 import (  # noqa: F401
     lineage,
     messages,
     ontology,
-    ontology_modelling,
     pipeline,
     projection,
     semantic,
