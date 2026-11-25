@@ -145,6 +145,7 @@ def build_from_dataset(dataset_id: str) -> Dict[str, Any]:
     name = f"dataset:{dataset_id[:8]}"
     sess = _store().build_from_dataframes(tables, name=name)
     sess.meta["source_info"] = {"kind": "dataset", "dataset_id": dataset_id, "name": name}
+    sess.touch()
     for mapping in sess.ontology.data_mapping.values():
         mapping["source_kind"] = "dataset"
         mapping["dataset_id"] = dataset_id
@@ -272,6 +273,7 @@ async def build_from_upload(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     sess.meta["source_info"] = {"kind": "uploaded_files", "files": [f.filename or "table" for f in files]}
+    sess.touch()
     return {"ok": True, **sess.summary()}
 
 
@@ -296,6 +298,7 @@ def build_from_records(body: BuildFromRecordsRequest) -> Dict[str, Any]:
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     sess.meta["source_info"] = {"kind": "records", "tables": list(frames.keys())}
+    sess.touch()
     return {"ok": True, **sess.summary()}
 
 
@@ -549,7 +552,7 @@ def get_canvas_layout(session_id: str) -> Dict[str, Any]:
         sess = _store().require(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {"positions": sess.meta.get("canvas_layout", {}), "storage": "process_session"}
+    return {"positions": sess.meta.get("canvas_layout", {}), "storage": "postgresql"}
 
 
 @router.post("/sessions/{session_id}/layout")
