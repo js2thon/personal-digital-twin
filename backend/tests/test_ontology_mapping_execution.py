@@ -171,3 +171,31 @@ def test_relation_api_accepts_explicit_source_table():
     source = Path("app/api/v1/ontology_mapping.py").read_text(encoding="utf-8")
     assert "source_table: str | None = None" in source
     assert "source_table=payload.source_table" in source
+
+
+def test_relation_ingestion_is_table_scoped_and_keeps_source_snapshot_state():
+    source = Path("app/modules/ontology/mapping_execution.py").read_text(encoding="utf-8")
+    assert 'f"{namespace}:{selected_table}"' in source
+    assert 'f"{namespace}:{table_name}"' in source
+    assert "source_active=TRUE" in source
+    assert "ADD COLUMN IF NOT EXISTS source_active BOOLEAN NOT NULL DEFAULT TRUE" in source
+    assert 'f"{source_sha256}:{mapping_set_id}:{selected_table or \'default\'}"' in source
+
+
+def test_streaming_execution_passes_source_table_to_each_batch():
+    source = Path("app/modules/ontology/ingestion_batches.py").read_text(encoding="utf-8")
+    assert "source_table: str | None = None" in source
+    assert "source_namespace=namespace, source_table=source_table" in source
+    assert 'snapshot_key = f"{snapshot_id}:{source_table}" if source_table else snapshot_id' in source
+
+
+def test_database_snapshot_uses_table_specific_contract_columns():
+    source = Path("app/modules/ontology/ingestion_batches.py").read_text(encoding="utf-8")
+    assert 'if item.get("table") == table_name' in source
+    assert 'source_table=table_name' in source
+    assert 'source_namespace = f"db:{profile_name}:{schema_name or \'default\'}"' in source
+
+
+def test_automodel_junction_mapping_preserves_primary_key():
+    source = Path("app/modules/ontology/automodel/mapper.py").read_text(encoding="utf-8")
+    assert '"primary_key": list(p.primary_key or [])' in source
