@@ -392,6 +392,10 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                         skipped_records += 1
                         if source_state and source_state.get("instance_id"):
                             source_instances.setdefault(row_index, {})[entity] = str(source_state["instance_id"])
+                            db.execute(
+                                "UPDATE ontology.dataset_source_records SET last_seen_at=now(), source_active=TRUE "
+                                "WHERE id=CAST(:id AS uuid)", {"id": source_state["id"]}
+                            )
                         continue
 
                     if (source_state and source_state.get("instance_id")
@@ -413,6 +417,10 @@ def execute_approved_dataset(*, tenant_id: str, mapping_set_id: str,
                         )
                         skipped_records += 1
                         source_instances.setdefault(row_index, {})[entity] = str(iid)
+                        db.execute(
+                            "UPDATE ontology.dataset_source_records SET last_seen_at=now(), source_active=TRUE "
+                            "WHERE id=CAST(:id AS uuid)", {"id": source_state["id"]}
+                        )
                         continue
 
                     instance_payload = {
