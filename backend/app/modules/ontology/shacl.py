@@ -162,7 +162,7 @@ def current_shapes(refresh: bool = False) -> dict:
             _cache.update(key=key, shapes=shapes)
             return shapes
 
-        base = shapes_from_schema(_registry_schema())
+        base = shapes_from_schema(_ontology_schema())
         key = f"registry:{base['schema_version']}"
         if not refresh and _cache["key"] == key and _cache["shapes"]:
             return _cache["shapes"]
