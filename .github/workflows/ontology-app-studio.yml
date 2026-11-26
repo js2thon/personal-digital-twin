@@ -21,5 +21,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Validate workbench JavaScript and DOM bindings
+      - name: Validate workbench JavaScript, DOM and backend API contracts
         run: node web/ontology-app-studio/validate.mjs
+      - name: Install Playwright
+        run: npm install --prefix /tmp/ontology-app-e2e --no-save playwright@1.56.1
+      - name: Install Chromium
+        run: /tmp/ontology-app-e2e/node_modules/.bin/playwright install --with-deps chromium
+      - name: Run browser/API contract E2E
+        env:
+          PLAYWRIGHT_MODULE: /tmp/ontology-app-e2e/node_modules/playwright
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/ms-playwright
+        run: node web/ontology-app-studio/e2e.cjs
