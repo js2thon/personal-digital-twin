@@ -3,34 +3,46 @@ import assert from "node:assert/strict";
 
 const file = "web/ontology-app-studio/index.html";
 const html = fs.readFileSync(file, "utf8");
-const match = html.match(/<script>([\s\S]*?)<\/script>/);
+const match = html.match(/<script>([\\s\\S]*?)<\\/script>/);
 assert.ok(match, "workbench script block must exist");
 new Function(match[1]);
 
-const declared = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(x => x[1]));
-const referenced = new Set([...match[1].matchAll(/\$\('([^']+)'\)/g)].map(x => x[1]));
+const declared = new Set([...html.matchAll(/\\bid="([^"]+)"/g)].map(x => x[1]));
+const referenced = new Set([...match[1].matchAll(/\\$\\('([^']+)'\\)/g)].map(x => x[1]));
 const missing = [...referenced].filter(id => !declared.has(id));
 assert.deepEqual(missing, [], "missing DOM elements: " + missing.join(", "));
 
+// The App Studio must consume the same automodel job and ontology studio APIs.
+// Legacy RDF /kg session endpoints were removed from the backend and must not return.
 for (const endpoint of [
-  "/kg/sessions", "/kg/design/draft", "/kg/design/doc", "/kg/design/apply",
-  "/kg/import", "/sparql", "/data",
-  "/ontology/mapping/dataset/inspect",
-  "/ontology/mapping/validate",
-  "/ontology/mapping/preview-file",
-  "/ontology/mapping/sets",
-  "/ontology/mapping/dataset/execute",
-  "/ontology/metrics/catalog", "/ontology/metrics/discover",
-  "/ontology/metrics/validate", "/ontology/metrics/preview",
-  "/ontology/metrics/preview-from-store"
-]) assert.ok(html.includes(endpoint), "missing endpoint integration: " + endpoint);
+  "/automodel/jobs?limit=100",
+  "/studio/overview",
+  "/studio/schema-graph",
+  "/studio/instance-graph",
+  "/studio/objects?cls=",
+  "/studio/quality",
+  "/studio/governance",
+  "/pipeline",
+  "/ontology/metrics?limit=200"
+]) assert.ok(html.includes(endpoint), "missing backend integration: " + endpoint);
+assert.ok(!html.includes("/kg/"), "legacy /kg endpoints must not be used by App Studio");
 
-for (const id of ["datasetFile", "datasetInspect", "datasetPreview", "mappingCreate", "mappingApprove", "datasetExecute", "pipelineStatus"])
-  assert.ok(declared.has(id), "missing dataset pipeline control: " + id);
-assert.ok(html.includes("只有 approved 映射版本允许执行"), "approved-only execution guard must remain");
-assert.ok(html.includes("if(sel.value==='')return null"), "unselected dataset columns must remain unmapped");
-for (const id of ["metricSpec", "metricDiscover", "metricDefs", "metricData", "metricValidate",
-  "metricPreview", "metricRunStore", "metricSave", "metricApprove", "metricPublish", "metricList"])
-  assert.ok(declared.has(id), "missing metric center control: " + id);
-assert.ok(html.includes("读取语义实例库计算"), "live semantic-store metric execution control must exist");
-console.log("Ontology App Studio static validation passed.");
+// Main UI controls must exist and be wired to the live API workflow.
+for (const id of [
+  "jobs", "refresh", "reload", "apiBase", "apiKey", "connection",
+  "overviewGraph", "schemaGraph", "objectTypes", "linkTypes",
+  "classSelect", "instanceSearch", "searchInstances", "instanceTable",
+  "instanceGraph", "pipelineStages", "quality", "governance",
+  "loadMetrics", "metricTable", "export"
+]) assert.ok(declared.has(id), "missing workbench control: " + id);
+
+for (const id of ["refresh", "reload", "searchInstances", "classSelect", "loadMetrics", "export"])
+  assert.ok(match[1].includes("$('" + id + "')"), "control is not wired: " + id);
+
+assert.ok(html.includes("同一自动建模任务"), "UI must explain shared task data lineage");
+assert.ok(html.includes("../shared/design-system.css"), "shared design system stylesheet must be loaded");
+assert.ok(match[1].includes("Promise.allSettled"), "independent API sections must fail independently");
+assert.ok(match[1].includes("无法连接后端 API"), "network failures must be surfaced to the user");
+assert.ok(!match[1].includes("localStorage"), "server data must not be shadowed by stale local snapshots");
+
+console.log("Ontology App Studio frontend/backend contract validation passed.");
