@@ -62,7 +62,8 @@ try {
   await page.goto("http://127.0.0.1:4173/ontology-app-studio/", { waitUntil: "networkidle" });
   await page.waitForFunction(() => document.querySelector("#connection")?.textContent.includes("已连接后端"));
   assert.match(await page.locator("#objectNav").innerText(), /客户/);
-  assert.match(await page.locator("#assetStatus").innerText(), /E2E 客户数据/);\n  assert.match(await page.locator("#connection").innerText(), /job-e2e-001/);
+  assert.match(await page.locator("#assetStatus").innerText(), /E2E 客户数据/);
+  assert.match(await page.locator("#connection").innerText(), /job-e2e-001/);
 
   await page.locator('[data-view="instances"]').click();
   await page.locator("#classSelect").selectOption("Customer");
