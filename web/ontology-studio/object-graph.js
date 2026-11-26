@@ -188,10 +188,112 @@
     });
   }
 
+
+  function fromSchema(schema) {
+    if (!schema || typeof schema !== 'object') return null;
+    const entityTypes = schema.entity_types || schema.classes || {};
+    const attributes = schema.attributes || {};
+    const relationTypes = schema.relation_types || {};
+    const items = [];
+    for (const [key, ent0] of Object.entries(entityTypes)) {
+      const ent = (ent0 && typeof ent0 === 'object') ? ent0 : { label: String(ent0) };
+      const eid = String(key);
+      const properties = {};
+      for (const [pk, pv0] of Object.entries(attributes)) {
+        const pv = (pv0 && typeof pv0 === 'object') ? pv0 : {};
+        const owner = String(pv.owner || pv.domain || '');
+        if (owner && owner !== eid) continue;
+        if (!owner) continue;
+        properties[String(pk)] = {
+          label: pv.label || pk,
+          value_type: pv.range || pv.value_type || 'String',
+          role: pv.role || 'text',
+          source: pv.source || (pv.column ? { table: pv.table, column: pv.column } : undefined),
+        };
+      }
+      for (const k of (ent.key || ent.identity || [])) {
+        const ks = String(k);
+        if (!properties[ks]) properties[ks] = { label: ks, value_type: 'String', role: 'identity' };
+      }
+      const relations = {};
+      for (const [rk, rv0] of Object.entries(relationTypes)) {
+        const rv = (rv0 && typeof rv0 === 'object') ? rv0 : {};
+        const src = String(rv.source || rv.domain || '');
+        if (!src || src !== eid) continue;
+        relations[String(rk)] = {
+          label: rv.label || rk,
+          target: rv.target || rv.range || '',
+          cardinality: rv.cardinality || '1:N',
+        };
+      }
+      const unbound = Object.values(properties).filter((p) => !p.source).length;
+      items.push({
+        id: eid,
+        label: String(ent.label || eid),
+        description: String(ent.description || ''),
+        domain: String(ent.domain || ent.source_table || ''),
+        identity: [...(ent.key || ent.identity || [])].map(String),
+        properties, relations, functions: {}, actions: {},
+        quality: {
+          property_count: Object.keys(properties).length,
+          relation_count: Object.keys(relations).length,
+          function_count: 0,
+          action_count: 0,
+          unbound_properties: unbound,
+        },
+      });
+    }
+    if (!items.length) return null;
+    return { source: 'job-schema', items };
+  }
+
+  function graphFromObject(obj, source) {
+    if (!obj) return null;
+    const props = [], types = [], fns = [], acts = [], edges = [];
+    const typeSeen = new Set();
+    for (const [name, p] of Object.entries(obj.properties || {})) {
+      const pid = 'prop:' + name;
+      props.push({ id: pid, name, label: p.label || name, role: p.role, value_type: p.value_type, source: p.source });
+      edges.push({ from: 'object', to: pid, kind: 'owns' });
+      const vt = String(p.value_type || 'String');
+      const tid = 'type:' + vt;
+      if (!typeSeen.has(vt)) { typeSeen.add(vt); types.push({ id: tid, label: vt }); }
+      edges.push({ from: pid, to: tid, kind: 'typed' });
+    }
+    for (const [name, f] of Object.entries(obj.functions || {})) {
+      const fid = 'fn:' + name;
+      fns.push({ id: fid, name, label: f.label || name, kind: f.kind, op: f.op || f.expr, on: f.on, output_type: f.output_type });
+      const on = String(f.on || '');
+      let linked = false;
+      for (const part of on.replace(/\s/g, '').split(',')) {
+        if (part && props.some((p) => p.id === 'prop:' + part)) {
+          edges.push({ from: 'prop:' + part, to: fid, kind: 'derives' });
+          linked = true;
+        }
+      }
+      if (!linked) edges.push({ from: 'object', to: fid, kind: 'owns' });
+    }
+    for (const [name, a] of Object.entries(obj.actions || {})) {
+      const aid = 'act:' + name;
+      acts.push({ id: aid, name, label: a.label || name, policy: a.policy, effects: a.effects || [], params: a.params || [] });
+      edges.push({ from: 'object', to: aid, kind: 'action' });
+    }
+    return {
+      object: {
+        id: obj.id, label: obj.label, description: obj.description, domain: obj.domain, quality: obj.quality,
+      },
+      columns: { properties: props, types, functions: fns, actions: acts },
+      edges,
+      source: source || obj.source || 'schema',
+    };
+  }
+
   window.ObjectGraph = {
     render: renderObjectGraph,
     loadCatalog: loadObjectCatalog,
     loadGraph: loadObjectGraph,
     renderList: renderObjectList,
+    fromSchema,
+    graphFromObject,
   };
 })();

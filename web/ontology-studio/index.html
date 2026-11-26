@@ -17,7 +17,7 @@
 <header><div class="brand">Ontology Studio<small>ENTERPRISE SEMANTIC MODEL & GOVERNANCE</small></div><span class="pill">V2 · Read mostly</span><div class="spacer"></div><input id="apiBase" class="key" aria-label="API 地址" placeholder="API 地址"><input id="apiKey" class="key" type="password" aria-label="API Key" placeholder="API Key"><button id="theme">◐</button><a href="../ontology-app-studio/" style="color:var(--blue)">应用工作台 ↗</a></header>
 <div class="layout"><aside>
 <div class="row"><b>本体资产</b><button id="refresh">刷新</button></div>
-<div class="section-label">RDF / OWL 会话</div><div id="sessions" class="stack"><div class="muted">读取中…</div></div>
+<div class="section-label">RDF 会话（已下线）</div><div id="sessions" class="stack"><div class="muted">/kg API 已移除，请使用下方自动建模任务</div></div>
 <div class="section-label">自动建模任务</div><div id="jobs" class="stack"><div class="muted">读取中…</div></div>
 <div class="status" id="connection">等待连接 API</div>
 <div class="footer-note">本工作台优先展示服务端真实数据。未接入的能力会明确标记为“暂无数据”，不会虚构对象、权限或指标。</div>
@@ -31,10 +31,10 @@
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <h2 style="margin:0">对象驱动设计</h2>
       <span class="pill" id="objectGraphSummary">选择左侧对象</span>
-      <label class="hint" style="margin:0"><input type="checkbox" id="objectDemoMode" checked> 使用 Demo 域</label>
+      <label class="hint" style="margin:0"><input type="checkbox" id="objectDemoMode"> 强制 Demo 域（忽略当前任务）</label>
       <button type="button" id="objectReload" class="ghost">刷新目录</button>
     </div>
-    <p class="hint">以业务对象为中心展开：属性 → 类型 → 函数 → 行动。无已发布 schema 时自动使用 Hospital / Alarm 示例域。</p>
+    <p class="hint">以业务对象为中心展开：属性 → 类型 → 函数 → 行动。API：/ontology/objects · 优先使用当前选中自动建模任务的 draft.schema；勾选 Demo 或无任务时回落示例域。</p>
     <div class="og-layout">
       <aside>
         <h3 style="margin:0 0 8px;font-size:13px;color:#94a3b8">对象目录</h3>
@@ -54,7 +54,7 @@
 </main></div>
 <script>
 (()=>{'use strict';
-const $=id=>document.getElementById(id),S={api:sessionStorage.getItem('ontoStudioApiBase')||(location.port==='8200'?location.protocol+'//'+location.hostname+':8100':location.origin),key:sessionStorage.getItem('ontoStudioKey')||'',sessions:[],jobs:[],sid:null,jid:null,model:null,job:null,metrics:[],studio:{},studioGraph:null,instanceGraph:null,graphMode:'schema',graphScale:1,selected:null};
+const $=id=>document.getElementById(id),S={api:sessionStorage.getItem('ontoStudioApiBase')||(location.port==='8200'?location.protocol+'//'+location.hostname+':8100':location.origin),key:sessionStorage.getItem('ontoStudioKey')||'',sessions:[],jobs:[],sid:null,jid:null,model:null,job:null,metrics:[],studio:{},studioGraph:null,instanceGraph:null,graphMode:'schema',graphScale:1,selected:null};window.S=S;
 $('apiBase').value=S.api;$('apiKey').value=S.key;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=n=>Number(n||0).toLocaleString('zh-CN');
@@ -96,9 +96,8 @@ async function loadMetrics(){try{const r=await api('/ontology/metrics');S.metric
 async function loadSourceProvenance(tableName,columnName){if(!S.jid||!tableName||!columnName){$('instanceLineage').textContent='请填写源表和源字段';return}try{const p=new URLSearchParams({table:tableName,column:columnName,limit:'500'});const r=await api('/automodel/jobs/'+encodeURIComponent(S.jid)+'/studio/provenance/source?'+p.toString());$('instanceLineage').innerHTML='<b>'+esc(tableName)+'.'+esc(columnName)+'</b> · 反向映射 '+fmt(r.total)+' 条事实';$('lineageDetails').innerHTML=table(['本体实例','对象类型','本体属性 / 关系','值 / 目标','信任等级'],(r.items||[]).map(x=>[x.entity_name||x.entity_id,x.entity_type,x.predicate,x.value??x.target_entity??'—',x.trust_tier??'—']))+'<p class="hint">'+esc(r.note||'')+'</p>'}catch(e){$('instanceLineage').textContent='反向血缘读取失败：'+e.message}}
 async function compareVersions(){const a=$('versionA').value,b=$('versionB').value;if(!a||!b||a===b){$('versionDiff').textContent='请选择两个不同版本';return}try{const p=new URLSearchParams({a,b});const d=await api('/automodel/versions/diff?'+p.toString());$('versionDiff').innerHTML='<b>版本差异摘要</b>'+table(['类别','新增','删除','修改'],Object.entries(d).filter(([k,v])=>Array.isArray(v)).map(([k,v])=>[k,v.filter(x=>x.change==='added').length,v.filter(x=>x.change==='removed').length,v.filter(x=>x.change==='modified').length]))+'<pre>'+esc(JSON.stringify(d,null,2))+'</pre>'}catch(e){$('versionDiff').textContent='版本比较失败：'+e.message}}
 async function loadProvenance(entity,predicate=null){if(!S.jid||!entity){$('instanceLineage').textContent='请选择自动建模任务中的实例';return}try{const params=new URLSearchParams({entity,limit:'500'});if(predicate)params.set('predicate',predicate);const r=await api('/automodel/jobs/'+encodeURIComponent(S.jid)+'/studio/provenance?'+params.toString());$('instanceLineage').innerHTML='<b>'+esc(r.entity?.name||entity)+'</b> · '+esc(r.entity?.type||'')+' · '+fmt(r.total)+' 条事实 · 来源坐标完整率 '+fmt((r.lineage_completeness||0)*100)+'%<p class="hint">'+esc(r.note||'')+'</p>';$('lineageDetails').innerHTML=table(['本体属性 / 关系','事实值 / 目标实例','来源系统','源表','源字段','来源行','信任等级'],(r.items||[]).map(x=>[x.property_label||x.predicate,x.value??x.target_entity??'—',x.source||'—',x.source_table||'—',x.source_column||'未持久化',x.source_ref?.source_row_key||'—',x.trust_tier??'—']));tab('lineage')}catch(e){$('instanceLineage').textContent='血缘读取失败：'+e.message;$('lineageDetails').innerHTML=''}}
-async function loadSession(id){S.sid=id;S.jid=null;S.job=null;S.studio={};S.studioGraph=null;try{S.model=await api('/kg/'+encodeURIComponent(id));renderModel();$('activeAsset').textContent=S.model.ontology?.label||id;$('lineageSource').textContent='RDF / OWL Session';$('lineageFlow').innerHTML='<div class="empty">当前 RDF 会话未返回数据源与字段映射血缘。请选择左侧自动建模任务查看端到端 Pipeline。</div>';$('mappingTable').innerHTML='<div class="empty">RDF 会话当前未包含映射契约数据。</div>';$('metricLineage').innerHTML='<div class="empty">可在行为与指标视图读取指标注册表。</div>';$('instanceLineage').textContent='RDF Session 未提供字段级实例血缘。';$('evidenceSummary').innerHTML='<div class="empty">RDF Session 未提供候选审核证据与置信度。</div>';$('issues').innerHTML='<div class="empty">请在本体质量门禁中执行 RDF/OWL 质量报告。</div>';$('versions').innerHTML='<div class="empty">RDF Session 当前未提供版本审计记录。</div>';$('actions').innerHTML='<div class="empty">RDF Session 当前未提供业务 Action 目录。</div>';$('functions').innerHTML='<div class="empty">可在行为与指标视图读取指标定义；独立 Functions 目录尚未接入。</div>';tab('relationship');setStatus('connection','已连接：RDF / OWL 本体会话 '+id)}catch(e){setStatus('connection','本体读取失败：'+e.message)}}
-async function loadJob(id){S.jid=id;S.sid=null;S.model=null;S.studio={};S.studioGraph=null;try{const base='/automodel/jobs/'+encodeURIComponent(id);const results=await Promise.allSettled([api(base+'?full=true'),api(base+'/studio/overview'),api(base+'/studio/schema-graph?props=true'),api(base+'/studio/quality'),api(base+'/pipeline'),api(base+'/studio/actions'),api(base+'/versions'),api(base+'/metrics'),api(base+'/studio/governance')]);if(results[0].status!=='fulfilled')throw results[0].reason;S.job=results[0].value;S.mappingDirty=false;S.graphMode='schema';S.graphScale=1;S.instanceGraph=null;const keys=['overview','graph','quality','pipeline','actions','versions','metrics','governance'];keys.forEach((k,i)=>{const r=results[i+1];if(r.status==='fulfilled'){if(k==='graph')S.studioGraph=r.value;else S.studio[k]=r.value}else S.studio[k+'_error']=r.reason?.message||'接口不可用'});renderJob();$('mappingPublish').disabled=!(S.job.release_gate?.ready)&&!(S.studio.governance?.release_gate?.ready);if(['published','written'].includes(S.job.status))$('mappingPublish').disabled=true;$('activeAsset').textContent='自动建模 · '+id;tab('lineage');setStatus('connection','已连接：自动建模任务 '+id+' · 工作台数据已按可用接口加载')}catch(e){setStatus('connection','任务详情读取失败：'+e.message)}}
-async function refresh(){setStatus('connection','正在连接 API…');try{const [a,b]=await Promise.allSettled([api('/kg/sessions'),api('/automodel/jobs')]);S.sessions=a.status==='fulfilled'?(a.value.items||[]):[];S.jobs=b.status==='fulfilled'?(b.value.items||[]):[];$('sessions').innerHTML=S.sessions.length?S.sessions.map(x=>'<button class="session '+(x.id===S.sid?'active':'')+'" data-id="'+esc(x.id)+'"><b>'+esc(x.name||x.id)+'</b><small>'+fmt(x.stats?.classes)+' 类 · '+fmt(x.stats?.individuals)+' 实例</small></button>').join(''):'<div class="muted">暂无 RDF 本体会话</div>';$('jobs').innerHTML=S.jobs.length?S.jobs.map(x=>'<button class="job '+(x.id===S.jid?'active':'')+'" data-id="'+esc(x.id)+'"><b>'+esc(x.source?.name||x.source?.database||x.id)+'</b><small>'+esc(x.status||'unknown')+' · '+esc(x.schema_version||'未发布')+'</small></button>').join(''):'<div class="muted">暂无自动建模任务</div>';$('sessions').querySelectorAll('[data-id]').forEach(x=>x.onclick=()=>loadSession(x.dataset.id));$('jobs').querySelectorAll('[data-id]').forEach(x=>x.onclick=()=>loadJob(x.dataset.id));if(a.status==='rejected'&&b.status==='rejected')throw a.reason;setStatus('connection','API 已连接 · '+S.sessions.length+' 个本体会话 · '+S.jobs.length+' 个自动建模任务')}catch(e){setStatus('connection','API 连接失败：'+e.message)}}
+async function loadSession(id){setStatus('connection','RDF /kg 会话已下线，请改选自动建模任务');$('sessions').innerHTML='<div class="muted">RDF /kg 会话 API 已下线。请使用自动建模任务。</div>';}async function loadJob(id){S.jid=id;S.sid=null;S.model=null;S.studio={};S.studioGraph=null;try{const base='/automodel/jobs/'+encodeURIComponent(id);const results=await Promise.allSettled([api(base+'?full=true'),api(base+'/studio/overview'),api(base+'/studio/schema-graph?props=true'),api(base+'/studio/quality'),api(base+'/pipeline'),api(base+'/studio/actions'),api(base+'/versions'),api(base+'/metrics'),api(base+'/studio/governance')]);if(results[0].status!=='fulfilled')throw results[0].reason;S.job=results[0].value;S.mappingDirty=false;S.graphMode='schema';S.graphScale=1;S.instanceGraph=null;const keys=['overview','graph','quality','pipeline','actions','versions','metrics','governance'];keys.forEach((k,i)=>{const r=results[i+1];if(r.status==='fulfilled'){if(k==='graph')S.studioGraph=r.value;else S.studio[k]=r.value}else S.studio[k+'_error']=r.reason?.message||'接口不可用'});renderJob();$('mappingPublish').disabled=!(S.job.release_gate?.ready)&&!(S.studio.governance?.release_gate?.ready);if(['published','written'].includes(S.job.status))$('mappingPublish').disabled=true;$('activeAsset').textContent='自动建模 · '+id;tab('lineage');setStatus('connection','已连接：自动建模任务 '+id+' · 工作台数据已按可用接口加载')}catch(e){setStatus('connection','任务详情读取失败：'+e.message)}}
+async function refresh(){setStatus('connection','正在连接 API…');try{const b=await api('/automodel/jobs');S.sessions=[];S.jobs=b.items||b||[];if(!Array.isArray(S.jobs))S.jobs=[];$('sessions').innerHTML='<div class="muted">RDF /kg 会话 API 已下线。请使用自动建模任务作为本体资产入口。</div>';$('jobs').innerHTML=S.jobs.length?S.jobs.map(x=>'<button class="job '+(x.id===S.jid?'active':'')+'" data-id="'+esc(x.id)+'"><b>'+esc(x.source?.name||x.source?.database||x.id)+'</b><small>'+esc(x.status||'unknown')+' · '+esc(x.schema_version||'未发布')+'</small></button>').join(''):'<div class="muted">暂无自动建模任务（确认 API 已安装 pandas 等 automodel 依赖）</div>';$('jobs').querySelectorAll('[data-id]').forEach(x=>x.onclick=()=>loadJob(x.dataset.id));setStatus('connection','API 已连接 · '+S.jobs.length+' 个自动建模任务');if(window.refreshObjectDesign)window.refreshObjectDesign();}catch(e){setStatus('connection','API 连接失败：'+e.message);$('sessions').innerHTML='<div class="muted">RDF /kg 会话 API 已下线</div>';$('jobs').innerHTML='<div class="muted">无法加载任务：'+esc(e.message)+'</div>';}}
 window.applySemanticMappingEdit=({table,column,property, class:targetClass})=>{
  if(!S.job)return;
  const schema=S.job.draft?.schema||S.job.schema||{};
@@ -219,20 +218,33 @@ refresh();
     if (!window.ObjectGraph) return;
     const demo = !!$('objectDemoMode')?.checked;
     try {
-      const cat = await ObjectGraph.loadCatalog(api, { demo });
-      ObjectGraph.renderList(cat.items || [], async (id) => {
+      let cat = null;
+      const jobSchema = (window.S && (S.job?.draft?.schema || S.job?.schema))
+        || (typeof S !== 'undefined' && S.job && (S.job.draft?.schema || S.job.schema));
+      // Prefer current automodel job schema when Demo 关闭
+      if (!demo && jobSchema && ObjectGraph.fromSchema) {
+        cat = ObjectGraph.fromSchema(jobSchema);
+      }
+      if (!cat) {
+        cat = await ObjectGraph.loadCatalog(api, { demo: demo || !jobSchema });
+      }
+      const select = async (id) => {
         currentId = id;
         document.querySelectorAll('.obj-item').forEach(b => b.classList.toggle('active', b.dataset.id === id));
-        const g = await ObjectGraph.loadGraph(api, id, { demo });
+        let g = null;
+        if (!demo && jobSchema && ObjectGraph.fromSchema) {
+          const full = ObjectGraph.fromSchema(jobSchema);
+          const obj = (full?.items || []).find(x => x.id === id);
+          if (obj) g = ObjectGraph.graphFromObject(obj, full.source);
+        }
+        if (!g) g = await ObjectGraph.loadGraph(api, id, { demo: demo || !jobSchema });
         ObjectGraph.render(g);
-      });
+      };
+      ObjectGraph.renderList(cat.items || [], select);
       const first = (cat.items || [])[0];
-      if (first) {
-        currentId = first.id;
-        const g = await ObjectGraph.loadGraph(api, first.id, { demo });
-        ObjectGraph.render(g);
-        document.querySelectorAll('.obj-item').forEach(b => b.classList.toggle('active', b.dataset.id === first.id));
-      }
+      if (first) await select(first.id);
+      const srcLabel = cat.source || (demo ? 'demo' : 'api');
+      if ($('objectGraphSummary') && !currentId) $('objectGraphSummary').textContent = '来源 ' + srcLabel;
     } catch (e) {
       if ($('objectCatalog')) $('objectCatalog').innerHTML = '<div class="empty">加载失败：' + (e.message || e) + '（仍可打开本页查看布局）</div>';
       // offline demo payload
@@ -277,6 +289,7 @@ refresh();
       }
     }
   }
+  window.refreshObjectDesign = refresh;
   document.addEventListener('DOMContentLoaded', () => {
     $('objectReload')?.addEventListener('click', refresh);
     $('objectDemoMode')?.addEventListener('change', refresh);

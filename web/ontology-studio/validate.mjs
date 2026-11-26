@@ -13,7 +13,7 @@ const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(x => x[1]));
 const refs = new Set([...source.matchAll(/\$\(["']([^"']+)["']\)/g)].map(x => x[1]));
 const missing = [...refs].filter(x => !ids.has(x));
 if (missing.length) throw new Error("Missing DOM ids: " + missing.join(", "));
-for (const endpoint of ["/kg/sessions", "/automodel/jobs", "/ontology/metrics", "/studio/schema-graph", "/studio/instance-graph", "/studio/quality", "/studio/governance", "/studio/provenance", "/studio/provenance/source", "/automodel/versions/diff", "/automodel/jobs/", "/mapping-contract", "/mapping-contract/preview", "/pipeline"]) {
+for (const endpoint of ["/ontology/objects", "/automodel/jobs", "/ontology/metrics", "/studio/schema-graph", "/studio/instance-graph", "/studio/quality", "/studio/governance", "/studio/provenance", "/studio/provenance/source", "/automodel/versions/diff", "/automodel/jobs/", "/mapping-contract", "/mapping-contract/preview", "/pipeline"]) {
   if (!html.includes(endpoint)) throw new Error("Missing expected API integration: " + endpoint);
 }
 for (const id of ["schemaMode", "instanceMode", "graphZoomIn", "graphZoomOut", "graphFit", "traceEntity", "traceButton", "sourceTable", "sourceColumn", "reverseTraceButton", "versionA", "versionB", "compareVersions", "governanceSummary", "lineageDetails", "semanticMappingSvg", "semanticMappingDetail", "semanticMappingSummary", "mappingValidate", "mappingPreview", "mappingPreviewStatus", "mappingPreviewSummary", "mappingPreviewEntities", "mappingPreviewFacts", "mappingPreviewIssues", "mappingSave", "mappingPublish"]) {
