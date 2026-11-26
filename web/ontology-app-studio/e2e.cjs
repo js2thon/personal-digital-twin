@@ -2,6 +2,8 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
 const { spawn } = require("node:child_process");
 const assert = require("node:assert/strict");
 
+(async () => {
+
 const server = spawn("python", ["-m", "http.server", "4173", "--bind", "127.0.0.1", "--directory", "web"], { stdio: "ignore" });
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 let browser;
@@ -80,7 +82,11 @@ try {
   ];
   for (const path of expected) assert.ok(requests.some(r => r.path === path || (path === jobPath + "/studio/objects" && r.path.startsWith(path))), "expected API request missing: " + path);
   console.log("Ontology App Studio browser/API contract E2E passed.");
-} finally {
+ } finally {
   if (browser) await browser.close();
   server.kill();
 }
+})().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
