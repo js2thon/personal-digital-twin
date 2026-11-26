@@ -62,6 +62,9 @@ for (const id of ["refresh", "reload", "searchInstances", "classSelect", "loadMe
 assert.ok(html.includes("同一自动建模任务"), "UI must explain shared task data lineage");
 assert.ok(html.includes("../shared/design-system.css"), "shared design system stylesheet must be loaded");
 assert.ok(match[1].includes("Promise.allSettled"), "independent API sections must fail independently");
+assert.ok(match[1].includes("S.selectionToken"), "job selection must reject stale asynchronous responses");
+assert.ok(match[1].includes("S.jobId!==jobId"), "instance queries must not overwrite a newly selected job");
+assert.ok(match[1].includes("S.jobId!==selectedJobId"), "metric queries must not overwrite a newly selected job");
 assert.ok(match[1].includes("无法连接后端 API"), "network failures must be surfaced to the user");
 assert.ok(!match[1].includes("localStorage"), "server data must not be shadowed by stale local snapshots");
 
