@@ -29,7 +29,6 @@
 创建数据库和用户后，复制 .env.example 为 .env，并将 DATABASE_URL 配置为本机 PostgreSQL 地址。
 
 ### 2. 安装并启动
-
 Linux / macOS：
 ```bash
 bash scripts/start-local.sh
@@ -53,6 +52,7 @@ Windows PowerShell：
 默认本地单机模式不启动 Celery Worker、Redis、MinIO 或独立模型推理服务。LLM 和 Embedding 通过 OpenAI 兼容 API 配置，可连接本机模型服务或企业内网模型网关。需要异步任务队列或独立对象存储时，再按需配置 Redis / MinIO。
 
 ## 项目文档
+- 前端统一设计规范： [DESIGN.md](DESIGN.md)
 - 企业数字员工平台 V1.2 蓝图：docs/blueprint-v1.2.txt
 - V1.2 开发计划：docs/development-plan-v1.2.md
 - 本体知识图谱使用指南：docs/ontology-kg-guide.md
