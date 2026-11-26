@@ -587,3 +587,77 @@ def sync_one_entity(entity_id: str):
     from app.modules.ontology import sync as graph_sync
 
     return graph_sync.sync_entity(_as_uuid(entity_id, "entity_id"))
+
+
+# ---------------------------------------------------------------- 对象驱动视图（P0）
+def _load_schema_content(version: str | None = None) -> dict | None:
+    """读取已发布或指定版本的 schema_content；失败返回 None。"""
+    try:
+        if version:
+            row = db.fetch_one(
+                "SELECT schema_content FROM ontology.ontology_versions WHERE version = :v",
+                {"v": version},
+            )
+        else:
+            row = db.fetch_one(
+                "SELECT schema_content FROM ontology.ontology_versions "
+                "WHERE status = 'published' ORDER BY created_at DESC LIMIT 1"
+            )
+        if not row:
+            return None
+        content = row.get("schema_content") if isinstance(row, dict) else None
+        if isinstance(content, str):
+            return json.loads(content)
+        if isinstance(content, dict):
+            return content
+    except Exception:  # noqa: BLE001  DB 不可用时回落 demo
+        return None
+    return None
+
+
+@router.get("/ontology/objects")
+def list_ontology_objects(demo: bool = False, version: str | None = None):
+    """对象目录：优先已发布 schema，否则 demo 域（Hospital / Alarm…）。"""
+    from app.modules.ontology.object_view import list_objects
+
+    schema = None if demo else _load_schema_content(version)
+    cat = list_objects(schema=schema, force_demo=demo)
+    return {
+        "source": cat["source"],
+        "count": len(cat["items"]),
+        "items": [
+            {
+                "id": x["id"],
+                "label": x["label"],
+                "description": x.get("description"),
+                "domain": x.get("domain"),
+                "identity": x.get("identity"),
+                "quality": x.get("quality"),
+            }
+            for x in cat["items"]
+        ],
+    }
+
+
+@router.get("/ontology/objects/{object_id}")
+def get_ontology_object(object_id: str, demo: bool = False, version: str | None = None):
+    """对象完整定义（属性 / 关系 / 函数 / 行动）。"""
+    from app.modules.ontology.object_view import get_object
+
+    schema = None if demo else _load_schema_content(version)
+    obj = get_object(object_id, schema=schema, force_demo=demo)
+    if not obj:
+        raise HTTPException(404, f"object not found: {object_id}")
+    return obj
+
+
+@router.get("/ontology/objects/{object_id}/graph")
+def get_ontology_object_graph(object_id: str, demo: bool = False, version: str | None = None):
+    """四列画布数据：Property → Type → Function → Action。"""
+    from app.modules.ontology.object_view import object_graph_payload
+
+    schema = None if demo else _load_schema_content(version)
+    payload = object_graph_payload(object_id, schema=schema, force_demo=demo)
+    if not payload:
+        raise HTTPException(404, f"object not found: {object_id}")
+    return payload
