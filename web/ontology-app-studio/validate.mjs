@@ -21,11 +21,11 @@ for (const endpoint of [
   "/studio/quality",
   "/studio/governance",
   "/pipeline",
+  "/ontology/metrics?limit=200",
   "/metrics"
 ]) assert.ok(html.includes(endpoint), "missing backend integration: " + endpoint);
 assert.ok(!html.includes("/kg/"), "legacy /kg endpoints must not be used by App Studio");
-assert.ok(html.includes("encodeURIComponent(S.jobId)+'/metrics'"), "metrics must be scoped to the selected automodel job");
-assert.ok(!html.includes("/ontology/metrics?limit=200"), "must not call the non-existent global metrics endpoint");
+assert.ok(html.includes("encodeURIComponent(S.jobId)+'/metrics'"), "task metrics must be scoped to selected automodel job");
 
 for (const id of [
   "jobs", "refresh", "reload", "apiBase", "apiKey", "connection",
