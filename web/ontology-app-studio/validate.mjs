@@ -21,7 +21,7 @@ for (const endpoint of [
   "/studio/quality",
   "/studio/governance",
   "/pipeline",
-  "/ontology/metrics?limit=200"
+  "/automodel/jobs/\u0027+encodeURIComponent(S.jobId)+\u0027/metrics"
 ]) assert.ok(html.includes(endpoint), "missing backend integration: " + endpoint);
 assert.ok(!html.includes("/kg/"), "legacy /kg endpoints must not be used by App Studio");
 
@@ -30,7 +30,7 @@ for (const id of [
   "overviewGraph", "schemaGraph", "objectTypes", "linkTypes",
   "classSelect", "instanceSearch", "searchInstances", "instanceTable",
   "instanceGraph", "pipelineStages", "quality", "governance",
-  "loadMetrics", "metricTable", "export"
+  "loadMetrics", "metricTable", "metricSummary", "export"
 ]) assert.ok(declared.has(id), "missing workbench control: " + id);
 
 for (const id of ["refresh", "reload", "searchInstances", "classSelect", "loadMetrics", "export"])
