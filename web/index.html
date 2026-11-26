@@ -2101,7 +2101,7 @@
 
   <!-- 03.4.6 本体工作台（Ontology Studio V2，独立页面内嵌） -->
   <section class="view" id="v-studio" style="padding:0">
-    <iframe id="studioFrame" title="本体工作台" data-src="/console/automodel.html"
+    <iframe id="studioFrame" title="本体工作台" data-src="/console/automodel.html" data-fallback="/automodel.html"
             style="width:100%;height:calc(100vh - 24px);border:1px solid var(--ax-border);border-radius:var(--radius-container);background:var(--ax-bg);display:block"></iframe>
   </section>
 
@@ -2493,11 +2493,16 @@ function resetKnowledgePages() { _lPage.claims = 1; _lPage.facts = 1; }
 document.getElementById("tabs").addEventListener("click", e => {
   const btn = e.target.closest(".tab");
   if (!btn || !btn.dataset.v) return;
+  const view = document.getElementById("v-" + btn.dataset.v);
+  if (!view) {
+    console.warn("[console] missing view section for tab:", btn.dataset.v);
+    return;
+  }
   document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   btn.classList.add("active");
-  document.getElementById("v-" + btn.dataset.v).classList.add("active");
-  loadView(btn.dataset.v);
+  view.classList.add("active");
+  try { loadView(btn.dataset.v); } catch (err) { console.error("[console] loadView failed", btn.dataset.v, err); }
 });
 
 // 数字分身对话
@@ -9832,7 +9837,27 @@ function loadView(v) {
   if (v === "knowledge") loadKnowledge();
   if (v === "studio") {                       // 本体工作台：首次进入才加载 iframe，避免拖慢控制台首屏
     const f = document.getElementById("studioFrame");
-    if (f && !f.src) f.src = f.dataset.src + location.search.replace(/^\?/, "?_=1&");
+    if (f) {
+      // 注意：无 src 属性时，浏览器里 f.src 常为 "about:blank"（真值），不能用 !f.src 判断
+      const loaded = f.dataset.loaded === "1";
+      const empty = !f.getAttribute("src") || f.getAttribute("src") === "" || f.src === "about:blank";
+      if (!loaded || empty) {
+        const raw = f.dataset.src || f.dataset.fallback || "/console/automodel.html";
+        // 根路径 / 与 /console/ 均可打开；保留当前 query 便于深链 job=
+        const q = location.search ? location.search.replace(/^\?/, "?_=1&") : ("?_=" + Date.now());
+        f.src = raw + q;
+        f.dataset.loaded = "1";
+        if (!f.dataset.errBound) {
+          f.dataset.errBound = "1";
+          f.addEventListener("error", () => {
+            if (f.dataset.fallback && !f.dataset.fallbackUsed) {
+              f.dataset.fallbackUsed = "1";
+              f.src = f.dataset.fallback + (location.search || ("?_=" + Date.now()));
+            }
+          });
+        }
+      }
+    }
   }
   if (v === "decision") { loadApprovals(); loadDecisions(); }
   if (v === "messages") loadMessages();
