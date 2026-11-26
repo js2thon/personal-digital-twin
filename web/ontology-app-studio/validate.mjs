@@ -27,6 +27,27 @@ for (const endpoint of [
 assert.ok(!html.includes("/kg/"), "legacy /kg endpoints must not be used by App Studio");
 assert.ok(html.includes("encodeURIComponent(S.jobId)+'/metrics'"), "task metrics must be scoped to selected automodel job");
 
+const automodelApi = fs.readFileSync("backend/app/api/v1/automodel.py", "utf8");
+const metricsApi = fs.readFileSync("backend/app/api/v1/ontology_metrics.py", "utf8");
+const studioModule = fs.readFileSync("backend/app/modules/ontology/automodel/studio.py", "utf8");
+for (const route of [
+  '@router.get("/automodel/jobs")',
+  '@router.get("/automodel/jobs/{job_id}")',
+  '@router.get("/automodel/jobs/{job_id}/studio/overview")',
+  '@router.get("/automodel/jobs/{job_id}/studio/objects")',
+  '@router.get("/automodel/jobs/{job_id}/studio/schema-graph")',
+  '@router.post("/automodel/jobs/{job_id}/studio/instance-graph")',
+  '@router.get("/automodel/jobs/{job_id}/studio/quality")',
+  '@router.get("/automodel/jobs/{job_id}/studio/governance")',
+  '@router.get("/automodel/jobs/{job_id}/pipeline")',
+  '@router.get("/automodel/jobs/{job_id}/metrics")'
+]) assert.ok(automodelApi.includes(route), "backend route missing or changed: " + route);
+assert.ok(metricsApi.includes('@router.get("/ontology/metrics")'), "tenant metric registry endpoint is missing");
+for (const field of ['"object_types"', '"link_types"', '"quality_score"', '"coverage"', '"release_gate"', '"nodes"', '"edges"'])
+  assert.ok(studioModule.includes(field), "studio response contract field missing: " + field);
+assert.ok(automodelApi.includes('"metrics": ms["metrics"]'), "job metrics response must include metrics");
+assert.ok(automodelApi.includes('"lineage": mx.lineage'), "job metrics response must include lineage");
+
 for (const id of [
   "jobs", "refresh", "reload", "apiBase", "apiKey", "connection",
   "overviewGraph", "schemaGraph", "objectTypes", "linkTypes",
