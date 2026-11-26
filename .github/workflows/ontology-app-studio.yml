@@ -30,5 +30,4 @@ jobs:
       - name: Run browser/API contract E2E
         env:
           PLAYWRIGHT_MODULE: /tmp/ontology-app-e2e/node_modules/playwright
-          PLAYWRIGHT_BROWSERS_PATH: /tmp/ms-playwright
         run: node web/ontology-app-studio/e2e.cjs
