@@ -25,7 +25,7 @@ for (const endpoint of [
   "/metrics"
 ]) assert.ok(html.includes(endpoint), "missing backend integration: " + endpoint);
 assert.ok(!html.includes("/kg/"), "legacy /kg endpoints must not be used by App Studio");
-assert.ok(html.includes("encodeURIComponent(S.jobId)+'/metrics'"), "task metrics must be scoped to selected automodel job");
+assert.ok(html.includes("encodeURIComponent(selectedJobId)+'/metrics'"), "task metrics must be scoped to selected automodel job");
 
 const automodelApi = fs.readFileSync("backend/app/api/v1/automodel.py", "utf8");
 const metricsApi = fs.readFileSync("backend/app/api/v1/ontology_metrics.py", "utf8");
